@@ -1,0 +1,62 @@
+# Nguồn (a) của corpus: báo cáo World Bank về Việt Nam.
+#
+# Vì sao nguồn này: prose dài, song ngữ Việt–Anh trên cùng chủ đề → phục vụ nhóm
+# metric cross-lingual. Hai nhóm còn lại (văn bản pháp luật, báo cáo thường niên
+# HOSE) phục vụ `section_path` và `table_lookup`, khai báo ở file config riêng.
+#
+# Giấy phép: tài liệu trong World Bank Documents & Reports đã công bố công khai;
+# phần lớn phát hành theo CC BY 3.0 IGO. Đây là khai báo ở mức nguồn — bạn phải
+# tự đọc trang giấy phép của vài tài liệu bất kỳ để xác nhận trước khi push repo
+# lên public. Script chỉ ép được rằng giấy phép nằm trong danh sách cho phép,
+# không tự kiểm chứng được từng tài liệu.
+#
+# ADB không có ở đây: adb.org trả HTTP 403 cho mọi truy cập tự động. Tài liệu ADB
+# tải tay rồi khai báo qua block `seed_list` bên dưới.
+
+sources:
+  - name: worldbank-vietnam-en
+    type: worldbank_wds
+    qterm: "Vietnam economic development"
+    language: English
+    license: "CC BY 3.0 IGO"
+    license_url: "https://creativecommons.org/licenses/by/3.0/igo/"
+    doc_type: dev_report
+    limit: 40
+    rows_per_page: 20
+    max_pages: 15
+    require_text: true          # bỏ qua tài liệu chỉ có PDF — Docling mãi W3-01 mới có
+    major_doc_types:
+      - "Publications & Research"
+      - "Economic & Sector Work"
+    exclude_doc_types:          # nhiễu thủ tục, không phải nội dung để hỏi đáp
+      - "Procurement Plan"
+      - "Resettlement Plan"
+      - "Environmental Assessment"
+      - "Auditing Document"
+      - "Disbursement Letter"
+
+  - name: worldbank-vietnam-vi
+    type: worldbank_wds
+    qterm: "Việt Nam phát triển kinh tế"
+    language: Vietnamese
+    license: "CC BY 3.0 IGO"
+    license_url: "https://creativecommons.org/licenses/by/3.0/igo/"
+    doc_type: dev_report
+    limit: 20
+    rows_per_page: 20
+    max_pages: 15
+    require_text: true
+
+  # Mẫu để thêm tài liệu ADB tải tay. Bỏ comment và điền khi có file.
+  # - name: adb-vietnam
+  #   type: seed_list
+  #   license: "CC BY 3.0 IGO"
+  #   license_url: "https://creativecommons.org/licenses/by/3.0/igo/"
+  #   doc_type: dev_report
+  #   documents:
+  #     - doc_id: adb-vie-economic-outlook-2024
+  #       url: "https://www.adb.org/sites/default/files/publication/.../file.pdf"
+  #       landing_url: "https://www.adb.org/publications/..."
+  #       title: "Asian Development Outlook — Viet Nam"
+  #       lang: en
+  #       published_at: "2024-04-01"
