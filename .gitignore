@@ -1,0 +1,32 @@
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage_html/
+
+# Secrets & runtime
+.env
+.run/
+*.log
+
+# Dữ liệu sinh ra khi chạy
+chroma_db/
+.chroma/
+.chunking_cache/
+uploads/
+*.pdf
+
+# Cache & artifact của pipeline
+.cache/
+mlruns/
+data/corpus/
+data/raw/
+!data/**/.gitkeep

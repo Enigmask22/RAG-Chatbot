@@ -1,0 +1,72 @@
+# Hạ tầng local cho Serving Plane.
+#
+# Cả ba service đều có healthcheck vì `make up` dùng `--wait`: nếu không có
+# healthcheck thì Docker coi container "đã chạy" ngay khi tiến trình khởi động,
+# và test tích hợp sẽ đâm vào Qdrant chưa sẵn sàng rồi fail ngẫu nhiên.
+#
+# Cổng đều bind vào 127.0.0.1, không phải 0.0.0.0 — máy dev thường nằm trong
+# mạng wifi lạ, không có lý do gì để Postgres nghe ra ngoài.
+
+name: rag-platform
+
+services:
+  qdrant:
+    # Phiên bản server phải khớp major/minor với `qdrant-client` trong pyproject —
+    # client sẽ cảnh báo và một số API đổi hành vi khi lệch nhau quá 1 minor.
+    image: qdrant/qdrant:v1.15.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"   # REST
+      - "127.0.0.1:6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      # Dạng không có dấu `=`: chỉ truyền biến xuống container KHI máy host có đặt nó.
+      # Viết `${QDRANT_API_KEY:-}` thì biến luôn tồn tại với giá trị rỗng, và Qdrant
+      # hiểu "có đặt key" nên bật xác thực rồi từ chối mọi request bằng 401.
+      - QDRANT__SERVICE__API_KEY
+      - QDRANT__LOG_LEVEL=WARN
+    healthcheck:
+      # Image qdrant không có curl/wget; dùng chính binary của nó để tự kiểm tra.
+      test: ["CMD", "/qdrant/qdrant", "--version"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_local_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  qdrant_data:
+  postgres_data:
+  redis_data:

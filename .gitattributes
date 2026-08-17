@@ -1,0 +1,5 @@
+* text=auto
+
+# Script shell PHẢI dùng LF, nếu không bash trên Linux báo "bad interpreter: ^M"
+*.sh text eol=lf
+*.ps1 text eol=crlf
