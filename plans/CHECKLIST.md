@@ -1,7 +1,7 @@
 # CHECKLIST — RAG Platform Upgrade
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
-> Cập nhật lần cuối: 2026-08-17 · Trạng thái tổng: **tuần 1: 9/13 task xong · index baseline đã build (60 tài liệu → 15.814 chunk) · gate `G1` 2/4**
+> Cập nhật lần cuối: 2026-08-17 · Trạng thái tổng: **tuần 1: 10/13 task xong · index baseline 15.814 chunk · 266 câu nháp golden set · gate `G1` 2/4**
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -49,14 +49,14 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 
 | Giai đoạn | Tổng | `[x]` Done | `[!]` Chờ test | `[~]` Đang làm | `[?]` Bị chặn | `[ ]` TODO | Gate |
 |---|---:|---:|---:|---:|---:|---:|:---:|
-| W0 · Chuẩn bị | 8 | 0 | 0 | 2 | 3 | 3 | — |
-| W1 · Nền móng + Eval baseline | 13 | 9 | 0 | 0 | 4 | 0 | `G1` ⬜ |
+| W0 · Chuẩn bị | 8 | 1 | 0 | 1 | 3 | 3 | — |
+| W1 · Nền móng + Eval baseline | 13 | 10 | 0 | 0 | 3 | 0 | `G1` ⬜ |
 | W2 · Retrieval upgrade | 9 | 0 | 0 | 0 | 0 | 9 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng** | **73** | **11** | **0** | **2** | **7** | **53** | 0/6 |
+| **Tổng** | **73** | **12** | **0** | **2** | **6** | **53** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
@@ -150,9 +150,15 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · `IndexConfig` là tiền thân của `RagBundle` (`W4-01`): `fingerprint` băm đúng thứ quyết định vector, **không** gồm `device`/`batch_size` để đổi máy không phải build lại — có test canh cả hai chiều
 - [?] `W1-09` **DVC init + version corpus** (`data/corpus`, `data/golden`)
   · DoD: `dvc status` clean, remote local hoặc GDrive hoạt động · Test: `dvc pull` trên clone sạch lấy đủ file · Evidence: `.dvc/` committed
-- [?] `W1-10` **Script sinh nháp golden set** — DeepSeek (`deepseek-chat`) sinh Q + relevant_chunk_ids từ chunk thật, kèm phân loại category
-  · DoD: sinh ≥ 250 câu nháp, có cost log, dedupe câu trùng ý · Test: `tests/unit/test_goldenset_gen.py` (schema output, dedupe) · Evidence: `data/golden/draft_v1.jsonl` + cost
-- [?] `W1-11` **Review tay → freeze `golden_v1` (≥150 câu)** — đủ 7 nhóm: factoid, multi_hop, aggregation, table_lookup, cross_lingual, unanswerable, adversarial
+- [x] `W1-10` **Script sinh nháp golden set** — DeepSeek sinh Q + relevant_chunk_ids từ chunk thật, kèm phân loại category
+  · DoD: **266 câu nháp** (≥250 ✅) · chi phí **$0,5821** ($0,00219/câu) · khử trùng lặp có · Test: `test_goldenset_gen.py` **35 case** + `test_goldenset_dedupe.py` **19 case** + `test_goldenset_sampling.py` **23 case** + `test_llm_provider.py` **23 case** · Evidence: `reports/w1-10-goldenset-draft.md` + `data/golden/draft_v1.jsonl`
+  · Phân bố: factoid 78 · cross_lingual 46 · unanswerable 40 · adversarial 36 · multi_hop 34 · aggregation 28 · table_lookup 4. Ngôn ngữ vi 167 / en 99, trải trên **44/60 tài liệu**
+  · ⚠️ **`deepseek-chat` là BÍ DANH**, thực tế phục vụ bởi `deepseek-v4-flash` (xác nhận trên API 2026-08-17; `deepseek-reasoner` cũng vậy). Đây đúng là vấn đề quy tắc cứng #1 nói về preset, chỉ kín đáo hơn. Mặc định dự án đã đổi sang slug thật
+  · **Model không được tự viết `chunk_id`** — nó chỉ trả chỉ số đoạn văn, code ánh xạ sang id thật. `quote` được đối chiếu lại với chunk: 16/266 câu không kiểm chứng được → xếp đầu hàng đợi review
+  · Ba bộ lọc chất lượng corpus phải thêm (trộn hai cột PDF 27,8% chunk · chú thích biểu đồ · trang bìa) — chi tiết ở report. Chúng **chỉ áp cho việc chọn mẫu**, không áp cho index
+  · `table_lookup` chỉ 4 câu là **đúng, không phải lỗi**: corpus `.txt` đã làm phẳng bảng. Nhóm này chờ nguồn (c) HOSE + `W3-01`
+- [~] `W1-11` **Review tay → freeze `golden_v1` (≥150 câu)** — đủ 7 nhóm: factoid, multi_hop, aggregation, table_lookup, cross_lingual, unanswerable, adversarial
+  · **Sẵn sàng review**: 266 nháp ở `data/golden/draft_v1.jsonl`. Thứ tự đọc theo rủi ro — 16 câu `needs_close_review` trước, rồi 40 câu `unanswerable` (nhóm dễ sai nhất, code không kiểm được), rồi 34 câu `multi_hop`
   · DoD: mỗi câu có `relevant_chunk_ids` đã người xác nhận; file read-only, có checksum · Test: `tests/unit/test_goldenset_schema.py` (schema + phân bố category + không rỗng chunk_ids trừ nhóm unanswerable) · Evidence: `data/golden/golden_v1.jsonl` + `reports/goldenset-v1.md` (quy trình + phân bố)
 - [x] `W1-12` **`pipeline/eval/retrieval_eval.py`** — Recall@{1,5,10,20}, Precision@k, MRR, nDCG@10, HitRate; breakdown theo category & language
   · DoD: bảng MD + JSON; metric đúng trên fixture có đáp án tính tay · Test: `tests/unit/test_retrieval_metrics.py` (**35 case**) + `tests/unit/test_retrieval_eval.py` (**19 case**) · Evidence: `reports/w1-foundation.md`
@@ -333,6 +339,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | ID | Task | Phát sinh từ | Trạng thái | Ngày thêm |
 |---|---|---|---|---|
 | `NEW-02` | **`scripts/fetch_corpus.py` + `pipeline/corpus/`** — adapter World Bank WDS + nguồn `seed_list`, manifest CSV ép giấy phép, chạy lại là no-op | `W0-03`: cần cách tải corpus tái lập được, không phải tải tay rồi quên mất lấy ở đâu | `[x]` | 2026-08-17 |
+| `NEW-05` | **`packages/rag_core/llm/`** — client tương thích OpenAI tự viết bằng `httpx`, có bảng giá, phát hiện model trôi, retry chỉ cho lỗi tạm thời, chặn OpenRouter preset ở tầng constructor | `W1-10`: cần LLM cho cả pipeline (sinh dữ liệu, judge) lẫn serving (generator), nên nó là hợp đồng dùng chung chứ không phải tiện ích của một script | `[x]` | 2026-08-17 |
+| `NEW-06` | **Checkpoint + chạy song song cho job LLM dài** | `W1-10`: lượt chạy đầu treo ở phút 40 và mất sạch. Song song 6 luồng đưa 163 lời gọi từ >1 giờ xuống 640 giây | `[x]` | 2026-08-17 |
 | `NEW-03` | **`Chunker.prepare(n_documents)`** — người gọi khai báo kích thước lô thật trước khi cache chia nhỏ theo từng tài liệu | `W1-08`: không có nó thì `HybridChunker` luôn thấy `n=1` và luôn chọn semantic, tức baseline đo một chiến lược chunking khác hệ thống hiện tại | `[x]` | 2026-08-17 |
 | `NEW-04` | **Warm-up trước khi đo độ trễ trong `run_retrieval_eval`** | `W1-08`: p95 đo được là 15.219 ms trong khi p50 là 31 ms — toàn bộ chênh lệch là thời gian nạp model. Ngưỡng gate hiệu năng W5/W6 dựa trên p95 | `[x]` | 2026-08-17 |
 | `NEW-01` | **Test canh chiều phụ thuộc hai plane** — `tests/unit/test_architecture_boundaries.py`: quét AST chặn `rag_core → pipeline/serving`, `serving → pipeline`, `pipeline → serving`, và chặn import nặng (`torch`, `qdrant_client`) ở tầng module của `rag_core` | `W1-01`: ranh giới hai plane là lý do tồn tại của cả kiến trúc, mà một dòng `from pipeline...` lọt vào `serving/` sẽ xoá nó rất tự nhiên | `[x]` | 2026-08-17 |
@@ -345,7 +353,6 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 |---|---|---|---|---|
 | `W0-01` | Bạn đọc lại plan sau khi sửa diagram | Bạn | 2026-08-14 | Chặn toàn bộ W1 |
 | `W0-02` | Quyết định tên repo mới + có tạo repo riêng hay nâng cấp in-place | Bạn | 2026-08-14 | Code đã push lên nhánh `feat/w1-foundation` của repo cũ (`f5ec22b`, `c253fa5`). `main` chưa đụng tới vì đang là link trong CV. Cần quyết: merge vào `main` hay tách repo mới |
-| `W0-04` | `DEEPSEEK_API_KEY` vào `.env` | Bạn | 2026-08-14 | Chặn `W1-10` (sinh nháp golden set) |
 | `W0-03` | Nguồn (b) văn bản pháp luật ~30 và (c) báo cáo HOSE ~30 — cần chọn tay rồi khai báo qua `seed_list` | Bạn | 2026-08-14 | Nguồn (a) xong (60 tài liệu, đã index). Thiếu (b)/(c) thì golden set không có nhóm `table_lookup` và `section_path` |
 | `W0-07` | `@preset/my-luna-pro` resolve ra model slug nào (cần biết để chọn judge cross-check khác họ DeepSeek) | Bạn | 2026-08-14 | Chặn `W5-04`, không chặn W1–W4 |
 
@@ -363,7 +370,9 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | `TD-04` | Bộ tải corpus loại 5 tài liệu vì "không giải mã được UTF-8" | Một số bản `.txt` của World Bank mã hoá cp1252. Loại bỏ là an toàn, và 60 tài liệu đã đủ cho nguồn (a) | Thử fallback cp1252 → utf-8 khi cần thêm tài liệu |
 | `TD-05` | Giấy phép CC BY 3.0 IGO là khai báo **ở mức nguồn**, không kiểm chứng từng tài liệu | Script chỉ ép được rằng giấy phép nằm trong danh sách cho phép | Đọc tay trang giấy phép của ~5 tài liệu bất kỳ **trước khi** push repo lên public |
 | `TD-06` | Toàn bộ `Document` nằm trong RAM khi build index | 60 tài liệu = 14 MB, tối ưu sớm là lãng phí | `W3-07` (re-index tăng dần) sẽ đọc theo luồng |
-| `TD-07` | `plans/` vừa bị thêm vào `.gitignore` nhưng file trong đó đã tracked | File cũ vẫn commit được, chỉ file **mới** trong `plans/` bị bỏ qua âm thầm — phải `git add -f` | Quyết định dứt khoát: bỏ dòng đó khỏi `.gitignore`, hoặc bỏ hẳn `plans/` khỏi repo |
+| ~~`TD-07`~~ | ~~`plans/` bị thêm vào `.gitignore`~~ | **Đã xử lý**: bỏ dòng đó, vì DoD của dự án bắt buộc mỗi task có đường dẫn Evidence | ✅ |
+| `TD-08` | 22/163 lời gọi LLM bị cắt ở `max_tokens=6000` — toàn bộ ngân sách đi vào chuỗi suy luận | Vẫn đủ 266 câu; nâng tiếp là trả tiền cho phần suy luận không dùng tới | Thử `--questions-per-call 1` (prompt ngắn → suy luận ngắn) khi cần thêm câu |
+| `TD-09` | Chưa kiểm được câu `unanswerable` có **thật sự** không trả lời được từ corpus | Model có thể vô tình hỏi thứ mà một tài liệu khác trả lời được; code không phát hiện ra | `W1-11`: chạy chính retriever lên 40 câu đó, câu nào ra chunk điểm rất cao thì phân loại lại |
 
 ---
 
@@ -371,6 +380,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-17 | **`W1-10` xong — 266 câu nháp golden set** ($0,5821 · 640s · 163 lời gọi). Thêm `packages/rag_core/llm/` và `pipeline/goldenset/`, 100 test mới. Phát hiện `deepseek-chat` chỉ là bí danh của `deepseek-v4-flash`; phát hiện model suy luận tiêu hết ngân sách token trước khi viết JSON; phát hiện 27,8% chunk bị trộn hai cột PDF. Thêm `NEW-05`, `NEW-06`, `TD-08`, `TD-09`; trả xong `TD-07`. `W0-04` hết bị chặn |
 | 2026-08-17 | **`W1-08` xong — index baseline đã build**: 60 tài liệu → 15.814 chunk (768 chiều, cuda, 202s). Thêm `pipeline/indexing/` (config + corpus loader + build_index), `configs/indexing/{baseline,smoke}.yaml`, 59 test mới. Trả xong `TD-02`, `TD-03`; thêm `NEW-03`, `NEW-04`, `TD-06`, `TD-07`. Ghim torch CUDA (`cu126`) vì wheel PyPI trên Windows là bản CPU-only |
 | 2026-08-17 | **Corpus nguồn (a) xong**: 60 tài liệu World Bank (40 EN + 20 VI) qua `scripts/fetch_corpus.py`. Thêm `pipeline/corpus/` (manifest ép giấy phép + adapter WDS) và 23 test. Phát hiện ADB chặn truy cập tự động (403) → phải tải tay qua `seed_list`. Thêm `NEW-02`, `TD-04`, `TD-05`; tổng 72 → 73 task |
 | 2026-08-17 | **Hoàn thành 8/13 task tuần 1** (`W1-01`…`W1-07`, `W1-12`): 144 unit test + 18 integration test xanh, ruff + mypy strict pass, coverage `rag_core` 81%. Bằng chứng: `reports/w1-foundation.md`. Thêm `NEW-01`, `TD-01`…`TD-03`; tổng 71 → 72 task |

@@ -33,6 +33,7 @@ make up && make test-integration     # cần Docker Desktop đang chạy
 | `W1-07` | Dense retriever Qdrant | ✅ xong | 14 integration test |
 | `W1-12` | Retrieval metrics + report | ✅ xong | 35 + 19 test |
 | `W1-08` | Build index (corpus → Qdrant) | ✅ xong | 59 test mới · index baseline 15.814 chunk |
+| `W1-10` | Sinh nháp golden set | ✅ xong | 100 test mới · 266 câu · $0,5821 |
 
 **Tổng kết phiên:** 144 unit test + 18 integration test xanh · `ruff` + `mypy --strict` sạch ·
 coverage `rag_core` 81%. Bằng chứng: [`reports/w1-foundation.md`](reports/w1-foundation.md).
@@ -171,6 +172,43 @@ hai plane) và `test_settings.py`.
     File trong đó đã tracked nên vẫn commit được, nhưng file **mới** bị bỏ qua
     âm thầm — `reports/w1-08-build-index.md` phải `git add -f`. Ghi vào `TD-07`.
 
+25. **`deepseek-chat` là BÍ DANH, không phải một model.** Xác nhận trực tiếp
+    trên API: cả `deepseek-chat` lẫn `deepseek-reasoner` đều được phục vụ bởi
+    `deepseek-v4-flash`. Đây đúng là vấn đề mà quy tắc cứng #1 nói về OpenRouter
+    preset, chỉ kín đáo hơn — tên trông như một model cụ thể nhưng là con trỏ do
+    server nắm. Mặc định dự án đổi sang slug thật; gọi bằng bí danh vẫn được
+    nhưng có cảnh báo.
+
+26. **Model suy luận làm chẩn đoán `max_tokens` sai hoàn toàn.** Triệu chứng là
+    hàng loạt "Response không phải JSON hợp lệ" với nội dung rỗng. Đo lại:
+    `completion_tokens=1770` nhưng `len(text)=515` ký tự — `deepseek-v4-flash`
+    tiêu 1.500–3.000 token cho chuỗi suy luận KHÔNG nằm trong `content`. Nâng
+    `max_tokens` lên 6.000 và tách `finish_reason=="length"` thành cảnh báo
+    riêng. Vẫn còn 13,5% lời gọi bị cắt — xem `TD-08`.
+
+27. **Chạy song song 6 luồng: >1 giờ → 640 giây.** Mỗi lời gọi ~25 giây và gần
+    như toàn bộ là chờ mạng. Kết quả vẫn ráp theo đúng thứ tự lô để hai lần chạy
+    cùng seed cho ra cùng một file.
+
+28. **Job trả tiền dài phải có checkpoint.** Lượt đầu treo ở phút 40, mất sạch.
+    Giờ ghi nối sau mỗi lời gọi; chạy lại bỏ qua lô đã xong. Lô mà model trả về
+    rỗng cũng ghi dấu — nếu không thì mỗi lần chạy lại đều trả tiền cho cùng một
+    câu trả lời rỗng.
+
+29. **27,8% chunk của corpus bị trộn hai cột PDF.** Bản `.txt` World Bank giữ
+    nguyên vị trí ký tự của trang hai cột nên cột trái/phải đan xen theo dòng.
+    Nó gồm toàn từ hợp lệ nên mọi bộ lọc theo tỉ lệ chữ cái đều cho qua; chỉ
+    `gutter_ratio` (khoảng trắng dài ở GIỮA dòng) lộ ra. Thêm hai bộ lọc nữa:
+    `mean_words_per_line` (loại chú thích biểu đồ) và `skip_leading_chunks`
+    (loại bìa/bản quyền/mục lục). Tổng cộng loại ~60% lô → `overshoot=3.0`.
+    ⚠️ Ba bộ lọc này CHỈ áp cho việc chọn mẫu sinh câu hỏi, KHÔNG áp cho index.
+
+30. **Model không được tự viết `chunk_id`.** Nó chỉ trả về chỉ số đoạn văn trong
+    danh sách được đưa; code ánh xạ sang id thật. Cho model tự viết id là mở
+    đường cho cả golden set trỏ vào hư không. Kèm theo: `quote` được đối chiếu
+    lại với chunk (16/266 câu không kiểm chứng được), và `multi_hop` chỉ dùng
+    một chunk thì bị hạ nhóm về `factoid`.
+
 ### Việc còn dở / cần làm tiếp
 
 - [x] **Đã commit + push** lên nhánh `feat/w1-foundation` (2026-08-17):
@@ -180,8 +218,10 @@ hai plane) và `test_settings.py`.
 - [ ] Quyết định merge `feat/w1-foundation` vào `main` hay giữ nhánh (liên quan `W0-02`).
 - [x] `W1-08` — **xong**: `reports/w1-08-build-index.md`. Collection `rag_baseline`
       có 15.814 chunk; `make index` chạy lần hai không ghi thêm gì.
-- [ ] `W1-10` — **việc tiếp theo**: đã có chunk thật và `DEEPSEEK_API_KEY`.
-- [ ] `W1-09` (DVC), `W1-11` (review tay), `W1-13` (đo baseline) — sau `W1-10`.
+- [x] `W1-10` — **xong**: `reports/w1-10-goldenset-draft.md`, 266 câu nháp.
+- [ ] `W1-11` — **việc tiếp theo, cần BẠN đọc tay** (~6-8h). Thứ tự theo rủi ro:
+      16 câu `needs_close_review` → 40 câu `unanswerable` → 34 câu `multi_hop`.
+- [ ] `W1-09` (DVC) và `W1-13` (đo baseline) — sau `W1-11`.
 - [ ] Corpus nguồn (b) pháp luật và (c) HOSE — cần bạn chọn tay, khai báo qua `seed_list`.
 - [ ] Gate `G1` đạt 2/4 mục; hai mục còn lại chặn bởi golden set (`W1-11`) và baseline (`W1-13`).
 

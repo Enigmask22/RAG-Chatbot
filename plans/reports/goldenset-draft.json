@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-08-17T10:34:08+00:00",
+  "index_config": "configs\\indexing\\baseline.yaml",
+  "model_requested": "deepseek-v4-flash",
+  "seed": 20260817,
+  "generation": {
+    "n_groups": 163,
+    "n_calls": 163,
+    "n_failed_calls": 0,
+    "n_skipped_groups": 0,
+    "n_raw_questions": 288,
+    "n_rejected_bad_index": 0,
+    "n_rejected_schema": 22,
+    "n_truncated": 22,
+    "n_category_drifted": 0,
+    "n_quotes_unverified": 16,
+    "n_duplicates_removed": 0,
+    "prompt_tokens": 222088,
+    "completion_tokens": 506567,
+    "cost_usd": 0.58209,
+    "seconds": 640.6,
+    "models_served": {
+      "deepseek-v4-flash": 163
+    }
+  },
+  "drafts": {
+    "n_drafts": 266,
+    "by_category": {
+      "adversarial": 36,
+      "aggregation": 28,
+      "cross_lingual": 46,
+      "factoid": 78,
+      "multi_hop": 34,
+      "table_lookup": 4,
+      "unanswerable": 40
+    },
+    "by_language": {
+      "en": 99,
+      "vi": 167
+    },
+    "needs_close_review": 16,
+    "quotes_unverified": 16,
+    "category_drifted": 0,
+    "total_cost_usd": 0.425058,
+    "total_tokens": 544456
+  }
+}
