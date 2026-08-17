@@ -123,7 +123,11 @@ hai plane) và `test_settings.py`.
 
 ### Việc còn dở / cần làm tiếp
 
-- [ ] **Commit.** Toàn bộ thay đổi của phiên này **chưa được commit** — chỉ nằm trên đĩa.
+- [x] **Đã commit + push** lên nhánh `feat/w1-foundation` (2026-08-17):
+      `f5ec22b` nền móng W1 · `c253fa5` bộ tải corpus W0-03.
+      Cố ý **không** push thẳng `main` vì repo này đang là link trong CV — trang chủ
+      repo giữ nguyên bản cũ cho tới khi bạn chủ động merge.
+- [ ] Quyết định merge `feat/w1-foundation` vào `main` hay giữ nhánh (liên quan `W0-02`).
 - [ ] `W1-08` — **giờ chạy được**: đã có 60 tài liệu trong `data/corpus/`.
 - [ ] `W1-09`, `W1-11`, `W1-13` — nối tiếp sau `W1-08`.
 - [ ] Corpus nguồn (b) pháp luật và (c) HOSE — cần bạn chọn tay, khai báo qua `seed_list`.

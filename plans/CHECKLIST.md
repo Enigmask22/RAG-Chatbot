@@ -336,7 +336,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | ID | Đợi gì | Ai xử lý | Từ ngày | Ảnh hưởng |
 |---|---|---|---|---|
 | `W0-01` | Bạn đọc lại plan sau khi sửa diagram | Bạn | 2026-08-14 | Chặn toàn bộ W1 |
-| `W0-02` | Quyết định tên repo mới + có tạo repo riêng hay nâng cấp in-place | Bạn | 2026-08-14 | **Không chặn `W1-01`** — build tại thư mục hiện tại, quyết định push/tách repo sau |
+| `W0-02` | Quyết định tên repo mới + có tạo repo riêng hay nâng cấp in-place | Bạn | 2026-08-14 | Code đã push lên nhánh `feat/w1-foundation` của repo cũ (`f5ec22b`, `c253fa5`). `main` chưa đụng tới vì đang là link trong CV. Cần quyết: merge vào `main` hay tách repo mới |
 | `W0-04` | `DEEPSEEK_API_KEY` vào `.env` | Bạn | 2026-08-14 | Chặn `W1-10` (sinh nháp golden set) |
 | `W0-03` | Tải ~90 tài liệu corpus (nguồn đã chốt) | Bạn + script | 2026-08-14 | Chặn `W1-09`, `W1-11`, `W1-13` |
 | `W0-07` | `@preset/my-luna-pro` resolve ra model slug nào (cần biết để chọn judge cross-check khác họ DeepSeek) | Bạn | 2026-08-14 | Chặn `W5-04`, không chặn W1–W4 |

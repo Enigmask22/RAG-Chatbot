@@ -3,6 +3,8 @@
 > Ngày chạy: 2026-08-17 · Máy: Windows 11, Python 3.13.11, Docker 29.4.3
 > Phạm vi: `W1-01` … `W1-07` và `W1-12`. Các task còn lại của tuần 1 chờ corpus/API key.
 
+**Commit:** `f5ec22b` (nền móng W1) · `c253fa5` (bộ tải corpus W0-03) — nhánh `feat/w1-foundation`
+
 ## Cách tái lập
 
 ```bash
