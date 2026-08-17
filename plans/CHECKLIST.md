@@ -1,7 +1,7 @@
 # CHECKLIST — RAG Platform Upgrade
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
-> Cập nhật lần cuối: 2026-08-17 · Trạng thái tổng: **tuần 1: 8/13 task xong · corpus nguồn (a) đã có 60 tài liệu · gate `G1` 1/4**
+> Cập nhật lần cuối: 2026-08-17 · Trạng thái tổng: **tuần 1: 9/13 task xong · index baseline đã build (60 tài liệu → 15.814 chunk) · gate `G1` 2/4**
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -50,13 +50,13 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 | Giai đoạn | Tổng | `[x]` Done | `[!]` Chờ test | `[~]` Đang làm | `[?]` Bị chặn | `[ ]` TODO | Gate |
 |---|---:|---:|---:|---:|---:|---:|:---:|
 | W0 · Chuẩn bị | 8 | 0 | 0 | 2 | 3 | 3 | — |
-| W1 · Nền móng + Eval baseline | 13 | 8 | 0 | 0 | 5 | 0 | `G1` ⬜ |
+| W1 · Nền móng + Eval baseline | 13 | 9 | 0 | 0 | 4 | 0 | `G1` ⬜ |
 | W2 · Retrieval upgrade | 9 | 0 | 0 | 0 | 0 | 9 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng** | **73** | **10** | **0** | **2** | **8** | **53** | 0/6 |
+| **Tổng** | **73** | **11** | **0** | **2** | **7** | **53** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
@@ -141,8 +141,13 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · DoD: index chunk, query trả top-k đúng thứ tự score · Test: `tests/integration/test_qdrant_dense.py` — **14 case**: named vector, thứ hạng liên tục, score giảm dần, idempotent, filter theo lang/tenant/doc_type, delete · Evidence: `reports/w1-foundation.md`
   · **Named vector `dense` ngay từ W1** — collection dùng vector vô danh không thêm được named vector mà không build lại toàn bộ index, mà `W2-02` sẽ thêm sparse
   · **Point ID = UUIDv5 sinh từ `chunk_id`** → tính idempotent nằm ở tầng store chứ không ở script build index; `W1-08` thừa hưởng sẵn
-- [?] `W1-08` **`pipeline/indexing/build_index.py`** — corpus → chunk → embed → Qdrant collection, idempotent
-  · DoD: chạy 2 lần không sinh duplicate; log số doc/chunk/thời gian · Test: `tests/integration/test_build_index.py` (chạy 2 lần, count không đổi) · Evidence: log build
+- [x] `W1-08` **`pipeline/indexing/build_index.py`** — corpus → chunk → embed → Qdrant collection, idempotent
+  · DoD: chạy 2 lần không sinh duplicate; log số doc/chunk/thời gian · Test: `tests/integration/test_build_index.py` — **15 case** + `test_index_config.py` **28 case** + `test_corpus_loader.py` **16 case** · Evidence: `reports/w1-08-build-index.md` + `reports/index-baseline.json`
+  · **Index baseline đã build**: 60 tài liệu → **15.814 chunk**, 768 chiều, trên `cuda`, 202s. Chạy lần hai: `index 0 · bỏ qua 60`, count không đổi
+  · **Ba tầng idempotent**, point ID xác định của `W1-07` chỉ là tầng 1: (2) nhớ số chunk cũ để xoá phần đuôi thừa khi tài liệu **ngắn lại** — point mồ côi không trùng lặp với gì cả, nó chỉ trỏ tới văn bản không còn tồn tại; (3) so `fingerprint` để chặn trộn hai cấu hình vào một collection
+  · **Bắt được 3 lỗi chỉ lộ khi chạy thật**: (a) `HybridChunker` luôn chọn semantic vì cache chia lô thành 1 tài liệu → sửa bằng `Chunker.prepare(n)`; (b) `HybridChunker.name` không phân biệt nhánh → hai lần chạy đọc nhầm cache của nhau; (c) **p95 độ trễ 15.219 ms là thời gian nạp model**, không phải truy hồi → thêm warm-up, p95 còn 98 ms
+  · Đo được **hệ số 1.24x**: `neighbor_context_chars=100` của bản POC làm text đem embed phình từ 14,3 lên 17,7 triệu ký tự
+  · `IndexConfig` là tiền thân của `RagBundle` (`W4-01`): `fingerprint` băm đúng thứ quyết định vector, **không** gồm `device`/`batch_size` để đổi máy không phải build lại — có test canh cả hai chiều
 - [?] `W1-09` **DVC init + version corpus** (`data/corpus`, `data/golden`)
   · DoD: `dvc status` clean, remote local hoặc GDrive hoạt động · Test: `dvc pull` trên clone sạch lấy đủ file · Evidence: `.dvc/` committed
 - [?] `W1-10` **Script sinh nháp golden set** — DeepSeek (`deepseek-chat`) sinh Q + relevant_chunk_ids từ chunk thật, kèm phân loại category
@@ -154,16 +159,17 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · Kỳ vọng viết bằng công thức tường minh với thứ hạng ghi rõ; cố ý **không** gọi lại hàm đang test để sinh kỳ vọng
   · Có breakdown theo category & language. **Câu `unanswerable` trả `None` chứ không phải `0.0`** — recall trên tập rỗng là không xác định; quy ước thành 0 kéo tụt điểm vô nghĩa, thành 1 thì thổi phồng. Nhóm này đo riêng ở `W5-02`
   · Thiếu `query_id` trong kết quả = truy hồi rỗng (bị chấm 0), không phải bỏ qua — im lặng bỏ qua sẽ làm điểm cao lên một cách sai
-  · ⚠️ CLI `make eval-retrieval` hiện cần `--retrieved` (file kết quả có sẵn); nối retriever thật là việc của `W1-08`
+  · ✅ Đã nối retriever thật ở `W1-08`: `make eval-retrieval` dùng `--index-config` và truy hồi trực tiếp từ Qdrant. `--retrieved` vẫn giữ để chấm lại kết quả cũ mà không phải chạy lại retrieval
 - [?] `W1-13` ⭐ **Đo baseline hệ thống hiện tại** (chunking hybrid cũ + vietnamese-bi-encoder + dense k=5)
   · DoD: `reports/baseline.md` có đủ 8 metric + config + lệnh tái lập + thời gian chạy · Test: chạy lại 2 lần, sai số < 1% · Evidence: `plans/reports/baseline.md`
 
-### `G1` — Gate tuần 1 ⬜ (1/4)
-- [?] `make eval-retrieval BUNDLE=baseline` chạy được từ clone sạch bằng **1 lệnh** — chặn bởi `W1-08` (cần corpus)
+### `G1` — Gate tuần 1 ⬜ (2/4)
+- [~] `make eval-retrieval BUNDLE=baseline` chạy được từ clone sạch bằng **1 lệnh** — đường ống đã thông (`make corpus && make up && make index && make eval-retrieval`), còn chặn bởi golden set thật (`W1-11`)
+  · Kiểm chứng bằng golden set giả sinh từ chính chunk trong index (13 câu, **không** commit): `recall@5 0.9167 · p50 32.6ms · p95 97.7ms`. Đây **không phải** baseline — câu hỏi chính là text của chunk nên gần như chắc chắn tìm lại được chính nó
 - [~] Retrieval eval chạy **không cần bất kỳ LLM API nào** (chỉ embedding + reranker local) — xác nhận bằng cách chạy với biến môi trường API key rỗng
   · Đã đúng ở mức code: `pipeline/eval/metrics.py` không import provider LLM nào, và `tests/unit/test_architecture_boundaries.py` canh phụ thuộc. Còn thiếu lần chạy thật với API key rỗng — làm cùng `W1-13`
 - [?] §1 Dashboard đã điền xong cột **Baseline** — chặn bởi `W1-13`
-- [x] Coverage `rag_core/` ≥ 70% → **81%** (chỉ tính unit test; `reports/w1-foundation.md`)
+- [x] Coverage `rag_core/` ≥ 70% → **80%** (chỉ tính unit test; `reports/w1-08-build-index.md`)
 
 ---
 
@@ -327,6 +333,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | ID | Task | Phát sinh từ | Trạng thái | Ngày thêm |
 |---|---|---|---|---|
 | `NEW-02` | **`scripts/fetch_corpus.py` + `pipeline/corpus/`** — adapter World Bank WDS + nguồn `seed_list`, manifest CSV ép giấy phép, chạy lại là no-op | `W0-03`: cần cách tải corpus tái lập được, không phải tải tay rồi quên mất lấy ở đâu | `[x]` | 2026-08-17 |
+| `NEW-03` | **`Chunker.prepare(n_documents)`** — người gọi khai báo kích thước lô thật trước khi cache chia nhỏ theo từng tài liệu | `W1-08`: không có nó thì `HybridChunker` luôn thấy `n=1` và luôn chọn semantic, tức baseline đo một chiến lược chunking khác hệ thống hiện tại | `[x]` | 2026-08-17 |
+| `NEW-04` | **Warm-up trước khi đo độ trễ trong `run_retrieval_eval`** | `W1-08`: p95 đo được là 15.219 ms trong khi p50 là 31 ms — toàn bộ chênh lệch là thời gian nạp model. Ngưỡng gate hiệu năng W5/W6 dựa trên p95 | `[x]` | 2026-08-17 |
 | `NEW-01` | **Test canh chiều phụ thuộc hai plane** — `tests/unit/test_architecture_boundaries.py`: quét AST chặn `rag_core → pipeline/serving`, `serving → pipeline`, `pipeline → serving`, và chặn import nặng (`torch`, `qdrant_client`) ở tầng module của `rag_core` | `W1-01`: ranh giới hai plane là lý do tồn tại của cả kiến trúc, mà một dòng `from pipeline...` lọt vào `serving/` sẽ xoá nó rất tự nhiên | `[x]` | 2026-08-17 |
 
 ---
@@ -338,7 +346,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | `W0-01` | Bạn đọc lại plan sau khi sửa diagram | Bạn | 2026-08-14 | Chặn toàn bộ W1 |
 | `W0-02` | Quyết định tên repo mới + có tạo repo riêng hay nâng cấp in-place | Bạn | 2026-08-14 | Code đã push lên nhánh `feat/w1-foundation` của repo cũ (`f5ec22b`, `c253fa5`). `main` chưa đụng tới vì đang là link trong CV. Cần quyết: merge vào `main` hay tách repo mới |
 | `W0-04` | `DEEPSEEK_API_KEY` vào `.env` | Bạn | 2026-08-14 | Chặn `W1-10` (sinh nháp golden set) |
-| `W0-03` | Tải ~90 tài liệu corpus (nguồn đã chốt) | Bạn + script | 2026-08-14 | Chặn `W1-09`, `W1-11`, `W1-13` |
+| `W0-03` | Nguồn (b) văn bản pháp luật ~30 và (c) báo cáo HOSE ~30 — cần chọn tay rồi khai báo qua `seed_list` | Bạn | 2026-08-14 | Nguồn (a) xong (60 tài liệu, đã index). Thiếu (b)/(c) thì golden set không có nhóm `table_lookup` và `section_path` |
 | `W0-07` | `@preset/my-luna-pro` resolve ra model slug nào (cần biết để chọn judge cross-check khác họ DeepSeek) | Bạn | 2026-08-14 | Chặn `W5-04`, không chặn W1–W4 |
 
 ---
@@ -350,10 +358,12 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | ID | Nợ | Lý do chấp nhận | Kế hoạch trả |
 |---|---|---|---|
 | `TD-01` | `HuggingFaceEmbeddingProvider` coverage 0% | Cần `torch` (~2.5GB) mà unit test cố ý chạy không có GPU stack để `make test` giữ ở ~3 giây | Test đánh dấu `@pytest.mark.gpu` khi làm `W0-06` (đo VRAM) và `W2-01` (BGE-M3) |
-| `TD-02` | CLI `retrieval_eval.py` chưa nối retriever thật, phải truyền `--retrieved` | Cần index thật, mà index cần corpus (`W0-03`) | `W1-08` |
-| `TD-03` | `pipeline/indexing/` còn rỗng | Cùng lý do `TD-02` | `W1-08` |
+| ~~`TD-02`~~ | ~~CLI `retrieval_eval.py` chưa nối retriever thật~~ | **Đã trả ở `W1-08`**: `--index-config` dựng retriever từ chính config đã build index | ✅ |
+| ~~`TD-03`~~ | ~~`pipeline/indexing/` còn rỗng~~ | **Đã trả ở `W1-08`** | ✅ |
 | `TD-04` | Bộ tải corpus loại 5 tài liệu vì "không giải mã được UTF-8" | Một số bản `.txt` của World Bank mã hoá cp1252. Loại bỏ là an toàn, và 60 tài liệu đã đủ cho nguồn (a) | Thử fallback cp1252 → utf-8 khi cần thêm tài liệu |
 | `TD-05` | Giấy phép CC BY 3.0 IGO là khai báo **ở mức nguồn**, không kiểm chứng từng tài liệu | Script chỉ ép được rằng giấy phép nằm trong danh sách cho phép | Đọc tay trang giấy phép của ~5 tài liệu bất kỳ **trước khi** push repo lên public |
+| `TD-06` | Toàn bộ `Document` nằm trong RAM khi build index | 60 tài liệu = 14 MB, tối ưu sớm là lãng phí | `W3-07` (re-index tăng dần) sẽ đọc theo luồng |
+| `TD-07` | `plans/` vừa bị thêm vào `.gitignore` nhưng file trong đó đã tracked | File cũ vẫn commit được, chỉ file **mới** trong `plans/` bị bỏ qua âm thầm — phải `git add -f` | Quyết định dứt khoát: bỏ dòng đó khỏi `.gitignore`, hoặc bỏ hẳn `plans/` khỏi repo |
 
 ---
 
@@ -361,6 +371,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-17 | **`W1-08` xong — index baseline đã build**: 60 tài liệu → 15.814 chunk (768 chiều, cuda, 202s). Thêm `pipeline/indexing/` (config + corpus loader + build_index), `configs/indexing/{baseline,smoke}.yaml`, 59 test mới. Trả xong `TD-02`, `TD-03`; thêm `NEW-03`, `NEW-04`, `TD-06`, `TD-07`. Ghim torch CUDA (`cu126`) vì wheel PyPI trên Windows là bản CPU-only |
 | 2026-08-17 | **Corpus nguồn (a) xong**: 60 tài liệu World Bank (40 EN + 20 VI) qua `scripts/fetch_corpus.py`. Thêm `pipeline/corpus/` (manifest ép giấy phép + adapter WDS) và 23 test. Phát hiện ADB chặn truy cập tự động (403) → phải tải tay qua `seed_list`. Thêm `NEW-02`, `TD-04`, `TD-05`; tổng 72 → 73 task |
 | 2026-08-17 | **Hoàn thành 8/13 task tuần 1** (`W1-01`…`W1-07`, `W1-12`): 144 unit test + 18 integration test xanh, ruff + mypy strict pass, coverage `rag_core` 81%. Bằng chứng: `reports/w1-foundation.md`. Thêm `NEW-01`, `TD-01`…`TD-03`; tổng 71 → 72 task |
 | 2026-08-17 | **Đổi yêu cầu Python từ ≥3.11 lên ≥3.12** — stub numpy dùng cú pháp `type` statement chỉ có từ 3.12, mypy strict không chạy được với `python_version=3.11`. Ảnh hưởng lựa chọn image ở `W0-05` |

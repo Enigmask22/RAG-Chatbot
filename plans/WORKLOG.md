@@ -32,6 +32,7 @@ make up && make test-integration     # cần Docker Desktop đang chạy
 | `W1-06` | Embedding provider | ✅ xong | 14 test |
 | `W1-07` | Dense retriever Qdrant | ✅ xong | 14 integration test |
 | `W1-12` | Retrieval metrics + report | ✅ xong | 35 + 19 test |
+| `W1-08` | Build index (corpus → Qdrant) | ✅ xong | 59 test mới · index baseline 15.814 chunk |
 
 **Tổng kết phiên:** 144 unit test + 18 integration test xanh · `ruff` + `mypy --strict` sạch ·
 coverage `rag_core` 81%. Bằng chứng: [`reports/w1-foundation.md`](reports/w1-foundation.md).
@@ -121,6 +122,55 @@ hai plane) và `test_settings.py`.
     + sinh context bằng LLM (`W3-04`) là tạo tác phẩm phái sinh, `ND` chỉ cho phép
     phát tán nguyên bản.
 
+16. **`Chunker.prepare(n_documents)` — lỗi nghiêm trọng nhất của phiên này.**
+    Cache chunk hoạt động theo **từng tài liệu**, nên `CachedChunker` gọi
+    `inner.chunk([doc])` 60 lần. `HybridChunker` quyết định nhánh theo
+    `len(documents)`, thấy `n=1` mỗi lần, ngưỡng là 5 → **luôn chọn semantic**.
+    Bản POC truyền cả corpus một lượt nên với 60 tài liệu nó chạy fixed. Nếu
+    không phát hiện thì baseline `W1-13` đo một chiến lược chunking khác hẳn.
+    Sửa: người gọi khai báo tổng số tài liệu trước, khai báo tường minh thắng
+    suy đoán theo lô. Log xác nhận `chunker hybrid->fixed`.
+
+17. **`HybridChunker.name` giờ gồm cả nhánh đã chọn** (`hybrid->fixed:...`).
+    Tên chunker là một phần khoá cache; tên cũ chỉ có `config_hash` nên hai lần
+    chạy hybrid — một rơi semantic, một rơi fixed — đọc lại kết quả của nhau.
+    Nhánh semantic còn kèm tên model embedding, nhờ đó ablation đổi model ở W2
+    cũng không đọc nhầm.
+
+18. **Ba tầng idempotent; point ID xác định chỉ là tầng 1.** Tầng 2: tài liệu
+    **ngắn lại** để lại point mồ côi `doc::00030`… mà không upsert nào ghi đè —
+    chúng không trùng lặp, chúng trỏ tới văn bản không còn tồn tại, và retriever
+    vẫn trả về. Tầng 3: `fingerprint` trong state chặn việc trộn hai cấu hình
+    vào một collection. Thứ tự cố ý là **upsert trước, xoá sau** — chết giữa
+    chừng thì thừa chunk cũ (chạy lại dọn được), chứ không mất hẳn tài liệu.
+
+19. **State file không phải nguồn sự thật, Qdrant mới là.** Trước khi tin state,
+    script đối chiếu tổng số chunk với `collection.count()`; lệch thì bỏ state
+    và index lại toàn bộ. Ca thật: `make down-clean` mà quên xoá `.cache/`.
+
+20. **p95 độ trễ truy hồi 15.219 ms hoá ra là thời gian nạp model** (p50 chỉ
+    31 ms). Truy vấn đầu tiên gánh cả việc nạp `sentence-transformers` vốn lazy.
+    Thêm một lượt warm-up: p95 còn **98 ms**. Đây là con số làm ngưỡng cho gate
+    hiệu năng W5/W6 — để nguyên thì gate đo thời gian khởi động.
+
+21. **Hệ số phình 1.24x của `neighbor_context_chars=100`.** Text đem embed đi từ
+    14,3 lên 17,7 triệu ký tự. Con số này chưa nói kỹ thuật đó tốt hay dở, nó
+    nói **giá phải trả** — so recall giữa bật và tắt là việc của W2.
+
+22. **`fingerprint` cố ý không gồm `device`/`batch_size`.** Chạy trên GPU thuê
+    hay laptop phải ra cùng một index về mặt logic; nếu `device` vào fingerprint
+    thì mỗi lần đổi máy là build lại vài giờ GPU — đúng thứ kiến trúc hai plane
+    sinh ra để tránh. Có test canh cả hai chiều.
+
+23. **Wheel `torch` mặc định trên PyPI cho Windows là bản CPU-only.** Cài từ đó
+    thì mọi thứ vẫn chạy, chỉ chậm hơn nhiều và `torch.cuda.is_available()` trả
+    `False` mà không báo lỗi gì. Đã ghim index `download.pytorch.org/whl/cu126`
+    trong `[tool.uv.sources]`. Xác nhận `torch 2.13.0+cu126`, build chạy `cuda`.
+
+24. **`plans/` vừa xuất hiện trong `.gitignore`** (không phải do phiên này thêm).
+    File trong đó đã tracked nên vẫn commit được, nhưng file **mới** bị bỏ qua
+    âm thầm — `reports/w1-08-build-index.md` phải `git add -f`. Ghi vào `TD-07`.
+
 ### Việc còn dở / cần làm tiếp
 
 - [x] **Đã commit + push** lên nhánh `feat/w1-foundation` (2026-08-17):
@@ -128,15 +178,17 @@ hai plane) và `test_settings.py`.
       Cố ý **không** push thẳng `main` vì repo này đang là link trong CV — trang chủ
       repo giữ nguyên bản cũ cho tới khi bạn chủ động merge.
 - [ ] Quyết định merge `feat/w1-foundation` vào `main` hay giữ nhánh (liên quan `W0-02`).
-- [ ] `W1-08` — **giờ chạy được**: đã có 60 tài liệu trong `data/corpus/`.
-- [ ] `W1-09`, `W1-11`, `W1-13` — nối tiếp sau `W1-08`.
+- [x] `W1-08` — **xong**: `reports/w1-08-build-index.md`. Collection `rag_baseline`
+      có 15.814 chunk; `make index` chạy lần hai không ghi thêm gì.
+- [ ] `W1-10` — **việc tiếp theo**: đã có chunk thật và `DEEPSEEK_API_KEY`.
+- [ ] `W1-09` (DVC), `W1-11` (review tay), `W1-13` (đo baseline) — sau `W1-10`.
 - [ ] Corpus nguồn (b) pháp luật và (c) HOSE — cần bạn chọn tay, khai báo qua `seed_list`.
-- [ ] `W1-10` — `DEEPSEEK_API_KEY` đã có; chờ `W1-08` để có chunk thật.
-- [ ] Gate `G1` mới đạt 1/4 mục; ba mục còn lại đều chặn bởi corpus.
+- [ ] Gate `G1` đạt 2/4 mục; hai mục còn lại chặn bởi golden set (`W1-11`) và baseline (`W1-13`).
 
 ### Nếu phiên sau bắt đầu từ đây
 
-Đọc theo thứ tự: mục "Quyết định kỹ thuật" ở trên → `reports/w1-foundation.md` →
+Đọc theo thứ tự: mục "Quyết định kỹ thuật" ở trên → `reports/w1-08-build-index.md`
+→ `reports/w1-foundation.md` →
 `CHECKLIST.md` §1 Dashboard và §10 Đang bị chặn. Chạy `make lint && make test` để xác
 nhận repo vẫn xanh trước khi làm tiếp.
 
