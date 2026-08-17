@@ -1,0 +1,25 @@
+# Cấu hình để smoke test: không tải model, không cần GPU, không cần mạng.
+#
+# `hashing:256` là provider bag-of-words hashing trong `rag_core.embedding` —
+# đủ để kiểm tra đường ống corpus → chunk → Qdrant chạy đúng và idempotent, và
+# chạy trong vài giây. Nó **không** nắm ngữ nghĩa nên tuyệt đối không dùng để
+# đo bất kỳ con số eval nào.
+
+name: smoke
+collection: rag_smoke
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+max_documents: 3
+
+chunking:
+  strategy: fixed
+  chunk_size: 1000
+  chunk_overlap: 100
+  neighbor_context_chars: 0
+
+embedding_model: "hashing:256"
+embedding_batch_size: 64
+
+use_cache: false
+state_dir: .cache/index_state

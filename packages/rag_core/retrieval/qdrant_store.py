@@ -149,6 +149,24 @@ class QdrantDenseRetriever(Retriever):
             payload["tenant_id"] = chunk.extra["tenant_id"]
         return payload
 
+    def delete_points(self, point_ids: Sequence[str]) -> int:
+        """Xoá đúng các point được liệt kê. Trả về số point đã yêu cầu xoá.
+
+        Cần tách khỏi `delete_by_doc` cho trường hợp một tài liệu bị chunk lại
+        thành **ít chunk hơn**: chỉ phần đuôi thừa mới phải đi, phần đầu đã bị
+        upsert ghi đè rồi.
+        """
+        from qdrant_client import models
+
+        if not point_ids:
+            return 0
+        self.client.delete(
+            collection_name=self.collection,
+            points_selector=models.PointIdsList(points=list(point_ids)),
+            wait=True,
+        )
+        return len(point_ids)
+
     def delete_by_doc(self, doc_id: str) -> None:
         from qdrant_client import models
 

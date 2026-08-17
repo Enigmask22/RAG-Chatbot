@@ -109,6 +109,40 @@ class TestRunWithRetriever:
         assert report.config["retriever"] == "stub"
         assert report.latency_ms["max"] >= 0.0
 
+    def test_warms_up_before_timing(self) -> None:
+        """Truy vấn đầu tiên không được tính giờ.
+
+        Model embedding nạp lazy, nên lần gọi đầu gánh cả việc nạp trọng số —
+        đo thật trên máy này là 15 giây so với p50 31 ms. Không bỏ nó đi thì p95
+        (ngưỡng của gate hiệu năng W5/W6) là con số của việc khởi động, không
+        phải của việc truy hồi.
+        """
+        calls: list[str] = []
+
+        class CountingRetriever:
+            name = "counting"
+
+            def retrieve(self, query: str, top_k: int = 10, *, filters=None):  # type: ignore[no-untyped-def]
+                calls.append(query)
+                return []
+
+        run_retrieval_eval(CountingRetriever(), QUERIES, run_name="w")  # type: ignore[arg-type]
+        assert len(calls) == len(QUERIES) + 1
+        assert calls[0] == calls[1], "lượt warm-up phải là chính truy vấn đầu tiên"
+
+    def test_warmup_can_be_turned_off(self) -> None:
+        calls: list[str] = []
+
+        class CountingRetriever:
+            name = "counting"
+
+            def retrieve(self, query: str, top_k: int = 10, *, filters=None):  # type: ignore[no-untyped-def]
+                calls.append(query)
+                return []
+
+        run_retrieval_eval(CountingRetriever(), QUERIES, run_name="w", warmup=False)  # type: ignore[arg-type]
+        assert len(calls) == len(QUERIES)
+
 
 class TestGoldenSet:
     def test_round_trip(self, tmp_path) -> None:  # type: ignore[no-untyped-def]

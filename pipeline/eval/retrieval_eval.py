@@ -222,7 +222,18 @@ def run_retrieval_eval(
     top_k: int = 20,
     k_values: Sequence[int] = DEFAULT_K_VALUES,
     config: dict[str, Any] | None = None,
+    warmup: bool = True,
 ) -> EvalReport:
+    """Chạy eval bằng retriever thật, đo cả độ trễ.
+
+    `warmup=True` gọi một truy vấn bỏ đi trước khi bấm giờ. Không có nó thì lần
+    truy vấn đầu tiên gánh cả việc nạp model embedding (~15 giây đo được trên
+    máy này, so với p50 là 31 ms) và p95 trở thành số vô nghĩa — mà p95 chính
+    là ngưỡng của gate hiệu năng ở W5/W6.
+    """
+    if warmup and queries:
+        retriever.retrieve(queries[0].query, top_k=top_k)
+
     retrieved: dict[str, list[str]] = {}
     latencies: dict[str, float] = {}
     for query in queries:
@@ -242,13 +253,59 @@ def run_retrieval_eval(
     )
 
 
+def _eval_against_index(
+    index_config_path: Path,
+    queries: Sequence[GoldenQuery],
+    *,
+    run_name: str,
+    top_k: int,
+) -> EvalReport:
+    """Dựng retriever từ chính config đã build index rồi chạy eval.
+
+    Dùng lại **cùng một file config** thay vì khai báo model/collection lần nữa
+    ở phía eval. Nếu hai bên khai báo riêng thì sớm muộn cũng lệch — eval sẽ đo
+    một index được build bằng model khác, và không có gì báo lỗi cả.
+    """
+    # Import cục bộ: eval chấm điểm từ file `--retrieved` không cần qdrant-client.
+    from rag_core.settings import get_settings
+
+    from ..indexing.config import load_index_config
+
+    index_config = load_index_config(index_config_path)
+    settings = get_settings()
+    embeddings = index_config.build_embeddings()
+    retriever = index_config.build_retriever(
+        embeddings,
+        url=settings.qdrant_url,
+        api_key=(settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None),
+    )
+    return run_retrieval_eval(
+        retriever,
+        queries,
+        run_name=run_name,
+        top_k=top_k,
+        config={
+            "index_config": str(index_config_path),
+            "index_fingerprint": index_config.fingerprint,
+            "collection": index_config.collection_name,
+            "embedding_model": index_config.embedding_model,
+            "chunking": json.loads(index_config.chunking.model_dump_json()),
+        },
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Chạy eval retrieval trên golden set")
     parser.add_argument("--golden", type=Path, default=Path("data/golden/golden_v1.jsonl"))
     parser.add_argument("--retrieved", type=Path, help="JSON {query_id: [chunk_id, ...]} đã có sẵn")
+    parser.add_argument(
+        "--index-config",
+        type=Path,
+        help="YAML config index (configs/indexing/*.yaml) — truy hồi trực tiếp từ Qdrant",
+    )
+    parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--run-name", default="baseline")
     parser.add_argument("--out-dir", type=Path, default=Path("plans/reports"))
-    parser.add_argument("--config", type=Path, help="YAML config (dành cho W1-13 trở đi)")
     args = parser.parse_args(argv)
 
     if not args.golden.exists():
@@ -259,14 +316,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     queries = load_golden_set(args.golden)
 
-    if args.retrieved is None:
-        parser.error(
-            "Chưa nối retriever thật (việc của W1-08). Hiện tại truyền --retrieved "
-            "với file JSON kết quả truy hồi để chấm điểm."
+    if args.index_config is not None:
+        report = _eval_against_index(
+            args.index_config, queries, run_name=args.run_name, top_k=args.top_k
         )
-
-    retrieved = json.loads(args.retrieved.read_text(encoding="utf-8"))
-    report = evaluate_run(queries, retrieved, run_name=args.run_name)
+    elif args.retrieved is not None:
+        retrieved = json.loads(args.retrieved.read_text(encoding="utf-8"))
+        report = evaluate_run(queries, retrieved, run_name=args.run_name)
+    else:
+        parser.error(
+            "Cần một trong hai: `--index-config` để truy hồi thật từ Qdrant, "
+            "hoặc `--retrieved` với file kết quả đã có sẵn để chấm lại."
+        )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     md_path = args.out_dir / f"{args.run_name}-retrieval.md"

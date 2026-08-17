@@ -1,0 +1,39 @@
+# Baseline `W1-13`: tái lập ĐÚNG hệ thống POC hiện tại, không phải "cấu hình tốt".
+#
+# Đây là mốc để mọi cải tiến của W2/W3 đo lại. Vì vậy mọi tham số ở đây phải
+# khớp bản POC kể cả khi biết là dở — sửa cho đẹp hơn ở đây thì con số "cải
+# thiện +X%" sau này là so với một hệ thống chưa từng tồn tại.
+#
+# ⚠️ `neighbor_context_chars: 100` là điểm dễ sai nhất. Mặc định của
+# `ChunkingConfig` là 0 (tắt) vì kỹ thuật này thổi số ký tự embed lên ~20%, nhưng
+# bản POC LUÔN bật ở mức 100. Bỏ dòng đó đi là đo nhầm hệ thống khác.
+
+name: baseline
+collection: rag_baseline
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+chunking:
+  strategy: hybrid
+  chunk_size: 1000
+  chunk_overlap: 100
+  min_chunk_size: 200
+  max_chunk_size: 1500
+  semantic_buffer_size: 1
+  semantic_threshold_percentile: 85.0
+  semantic_min_sentences: 3
+  # Corpus có 60 tài liệu > 5 nên hybrid chọn nhánh fixed — đúng như bản POC
+  # chạy trên cả corpus một lượt. Con số này chỉ đổi hành vi khi index lô nhỏ.
+  hybrid_max_docs_for_semantic: 5
+  neighbor_context_chars: 100   # ⚠️ xem ghi chú đầu file
+
+embedding_model: bkai-foundation-models/vietnamese-bi-encoder
+embedding_device: auto
+embedding_batch_size: 64
+embedding_normalize: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

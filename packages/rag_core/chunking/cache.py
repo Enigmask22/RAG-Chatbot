@@ -227,15 +227,25 @@ class CachedChunker(Chunker):
     def split_text(self, text: str) -> list[str]:
         return self.inner.split_text(text)
 
+    def prepare(self, n_documents: int) -> None:
+        super().prepare(n_documents)
+        self.inner.prepare(n_documents)
+
     def chunk(self, documents: Sequence[Document]) -> list[Chunk]:
+        # Chia nhỏ theo từng tài liệu là chuyện của cache, không phải của
+        # chunker: nếu người gọi chưa khai báo thì lấy kích thước lô này.
+        if self.inner.planned_documents is None:
+            self.inner.prepare(len(documents))
         config_hash = self.config.config_hash
+        # Đọc `name` sau `prepare`: với hybrid, tên đổi theo nhánh đã chọn.
+        chunker_name = self.inner.name
         out: list[Chunk] = []
         for doc in documents:
-            cached = self.cache.get(doc.content_hash, config_hash, self.inner.name)
+            cached = self.cache.get(doc.content_hash, config_hash, chunker_name)
             if cached is not None:
                 out.extend(cached)
                 continue
             produced = self.inner.chunk([doc])
-            self.cache.put(doc.content_hash, config_hash, self.inner.name, produced)
+            self.cache.put(doc.content_hash, config_hash, chunker_name, produced)
             out.extend(produced)
         return out

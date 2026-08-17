@@ -77,6 +77,23 @@ logs:  ## Xem log hạ tầng
 	$(COMPOSE) logs -f --tail=100
 
 # ---------------------------------------------------------------- pipeline
+BUNDLE ?= baseline
+INDEX_CONFIG = configs/indexing/$(BUNDLE).yaml
+
+.PHONY: corpus
+corpus:  ## Tải corpus theo config (idempotent)
+	$(PY) python scripts/fetch_corpus.py --config configs/corpus/worldbank_vietnam.yaml
+
+.PHONY: index
+index:  ## Build index Qdrant (BUNDLE=baseline). Cần `make up` trước
+	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) \
+		--report plans/reports/index-$(BUNDLE).json
+
+.PHONY: index-dry
+index-dry:  ## Chunk thử vài tài liệu và in thống kê, không chạm Qdrant
+	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) --dry-run
+
 .PHONY: eval-retrieval
-eval-retrieval:  ## Chạy eval retrieval (BUNDLE=baseline)
-	$(PY) python -m pipeline.eval.retrieval_eval --config configs/eval/$(or $(BUNDLE),baseline).yaml
+eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline)
+	$(PY) python -m pipeline.eval.retrieval_eval \
+		--index-config $(INDEX_CONFIG) --run-name $(BUNDLE)

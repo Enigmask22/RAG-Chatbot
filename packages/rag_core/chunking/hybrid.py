@@ -38,13 +38,24 @@ class HybridChunker(Chunker):
         self._semantic = SemanticChunker(embeddings, self.config) if embeddings else None
         self.last_strategy_used: str = "fixed"
 
+    @property
+    def name(self) -> str:
+        """Tên gồm cả nhánh đã chọn, vì nó quyết định kết quả.
+
+        Tên mặc định của lớp cha chỉ có `config_hash`, nên hai lần chạy hybrid —
+        một lần rơi vào semantic, một lần vào fixed — sẽ dùng chung khoá cache và
+        đọc lại kết quả của nhau. Tên của nhánh semantic còn kèm tên model
+        embedding, nhờ đó ablation đổi model ở W2 cũng không đọc nhầm cache.
+        """
+        return f"{self.strategy.value}->{self._delegate(self._batch_size_for_decision(1)).name}"
+
     def _use_semantic(self, n_documents: int) -> bool:
         return (
             self._semantic is not None and n_documents <= self.config.hybrid_max_docs_for_semantic
         )
 
     def split_text(self, text: str) -> list[str]:
-        return self._delegate(1).split_text(text)
+        return self._delegate(self._batch_size_for_decision(1)).split_text(text)
 
     def _delegate(self, n_documents: int) -> Chunker:
         if self._use_semantic(n_documents) and self._semantic is not None:
@@ -52,7 +63,9 @@ class HybridChunker(Chunker):
         return self._fixed
 
     def chunk(self, documents: Sequence[Document]) -> list[Chunk]:
-        delegate = self._delegate(len(documents))
+        # `prepare` đã khai báo thì tin nó — lô truyền vào có thể chỉ là 1 tài
+        # liệu do cache chia nhỏ, không phản ánh kích thước corpus thật.
+        delegate = self._delegate(self._batch_size_for_decision(len(documents)))
         try:
             chunks = delegate.chunk(documents)
             self.last_strategy_used = delegate.strategy.value

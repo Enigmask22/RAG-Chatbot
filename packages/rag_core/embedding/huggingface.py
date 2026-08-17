@@ -44,7 +44,7 @@ def _load_model(model_name: str, device: str) -> SentenceTransformer:
     """
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(model_name, device=device)
+    return cast("SentenceTransformer", SentenceTransformer(model_name, device=device))
 
 
 class HuggingFaceEmbeddingProvider(EmbeddingProvider):
@@ -83,7 +83,13 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
 
     @property
     def dimension(self) -> int:
-        dim = self.model.get_sentence_embedding_dimension()
+        # sentence-transformers 5.x đổi tên `get_sentence_embedding_dimension`
+        # thành `get_embedding_dimension`. Thử tên mới trước rồi mới lùi về tên
+        # cũ để chạy được trên cả hai — image RunPod thường ghim bản khác laptop.
+        getter = getattr(self.model, "get_embedding_dimension", None) or (
+            self.model.get_sentence_embedding_dimension
+        )
+        dim = getter()
         if dim is None:  # pragma: no cover - model hỏng
             raise RuntimeError(f"Không đọc được số chiều của model {self.model_name!r}")
         return int(dim)

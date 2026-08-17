@@ -101,6 +101,7 @@ class Chunker(ABC):
 
     def __init__(self, config: ChunkingConfig | None = None) -> None:
         self.config = config or ChunkingConfig()
+        self._planned_documents: int | None = None
 
     @property
     def name(self) -> str:
@@ -109,6 +110,27 @@ class Chunker(ABC):
     @abstractmethod
     def split_text(self, text: str) -> list[str]:
         """Cắt một tài liệu thành các đoạn text thô, chưa hậu xử lý."""
+
+    @property
+    def planned_documents(self) -> int | None:
+        """Số tài liệu của cả lô, nếu người gọi đã khai báo qua `prepare`."""
+        return self._planned_documents
+
+    def prepare(self, n_documents: int) -> None:
+        """Khai báo kích thước lô **thật** sắp chunk.
+
+        Cần có vì cache hoạt động **theo từng tài liệu**: `CachedChunker` gọi
+        `chunk([doc])` 60 lần cho một corpus 60 tài liệu. Chunker nào ra quyết
+        định dựa trên số tài liệu trong lô (`HybridChunker`) sẽ thấy `n=1` mỗi
+        lần và chọn sai nhánh — im lặng, không lỗi, chỉ là số baseline sai.
+
+        Script build index gọi hàm này một lần với tổng số tài liệu rồi mới lặp
+        từng tài liệu; khai báo tường minh luôn thắng suy đoán theo lô.
+        """
+        self._planned_documents = n_documents
+
+    def _batch_size_for_decision(self, n_in_call: int) -> int:
+        return self._planned_documents if self._planned_documents is not None else n_in_call
 
     def chunk(self, documents: Sequence[Document]) -> list[Chunk]:
         chunks: list[Chunk] = []
