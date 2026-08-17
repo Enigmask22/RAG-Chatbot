@@ -93,6 +93,14 @@ index:  ## Build index Qdrant (BUNDLE=baseline). Cần `make up` trước
 index-dry:  ## Chunk thử vài tài liệu và in thống kê, không chạm Qdrant
 	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) --dry-run
 
+.PHONY: goldenset-dry
+goldenset-dry:  ## Xem phân bố lô chunk + prompt mẫu, KHÔNG gọi API
+	$(PY) python -m pipeline.goldenset.generate --index-config $(INDEX_CONFIG) --dry-run
+
+.PHONY: goldenset-draft
+goldenset-draft:  ## Sinh nháp golden set bằng DeepSeek (TỐN TIỀN API)
+	$(PY) python -m pipeline.goldenset.generate --index-config $(INDEX_CONFIG)
+
 .PHONY: eval-retrieval
 eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline)
 	$(PY) python -m pipeline.eval.retrieval_eval \

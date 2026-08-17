@@ -1419,6 +1419,9 @@ embeddings = [
     { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
     { name = "torch", version = "2.13.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
+llm = [
+    { name = "httpx" },
+]
 pipeline = [
     { name = "pyyaml" },
     { name = "tqdm" },
@@ -1429,6 +1432,7 @@ qdrant = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", marker = "extra == 'llm'", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
@@ -1445,7 +1449,7 @@ requires-dist = [
     { name = "tqdm", marker = "extra == 'pipeline'", specifier = ">=4.66" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
 ]
-provides-extras = ["embeddings", "qdrant", "pipeline", "dev"]
+provides-extras = ["embeddings", "qdrant", "pipeline", "llm", "dev"]
 
 [[package]]
 name = "regex"
