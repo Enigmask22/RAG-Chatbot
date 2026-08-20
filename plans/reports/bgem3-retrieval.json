@@ -1,6 +1,6 @@
 {
   "run_name": "bgem3",
-  "created_at": "2026-08-20T13:04:30+00:00",
+  "created_at": "2026-08-20T14:18:36+00:00",
   "n_queries": 242,
   "n_scored": 209,
   "n_skipped_unanswerable": 33,
@@ -186,11 +186,11 @@
     }
   },
   "latency_ms": {
-    "mean": 30.98211611569515,
-    "p50": 30.41239999993195,
-    "p95": 46.46920000004684,
-    "max": 49.53550000004725,
-    "stdev": 9.59730817645235
+    "mean": 30.150666942187275,
+    "p50": 30.150999999932537,
+    "p95": 45.65050000019255,
+    "max": 49.71370000021125,
+    "stdev": 9.651610292510778
   },
   "config": {
     "retriever": "qdrant-dense:rag_bgem3",
@@ -199,6 +199,7 @@
     "index_fingerprint": "0eaaf9265487eabb25eade5ecb6a85a74ebdbee194b1b5e215befe4bec474932",
     "collection": "rag_bgem3",
     "embedding_model": "BAAI/bge-m3",
+    "retrieval_mode": "dense",
     "chunking": {
       "strategy": "hybrid",
       "chunk_size": 1000,

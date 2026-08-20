@@ -35,7 +35,7 @@ import math
 import random
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
@@ -68,10 +68,16 @@ class RunScores:
     name: str
     scores: dict[str, dict[str, float]]
     n_relevant: dict[str, int]
+    relevant_digest: dict[str, str] = field(default_factory=dict)
+    """Băm tập nhãn từng câu. Rỗng = lần chạy có trước `W2-03`, chưa ghi băm."""
 
     @property
     def query_ids(self) -> set[str]:
         return set(self.scores)
+
+    @property
+    def has_digests(self) -> bool:
+        return any(self.relevant_digest.values())
 
     def mean_relevant(self, ids: Sequence[str]) -> float:
         return sum(self.n_relevant[q] for q in ids) / len(ids) if ids else 0.0
@@ -116,6 +122,7 @@ def load_per_query(path: str | Path, *, name: str = "") -> RunScores:
         )
     scores: dict[str, dict[str, float]] = {}
     n_relevant: dict[str, int] = {}
+    digests: dict[str, str] = {}
     for line in source.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -125,7 +132,15 @@ def load_per_query(path: str | Path, *, name: str = "") -> RunScores:
             raise ValueError(f"{source}: truy vấn {qid} xuất hiện hai lần")
         scores[qid] = row["scores"]
         n_relevant[qid] = int(row["n_relevant"])
-    return RunScores(name=name or source.stem, scores=scores, n_relevant=n_relevant)
+        # `.get`: file của lần chạy trước `W2-03` không có trường này. Coi là
+        # "không biết" chứ không phải "trùng nhau" — xem `_label_mismatch`.
+        digests[qid] = str(row.get("relevant_digest", ""))
+    return RunScores(
+        name=name or source.stem,
+        scores=scores,
+        n_relevant=n_relevant,
+        relevant_digest=digests,
+    )
 
 
 def mcnemar_exact(n_a_only: int, n_b_only: int) -> float:
@@ -171,6 +186,34 @@ def paired_bootstrap(
     return (lo, hi)
 
 
+def _mean_of(run: RunScores, ids: Sequence[str], metric: str) -> float:
+    values = [run.scores[qid][metric] for qid in ids if metric in run.scores[qid]]
+    return sum(values) / len(values) if values else float("nan")
+
+
+def _label_mismatch(baseline: RunScores, candidate: RunScores, shared: Sequence[str]) -> list[str]:
+    """Các câu mà hai lần chạy dùng **tập nhãn khác nhau**.
+
+    Hàng rào thứ ba của module này, thêm ở `W2-03`. Hai hàng rào cũ canh *số*
+    nhãn và *tập truy vấn*; cả hai đều không thấy trường hợp hai lần chạy có cùng
+    số nhãn nhưng nhãn khác nhau. Đó không phải giả thuyết: eval harness lấy
+    `fetch_doc_chunks` bằng `getattr` để tính lại nhãn theo span, nên một
+    retriever thiếu method đó **lặng lẽ** rơi về nhãn ghi sẵn trong file. Lúc ấy
+    `hit_rate` hai bên đo hai bài toán khác nhau và bảng so vẫn hiện ra bình
+    thường.
+
+    Câu thiếu băm (file của lần chạy trước `W2-03`) không tính là lệch — không
+    biết thì không kết luận. `has_digests` là chỗ để cảnh báo việc không biết.
+    """
+    return [
+        qid
+        for qid in shared
+        if baseline.relevant_digest.get(qid)
+        and candidate.relevant_digest.get(qid)
+        and baseline.relevant_digest[qid] != candidate.relevant_digest[qid]
+    ]
+
+
 def compare_runs(
     baseline: RunScores,
     candidate: RunScores,
@@ -199,6 +242,52 @@ def compare_runs(
     cand_labels = candidate.mean_relevant(shared)
     labels_differ = abs(cand_labels - base_labels) > 0.01
     expected_drop = 100 * (1 - base_labels / cand_labels) if cand_labels else 0.0
+
+    if not (baseline.has_digests and candidate.has_digests):
+        logger.warning(
+            "Ít nhất một lần chạy không ghi `relevant_digest` (%s: %s · %s: %s) — "
+            "không kiểm được hai bên có dùng cùng bộ nhãn hay không. File này do "
+            "lần chạy trước W2-03 sinh ra; chạy lại `make eval-retrieval` để có băm.",
+            baseline.name,
+            "có" if baseline.has_digests else "không",
+            candidate.name,
+            "có" if candidate.has_digests else "không",
+        )
+    mismatched = _label_mismatch(baseline, candidate, shared)
+    if mismatched:
+        # Từ chối **toàn bộ**, không lọc bỏ câu lệch rồi so phần còn lại: lọc theo
+        # kết quả là đúng cái tự chọn mẫu mà hàng rào #2 của module này nói tới.
+        logger.error(
+            "%d/%d câu có tập nhãn KHÁC nhau giữa %s và %s (ví dụ: %s). "
+            "Hai lần chạy đang đo hai bài toán khác nhau — không so được metric nào.",
+            len(mismatched),
+            len(shared),
+            baseline.name,
+            candidate.name,
+            ", ".join(mismatched[:5]),
+        )
+        note = (
+            f"{len(mismatched)}/{len(shared)} câu có tập nhãn khác nhau "
+            f"(băm `relevant_digest` lệch) — hai lần chạy không cùng bài toán"
+        )
+        return [
+            ComparisonRow(
+                metric=metric,
+                baseline=_mean_of(baseline, shared, metric),
+                candidate=_mean_of(candidate, shared, metric),
+                delta=_mean_of(candidate, shared, metric) - _mean_of(baseline, shared, metric),
+                test="—",
+                comparable=False,
+                note=note,
+            )
+            for metric in (
+                list(metrics)
+                or sorted(
+                    {m for qid in shared for m in baseline.scores[qid]}
+                    & {m for qid in shared for m in candidate.scores[qid]}
+                )
+            )
+        ]
 
     names = list(metrics) or sorted(
         {m for qid in shared for m in baseline.scores[qid]}

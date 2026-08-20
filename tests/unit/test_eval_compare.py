@@ -226,3 +226,128 @@ class TestLoadPerQuery:
     def test_missing_file_says_how_to_get_it(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="phải chạy lại"):
             load_per_query(tmp_path / "khong-co.jsonl")
+
+
+def _run_with_labels(name: str, hits: dict[str, float], labels: dict[str, str]) -> RunScores:
+    return RunScores(
+        name=name,
+        scores={qid: {"hit_rate@5": v, "recall@5": v, "mrr": v} for qid, v in hits.items()},
+        n_relevant=dict.fromkeys(hits, 1),
+        relevant_digest=labels,
+    )
+
+
+class TestLabelDigestGuard:
+    """Hàng rào thứ ba, thêm ở `W2-03`.
+
+    Hai hàng rào cũ canh *số* nhãn và *tập truy vấn*. Cả hai đều không thấy
+    trường hợp hai lần chạy có **cùng số** nhãn nhưng nhãn **khác nhau** — chuyện
+    xảy ra ngay khi một lần chạy tính lại nhãn theo span còn lần kia rơi về nhãn
+    ghi sẵn trong file, vì retriever thiếu `fetch_doc_chunks`.
+    """
+
+    def test_same_count_different_labels_refuses_everything(self) -> None:
+        base = _run_with_labels("base", {"q1": 1.0, "q2": 0.0}, {"q1": "aaaa", "q2": "bbbb"})
+        cand = _run_with_labels("cand", {"q1": 1.0, "q2": 0.0}, {"q1": "aaaa", "q2": "cccc"})
+        rows = compare_runs(base, cand, iterations=200)
+        assert rows, "vẫn phải trả về dòng để bảng nói lý do, không im lặng trả rỗng"
+        assert all(not r.comparable for r in rows)
+        assert all("tập nhãn khác nhau" in r.note for r in rows)
+        assert all(r.verdict == "KHÔNG SO ĐƯỢC" for r in rows)
+
+    def test_refuses_hit_rate_too_not_just_recall(self) -> None:
+        """Khác hàng rào số nhãn: ở đó `hit_rate` vẫn so được vì nó không có mẫu
+        số là số nhãn. Ở đây thì không — nhãn khác nhau nghĩa là hai bên đang
+        chấm hai bài toán khác nhau, `hit_rate` cũng vô nghĩa."""
+        base = _run_with_labels("base", {"q1": 1.0}, {"q1": "aaaa"})
+        cand = _run_with_labels("cand", {"q1": 1.0}, {"q1": "zzzz"})
+        rows = {r.metric: r for r in compare_runs(base, cand, iterations=200)}
+        assert rows["hit_rate@5"].comparable is False
+
+    def test_does_not_drop_the_bad_queries_and_compare_the_rest(self) -> None:
+        """Lọc bỏ câu lệch rồi so phần còn lại là đúng cái tự chọn mẫu mà hàng
+        rào #2 của module cấm. Một câu lệch là cả lần so bỏ."""
+        hits = {f"q{i}": 1.0 for i in range(20)}
+        base_labels = {q: "same" for q in hits}
+        cand_labels = dict(base_labels) | {"q7": "khac"}
+        rows = compare_runs(
+            _run_with_labels("base", hits, base_labels),
+            _run_with_labels("cand", hits, cand_labels),
+            iterations=200,
+        )
+        assert all(not r.comparable for r in rows)
+        assert "1/20 câu" in rows[0].note
+
+    def test_matching_labels_pass_through(self) -> None:
+        labels = {"q1": "aaaa", "q2": "bbbb"}
+        base = _run_with_labels("base", {"q1": 1.0, "q2": 0.0}, labels)
+        cand = _run_with_labels("cand", {"q1": 0.0, "q2": 1.0}, dict(labels))
+        rows = {r.metric: r for r in compare_runs(base, cand, iterations=200)}
+        assert rows["hit_rate@5"].comparable is True
+        assert rows["recall@5"].comparable is True
+
+    def test_still_reports_the_numbers_while_refusing(self) -> None:
+        """Từ chối kết luận không có nghĩa là ẩn số — người đọc cần thấy mức chênh
+        để biết hố này có đáng đi sửa hay không."""
+        base = _run_with_labels("base", {"q1": 1.0, "q2": 1.0}, {"q1": "a", "q2": "b"})
+        cand = _run_with_labels("cand", {"q1": 0.0, "q2": 0.0}, {"q1": "a", "q2": "X"})
+        row = next(r for r in compare_runs(base, cand, iterations=200) if r.metric == "mrr")
+        assert row.baseline == 1.0
+        assert row.candidate == 0.0
+        assert row.delta == -1.0
+
+    def test_missing_digest_is_unknown_not_equal(self, caplog: pytest.LogCaptureFixture) -> None:
+        """File của lần chạy trước `W2-03` không có băm. Không biết thì không kết
+        luận — nhưng phải nói ra là không biết, nếu không thì hàng rào này chỉ là
+        một thứ trang trí mà không ai biết là nó đang tắt."""
+        base = _run("base", {"q1": 1.0, "q2": 0.0})
+        cand = _run_with_labels("cand", {"q1": 1.0, "q2": 0.0}, {"q1": "a", "q2": "b"})
+        with caplog.at_level("WARNING", logger="pipeline.eval.compare"):
+            rows = compare_runs(base, cand, iterations=200)
+        assert "không ghi `relevant_digest`" in caplog.text
+        assert all(r.comparable for r in rows), "không biết thì không từ chối"
+
+    def test_empty_string_digest_does_not_match_empty_string(self) -> None:
+        base = _run_with_labels("base", {"q1": 1.0}, {"q1": ""})
+        cand = _run_with_labels("cand", {"q1": 1.0}, {"q1": ""})
+        rows = compare_runs(base, cand, iterations=200)
+        assert all(r.comparable for r in rows), "hai bên đều không biết, không phải đều khớp"
+
+    def test_load_per_query_reads_the_digest(self, tmp_path: Path) -> None:
+        path = tmp_path / "d-per-query.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "query_id": "q1",
+                    "category": "c",
+                    "lang": "vi",
+                    "n_relevant": 1,
+                    "n_retrieved": 1,
+                    "scores": {},
+                    "relevant_digest": "deadbeef",
+                }
+            ),
+            encoding="utf-8",
+        )
+        run = load_per_query(path)
+        assert run.relevant_digest == {"q1": "deadbeef"}
+        assert run.has_digests is True
+
+    def test_old_file_without_digest_loads_fine(self, tmp_path: Path) -> None:
+        path = tmp_path / "old-per-query.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "query_id": "q1",
+                    "category": "c",
+                    "lang": "vi",
+                    "n_relevant": 1,
+                    "n_retrieved": 1,
+                    "scores": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        run = load_per_query(path)
+        assert run.relevant_digest == {"q1": ""}
+        assert run.has_digests is False

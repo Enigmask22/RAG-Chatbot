@@ -2,7 +2,7 @@
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
 > Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 13/13 task xong · `golden_v1` 242 câu (review bằng MODEL, không phải người) · baseline recall@5 = 0,1746 · gate `G1` 4/4 ⚠️ với một điều kiện · sẵn sàng vào `W2`**
-> **W2 đang chạy — `TD-11` + `W2-01` xong.** `TD-11`: hạ `chunk_size` đưa truncation 56,9% → 0,4% mà **không cải thiện gì đo được** (`p = 0,711`) — giả định của nợ đó bị phản chứng. `W2-01`: BGE-M3 (giữ `chunk_size=1000`) đưa **nDCG@10 0,1621 → 0,4442** và `cross_lingual` recall@5 **0 → 0,3023**, cả 15 metric đều có ý nghĩa thống kê. ⚠️ Mức tăng đó là của **model**, KHÔNG phải của việc hết truncation — `TD-11` đã đo riêng phần đó và nó cho `p = 0,711`. `W2-02`: `rag_bgem3` giờ mang cả named vector `dense` và `sparse` trong một collection, và `ensure_collection` kiểm tra schema thay vì tin. Việc tiếp theo: `W2-03`. Xem §4 và `reports/w2-td11-chunk-size.md`, `w2-01-bge-m3.md`, `w2-02-qdrant-hybrid.md`
+> **W2 đang chạy — `TD-11` + `W2-01`…`W2-03` xong (3/9).** `TD-11`: hạ `chunk_size` đưa truncation 56,9% → 0,4% mà **không cải thiện gì đo được** (`p = 0,711`) — giả định của nợ đó bị phản chứng. `W2-01`: BGE-M3 (giữ `chunk_size=1000`) đưa **nDCG@10 0,1621 → 0,4442** và `cross_lingual` recall@5 **0 → 0,3023**, cả 15 metric đều có ý nghĩa thống kê. ⚠️ Mức tăng đó là của **model**, KHÔNG phải của việc hết truncation — `TD-11` đã đo riêng phần đó và nó cho `p = 0,711`. `W2-02`: `rag_bgem3` giờ mang cả named vector `dense` và `sparse` trong một collection, và `ensure_collection` kiểm tra schema thay vì tin. `W2-03`: sparse đã đo được — **kém dense trên golden set** (nDCG@10 0,4442 → 0,3733) nhưng **thắng áp đảo ở tra mã tài liệu** (hit@10 0,0784 → 0,5098, `p = 4,8e-07`, 22↔**0**). Con số đáng nhất: **trần của RRF là `hit_rate@10` 0,7033** vs dense 0,6268. Việc tiếp theo: `W2-04`. Xem §4 và `reports/w2-td11-chunk-size.md`, `w2-01-bge-m3.md`, `w2-02-qdrant-hybrid.md`, `w2-03-sparse-retriever.md`
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -52,14 +52,14 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 |---|---:|---:|---:|---:|---:|---:|:---:|
 | W0 · Chuẩn bị | 8 | 1 | 0 | 2 | 2 | 3 | — |
 | W1 · Nền móng + Eval baseline | 13 | 13 | 0 | 0 | 0 | 0 | `G1` 🟡 |
-| W2 · Retrieval upgrade | 9 | 2 | 0 | 0 | 0 | 7 | `G2` ⬜ |
+| W2 · Retrieval upgrade | 9 | 3 | 0 | 0 | 0 | 6 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng backlog gốc** | **71** | **16** | **0** | **2** | **2** | **51** | 0/6 |
+| **Tổng backlog gốc** | **71** | **17** | **0** | **2** | **2** | **50** | 0/6 |
 | §9 Task thêm mới (`NEW-xx`) | 6 | 6 | 0 | 0 | 0 | 0 | — |
-| **Tổng cộng** | **77** | **22** | **0** | **2** | **2** | **51** | 0/6 |
+| **Tổng cộng** | **77** | **23** | **0** | **2** | **2** | **50** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
@@ -78,7 +78,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | Faithfulness | *chưa đo* | — | ≥ 0.92 | `W5-01` |
 | Citation accuracy | *chưa đo* | — | ≥ 0.85 | `W5-02` |
 | Refusal correctness | *chưa đo* | — | ≥ 0.85 | `W5-02` (33 câu `unanswerable`) |
-| p95 latency (truy hồi) | **32,8 ms** | **46,0 ms** | — | `reports/bgem3-retrieval.md` |
+| p95 latency (truy hồi) | **32,8 ms** | **45,7 ms** | — | `reports/bgem3-retrieval.md` |
 | p95 latency (end-to-end) | *chưa đo* | — | ≤ 3500 ms | `W4-13` / `W6-05` |
 | Cost / query | *chưa đo* | — | ≤ $0.005 | `W5-11` |
 | Judge–human kappa | *chưa đo* | — | ≥ 0.6 | `W5-04` |
@@ -285,10 +285,37 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 > một ca **hỏng im lặng** — collection có sparse mà provider chỉ sinh dense: eval ra số trông
 > bình thường trong khi nửa index không được dùng. Biến thể của đúng cái bẫy `TD-11`.
 >
-> ### Việc tiếp theo: `W2-03` — sparse thành `Retriever` và có số
+> ### `W2-03` xong (2026-08-20) — sparse có số, và hai câu trả lời ngược nhau
 >
-> `retrieve_sparse()` chạy được nhưng chưa là `Retriever`, nên eval harness chưa đo được nó.
-> Đến `W2-03` mới có **số** cho câu "sparse đóng góp gì", và phải kèm `p`/CI.
+> | Câu hỏi | Trả lời |
+> |---|---|
+> | Sparse tốt hơn dense trên golden set? | **Không.** nDCG@10 0,4442 → 0,3733, 12/15 metric kém có ý nghĩa |
+> | Sparse tra được mã tài liệu mà dense không? | **Có, áp đảo.** hit@10 0,0784 → 0,5098, `p = 4,8e-07`, 22↔**0** |
+>
+> Hai câu không mâu thuẫn — chúng đo hai loại truy vấn khác nhau, và câu thứ hai mới là DoD.
+> `golden_v1` toàn câu hỏi tự nhiên nên nó **không đo được** DoD; phải dựng phép đo riêng
+> (`scripts/known_item_probe.py` — known-item search, tiêu chí kiểm bằng **so chuỗi** nên
+> không cần nhãn người).
+>
+> **Con số đáng nhất là con số thứ ba: trần của `W2-04` là `hit_rate@10 = 0,7033`** (dense
+> 0,6268). Ghi lại **trước khi** làm RRF để lúc đó không tự diễn giải kết quả theo hướng có
+> lợi. +0,0765 tuyệt đối là toàn bộ số tiền đang nằm trên bàn.
+>
+> Ba phát hiện đổi cách làm phần còn lại của W2:
+>
+> 1. **`cross_lingual` là chỗ sparse chết hẳn** (1↔19, và **0 câu cả hai**), còn trên truy
+>    vấn **tiếng Anh sparse thắng** (9↔4). Lợi ích của RRF rất khác nhau theo ngôn ngữ, nên
+>    bảng `W2-08` phải tách theo `lang`, không chỉ theo `category`.
+> 2. **Sparse học được không phải index khớp đúng.** 25/51 mã không nhánh nào tìm ra, vì
+>    vocab là **subword**: `P171645` → `['▁P','171','645']`, không mảnh nào hiếm. RRF và
+>    reranker đều không sửa được chuyện này → `TD-18`.
+> 3. **Tìm trong index sparse tốn 97,8 ms vs dense 17,8 ms.** Từ `W2-04` trở đi, nhánh sparse
+>    là thành phần nặng nhất của đường truy hồi — không phải model embedding.
+>
+> ### Việc tiếp theo: `W2-04` — RRF, với trần đã biết trước
+>
+> Nếu RRF ra thấp hơn 0,6268 thì nó đang **làm hại** so với dense một mình, và đó là kết quả
+> phải báo cáo chứ không phải tinh chỉnh `k` cho tới khi số đẹp.
 >
 > ⚠️ Mọi số W2 đo trên `golden_v1` — vốn **review bằng model** (`TD-13`). So sánh *tương đối*
 > giữa các cấu hình vẫn hợp lệ (cùng một thước đo); con số *tuyệt đối* thì chưa được gọi là
@@ -317,13 +344,23 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · ⚠️ **KHÔNG dùng `Modifier.IDF`** cho sparse của BGE-M3 — trọng số đã học, chồng IDF lên là nhân đôi phép hạ bậc từ phổ biến và hỏng im lặng. IDF dành cho nhánh BM25 thô ở `W2-03`. Có test canh `modifier is None`
   · `HashingEmbeddingProvider` nay sinh được sparse (`sparse=True`, mặc định **tắt** vì `name` là cache key) — để `W2-03`/`W2-04` test được mà không cần GPU
   · ⚠️ **Chi phí độ trễ đo được**: p50 truy hồi dense 23,7 → **31,5 ms** (+33%, tái lập 3 lần) sau khi thêm sparse index vào cùng collection; p95 gần như không đổi (46,0 → 46,6 ms) vì p95 bị chi phối bởi forward pass embed truy vấn. **Chưa tách được** chi phí sparse index khỏi trạng thái segment sau build lại — phải đo lại ở `W2-04` nơi mỗi truy vấn đi cả hai nhánh
-- [ ] `W2-03` **Sparse / BM25 retriever** — **việc tiếp theo**
-  · DoD: query từ khóa lạ (mã số, tên riêng) mà dense miss thì sparse hit · Test: `tests/integration/test_sparse_retriever.py` (có case exact-ID lookup) · Evidence: —
-  · `retrieve_sparse()` đã có ở tầng store (`W2-02`) nhưng **chưa** là `Retriever`, nên eval harness chưa chạy được trên nó. Việc ở đây là bọc lại + đo trên golden set kèm `p`/CI
-  · Mặt bù phải đo cùng: **không trùng token thì sparse trả rỗng** (có test), và `min = 3 entry/chunk` nghĩa là có chunk sparse gần như không tìm ra được. Hai nhánh hỏng theo hai kiểu khác nhau — đó là lý do `W2-04` đáng làm
-  · Nhánh BM25 **thô** thì mới cần `modifier=Modifier.IDF`, khác nhánh BGE-M3 (xem `W2-02`)
-- [ ] `W2-04` **RRF fusion** (`k=60`, configurable)
+- [x] `W2-03` **Sparse retriever** (`retrieve_sparse()` → `Retriever`, đo được) — 2026-08-20
+  · DoD: ✅ query từ khóa lạ mà dense miss thì sparse hit — **known-item search: hit@10 0,0784 → 0,5098**, hit@1 0,0196 → 0,3529, McNemar `p = 4,8e-07`, và **0 mã nào dense tìm ra mà sparse không** · Test: `tests/integration/test_sparse_retriever.py` (14 integration + 4 gpu) + `tests/unit/test_sparse_branch.py` (16) · Evidence: `reports/w2-03-sparse-retriever.md`, `w2-03-known-item.json`, `scripts/known_item_probe.py`
+  · ⭐ **Trần lý thuyết của `W2-04`: hợp hai nhánh cho `hit_rate@10 = 0,7033`** vs dense 0,6268 (+12,2% tương đối). Ghi lại **trước khi** làm RRF để lúc đó không tự diễn giải kết quả theo hướng có lợi
+  · **Trên golden set sparse KÉM hơn dense** và kém có ý nghĩa: nDCG@10 0,4442 → 0,3733 (CI95 [−0,1190, −0,0225]), `hit_rate@10` 0,6268 → 0,5120 (`p = 0,002`, 40↔16). 12/15 metric khác biệt thật, tất cả cùng chiều. Đây là kết quả **phải chờ đợi**: `golden_v1` là câu hỏi tự nhiên, đúng loại truy vấn dense sinh ra để xử lý
+  · Chỗ sparse **bù được**: `en` 9↔4 (sparse **thắng** trên truy vấn tiếng Anh), `factoid` 10↔7. Chỗ sparse **chết hẳn**: `cross_lingual` 1↔19 và **0 câu cả hai** — câu tiếng Việt trên tài liệu tiếng Anh không có token nào trùng
+  · ⚠️ **Sparse học được KHÔNG phải index khớp đúng.** 25/51 mã không nhánh nào tìm ra, và tokenizer giải thích hết: mã tìm được có neo từ vựng (`VIE-01` → `['▁','VIE','-01']`), mã miss rã thành chữ số chung (`P171645` → `['▁P','171','645']`). Đây là bằng chứng cho `TD-18`, không còn là phỏng đoán
+  · ⚠️ **Chi phí: tìm trong index sparse 97,8 ms vs dense 17,8 ms (5,5×).** p50 toàn phần 30,2 → 113,4 ms. Embed truy vấn 12,6 ms **dùng chung** cả hai nhánh (lợi còn lại của "một forward pass" ở `W2-01`). Mỗi truy vấn hybrid ở `W2-04` ≈ 128 ms
+  · ⭐ **Ngoài DoD: đóng một hố im lặng trong `compare.py`.** Harness lấy `fetch_doc_chunks` bằng `getattr`; retriever thiếu method đó thì nhãn rơi về nhãn cũ và hai lần chạy **cùng số nhãn nhưng khác nhãn** vẫn so được. Thêm `QueryScore.relevant_digest`; `compare.py` từ chối **toàn bộ** khi băm lệch. Đã chạy thật: 209/209 có băm, **0 lệch**
+  · **Kết quả âm đã ghi lại, không xoá**: giả định "dense lẫn giữa các mã gần giống" **sai** — trên corpus 7 chunk cả hai đều tra đúng hạng 1. Có test canh chính kết quả âm đó, thay vì đổi assertion thành `rank_sparse <= rank_dense` (sẽ pass vì bằng nhau, và đọc như một chiến thắng)
+  · Giả định "không trùng token thì sparse trả rỗng" cũng **sai** trên 15.814 chunk: sparse trả đủ 20 kết quả cho cả 209 câu. Giới hạn thật là **xếp hạng sai**, không phải **không trả gì**
+  · Nhánh truy hồi **không** vào `IndexConfig` (không quyết định vector nào được ghi → không thuộc `fingerprint`). Là cờ `--retrieval-mode` / `MODE=`, và ở `W2-07` là một chiều của ma trận
+- [ ] `W2-04` **RRF fusion** (`k=60`, configurable) — **việc tiếp theo**
   · DoD: deterministic, tie-break ổn định · Test: `tests/unit/test_rrf.py` — so với thứ hạng tính tay, case 1 list rỗng · Evidence: —
+  · **Trần đã biết trước khi bắt đầu: `hit_rate@10` tối đa 0,7033** (dense 0,6268). RRF chỉ tiến gần được, vì nó hợp nhất theo thứ hạng chứ không nhìn nội dung
+  · Hợp nhất theo **thứ hạng**, không theo điểm — thang hai nhánh không so được (`W2-02`)
+  · Đo lại độ trễ ở đây: ~128 ms/truy vấn theo `W2-03` §8. Đây là chỗ tách được chi phí sparse index khỏi trạng thái segment mà `W2-02` chưa tách được
+  · ⚠️ Có ca **cả hai nhánh cùng sai một kiểu** (có test): hợp nhất hai danh sách cùng sai thì vẫn sai. Chỗ đó là việc của `W2-05`
 - [ ] `W2-05` **Cross-encoder reranker** `bge-reranker-v2-m3` (batch, top_n configurable)
   · DoD: rerank 50 → 6 trong < 400ms trên GPU; có CPU fallback · Test: `tests/unit/test_reranker.py` (thứ tự score giảm dần, batch == single) · Evidence: bench latency
 - [ ] `W2-06` **Metadata filter** (tenant_id, doc_type, date range, lang)
@@ -524,6 +561,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | `TD-14` | **7 `reference_answer` lẫn ngữ cảnh lúc sinh** — "Theo đoạn văn…", "Đoạn văn không nói…", "không có trong các đoạn văn được cung cấp" (`multi_hop-78a942bf28`, `multi_hop-d8e57b6cb1`, `multi_hop-6af19bc73a`, `adversarial-8ce6a8483a`, `adversarial-87b49c12d2`, `unanswerable-200ea2a853`, `unanswerable-599b31f973`) | **Vô hại cho eval truy hồi** (`W1-13` chỉ dùng `relevant_chunk_ids`/`relevant_spans`, không đọc `reference_answer`). Câu hỏi thì sạch: **0/242** câu có lỗi này | Dọn trước `W5-01`: judge so câu trả lời của hệ thống với `reference_answer`, mà "Theo đoạn văn 1" là thứ hệ thống thật không bao giờ nói được → judge sẽ trừ điểm oan. Làm cùng lượt người review `TD-13` |
 | `TD-15` | **Nhãn liên quan chưa đầy đủ** — một dữ kiện có mặt ở nhiều tài liệu nhưng chỉ 1 chỗ được gán. Ví dụ "92% tài sản của các định chế tài chính" có trong **cả hai** *Financial sector assessment* và *Taking stock* | Hiếm: phép thử Jaccard ở `W1-11` cho **1/78** câu. Sửa cho đủ nghĩa là gán chéo toàn corpus × toàn golden set — đắt hơn giá trị mang lại ở giai đoạn này | Recall thật **cao hơn** số đo, tức baseline là **cận dưới** — sai theo chiều an toàn (không thổi phồng cải tiến). Nếu W2 đưa recall lên >0,6 mà vẫn có câu "trượt", kiểm chỗ này trước khi kết luận hệ thống sai |
 | `TD-16` | **Nhóm `unanswerable` thiếu đa dạng** — 10/33 câu theo cùng một khuôn "hỏi về nước khác" (Thái Lan, Trung Quốc, Indonesia…) | 33 câu vẫn đủ để đo refusal correctness ở `W5-02`, và khuôn này đúng là một dạng câu không trả lời được | Thêm 2 khuôn khác khi có nguồn (b)/(c): hỏi về **mốc thời gian ngoài phạm vi** tài liệu, và hỏi số liệu **chi tiết hơn mức tài liệu có**. Nếu chỉ đo được một khuôn thì refusal correctness cao có thể chỉ nghĩa là hệ thống giỏi nhận ra tên nước lạ |
+| `TD-18` | **Không có nhánh khớp đúng cho mã tài liệu.** `W2-03` đo được: 25/51 mã (project ID, trust fund ID) **không nhánh nào** tìm ra ở top-10. Nguyên nhân là vocab **subword** của BGE-M3: `P171645` → `['▁P','171','645']`, và `171`/`645` có mặt khắp 15.814 chunk tài liệu thống kê. Mã tìm được thì luôn có một mảnh subword tự nó là từ hiếm (`VIE-01` → `['▁','VIE','-01']`) | Ảnh hưởng **không** đo được trên `golden_v1` — 209 câu đều là câu hỏi tự nhiên, không có câu nào tra mã. Nhưng đây là loại truy vấn có thật trong sản phẩm (người dùng dán mã dự án vào hộp tìm kiếm), và **RRF (`W2-04`) lẫn reranker (`W2-05`) đều không sửa được** — cả hai chỉ xếp lại thứ tự những gì đã được tìm ra | Hai phương án, **đo cái rẻ trước**: (a) **filter payload khớp chuỗi** — Qdrant đã có `create_payload_index` từ `W1-07`, không cần build lại index; (b) **BM25 thô mức từ** (không phải subword) làm named vector sparse thứ hai — đây là chỗ cần `modifier=Modifier.IDF`, khác nhánh BGE-M3, nhưng phải đổi schema + build lại index. `scripts/known_item_probe.py` là phép đo sẵn có để so trước/sau |
 
 ---
 
@@ -531,6 +569,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-20 | **`W2-03` xong — sparse có số, và hai câu trả lời ngược nhau.** `retrieve_sparse()` giờ là `Retriever` (`QdrantSparseRetriever` bọc chính store đang mở kết nối; `build_branch()` chọn nhánh, `--retrieval-mode`/`MODE=`). **Trên golden set sparse KÉM hơn dense có ý nghĩa**: nDCG@10 0,4442 → 0,3733 (CI95 [−0,1190, −0,0225]), `hit_rate@10` 0,6268 → 0,5120 (`p = 0,002`), 12/15 metric cùng chiều — kết quả **phải chờ đợi** vì `golden_v1` toàn câu hỏi tự nhiên. **Nhưng DoD thì đạt áp đảo**: `golden_v1` không đo được DoD nên dựng phép đo riêng `scripts/known_item_probe.py` (known-item search trên 51 mã tài liệu, tiêu chí kiểm bằng **so chuỗi** nên không cần nhãn người) — sparse hit@10 **0,0784 → 0,5098**, hit@1 0,0196 → 0,3529, McNemar `p = 4,8e-07`, và **0 mã nào dense tìm ra mà sparse không**. ⭐ **Con số đáng nhất: trần của `W2-04` là `hit_rate@10` 0,7033** vs dense 0,6268 — ghi lại trước khi làm RRF để lúc đó không tự diễn giải theo hướng có lợi. Chỗ sparse bù được: `en` 9↔4 (**sparse thắng** trên truy vấn tiếng Anh), `factoid` 10↔7; chỗ sparse chết hẳn: `cross_lingual` 1↔19 và **0 câu cả hai**. ⚠️ **Sparse học được KHÔNG phải index khớp đúng**: 25/51 mã không nhánh nào tìm ra, tokenizer giải thích hết (`VIE-01` → `['▁','VIE','-01']` có neo từ vựng và tìm được; `P171645` → `['▁P','171','645']` toàn chữ số chung và miss) → `TD-18`, giờ có bằng chứng chứ không phải phỏng đoán. ⚠️ Chi phí: tìm trong index sparse **97,8 ms vs dense 17,8 ms (5,5×)**, p50 toàn phần 30,2 → 113,4 ms; embed truy vấn 12,6 ms **dùng chung** cả hai nhánh. ⭐ **Ngoài DoD: đóng một hố im lặng trong `compare.py`** — harness lấy `fetch_doc_chunks` bằng `getattr`, nên retriever thiếu method đó thì nhãn rơi về nhãn cũ và hai lần chạy **cùng số nhãn nhưng khác nhãn** vẫn so được. Thêm `QueryScore.relevant_digest`; `compare.py` từ chối **toàn bộ** khi băm lệch (không lọc bỏ câu lệch rồi so phần còn lại — đó là tự chọn mẫu). Chạy thật: 209/209 có băm, **0 lệch**. **Hai giả định của tôi bị phản chứng và được giữ lại trong test**: "dense lẫn giữa các mã gần giống" (sai — trên 7 chunk cả hai đều đúng hạng 1; có test canh chính kết quả âm đó thay vì đổi assertion thành `rank_sparse <= rank_dense` để xanh) và "không trùng token thì sparse trả rỗng" (sai trên 15.814 chunk — sparse trả đủ 20 cho cả 209 câu; giới hạn thật là **xếp hạng sai**). +31 unit (697) + 14 integration (73) + 4 gpu (15). Evidence: `reports/w2-03-sparse-retriever.md`, `w2-03-known-item.json` |
 | 2026-08-20 | **`W2-02` xong — một collection, hai loại vector.** `rag_bgem3` build lại với cả named vector `dense` (1024-d) và `sparse`, query độc lập qua `retrieve()` / `retrieve_sparse()`. **Sparse gần như miễn phí: +8,8 s trên 389 s (+2,3%)**, dung lượng +19% — hệ quả trực tiếp của việc `W2-01` cho hai loại vector ra từ **một** forward pass; gọi provider hai lần thì đây là +380 s. **Dense bit-identical sau khi build lại**: 15/15 metric không lệch một chữ số, 0/209 câu đổi điểm — kiểm tra tuyên bố "một đường code" của `W2-01` trên 15.814 chunk thật thay vì trên 4 câu test. Sparse thật: 95,9 entry/chunk (p50 100 · p95 147 · min **3**), mật độ 0,0384% của vocab 250.002, ReLU loại ~55% token. ⭐ **Ngoài DoD: `ensure_collection` giờ KIỂM TRA schema** thay vì thấy tồn tại là trả về — trước đó chạy provider sinh sparse lên collection dense-only sẽ chết ở *giữa* job 15.000 chunk. 4 ca lệch đều có test, trong đó ca "collection có sparse mà provider chỉ dense" là **hỏng im lặng**: eval ra số trông bình thường trong khi nửa index bị bỏ. `schema_problems()` thuần nên 12 ca test trong `make test`. Thêm `scripts/migrate_collection.py` — cố ý **không** migrate tại chỗ (Qdrant không cho thêm named vector), mà chẩn đoán lệch schema + in đúng lệnh phải chạy; mã trả về 0/1/2/3. `HashingEmbeddingProvider` nay sinh được sparse (mặc định **tắt** vì `name` là cache key của semantic chunker — để mặc định bật làm 2 test W1 đỏ ngay, đó là cách phát hiện). ⚠️ **Không dùng `Modifier.IDF`** cho BGE-M3: trọng số đã học, chồng IDF là nhân đôi phép hạ bậc và hỏng im lặng. ⚠️ Thang điểm hai nhánh không so được (cosine vs dot không trần) nên `W2-04` phải hợp nhất theo **thứ hạng**. +22 unit (666) + 21 integration (59). Evidence: `reports/w2-02-qdrant-hybrid.md` |
 | 2026-08-20 | **`W2-01` xong — BGE-M3, và mức tăng lớn nhất của dự án tới giờ.** Đổi model embedding `vietnamese-bi-encoder` → `BAAI/bge-m3`, **giữ nguyên toàn bộ chunking của baseline**: nDCG@10 **0,1621 → 0,4442** (+174%), `hit_rate@5` 0,2153 → 0,5455, MRR 0,1660 → 0,4394, recall@10 0,2257 → 0,5813. **Cả 15 metric có ý nghĩa thống kê** (`p < 0,001` hoặc CI95 không chứa 0); ở `hit_rate@5` là 74 câu thắng vs 5 câu thua. `cross_lingual` recall@5 **0,0000 → 0,3023** — 43 câu (18% golden set) đi từ *không hoạt động* sang hoạt động. 5/6 nhóm truy vấn cải thiện có ý nghĩa. Truncation **56,9% → 0,0%**. Vì giữ `chunk_size=1000` nên nhãn **bit-identical** với baseline (`n_relevant_mean` 1,3828 cả hai bên) → recall@k/nDCG/MAP so được trực tiếp, `compare.py` không từ chối metric nào. ⚠️ **Mức tăng này là của model, KHÔNG phải của việc hết truncation**: `TD-11` đã tách riêng phần đó (`chunk550` cũng hết cắt) và nó cho `p = 0,711`; vai trò thật của cửa sổ 8192 là *cho phép giữ `chunk_size=1000`*, tức làm phép đo sạch. Hạ tầng thêm: `SparseVector` (bất biến cưỡng chế), `HybridVectors`, năng lực sparse tuỳ chọn trên `EmbeddingProvider` (mặc định `None` — `None` ≠ rỗng, bài học `TD-11` lần thứ hai), `BgeM3EmbeddingProvider` (dense + sparse **một** forward pass, có test canh dense khớp `SentenceTransformer.encode()` tới 1,5e-8), `embedding_max_batch_tokens` (knob VRAM, ngoài `fingerprint`), `make test-gpu`. ⚠️ **Sparse chưa đi vào Qdrant** — eval là dense-only, chờ `W2-02`. `G2` 2/4 điều kiện. +44 unit test (644 tổng) + 11 gpu test. Sửa lỗi sổ sách: p95 baseline là **32,8 ms** không phải 39,9 ms. Evidence: `reports/w2-01-bge-m3.md` |
 | 2026-08-20 | **W2 bắt đầu — `TD-11` trả xong, kết quả ÂM.** Hạ `chunk_size` 1000 → 550 đưa truncation **56,9% → 0,4%** chunk (token mất 15,4% → 0,1%) và **không cải thiện gì đo được**: McNemar `p = 0,711`, mọi CI bootstrap chứa 0. Giả định của `TD-11` bị phản chứng — hạ `chunk_size` là **đánh đổi** (mỗi vector đọc 950 → 678 ký tự), không phải thu hồi nội dung. Ba thứ đổi cách làm phần còn lại của W2: (1) **không quét thêm `chunk_size`** với model đơn ngữ, đi thẳng `W2-01` BGE-M3 giữ `chunk_size=1000`; (2) **`golden_v1` chỉ phân giải được mức chênh ≥ 6 điểm `hit_rate`** nên mọi dòng ablation phải có `p`/CI — thêm `*-per-query.jsonl` + `pipeline/eval/compare.py` (McNemar exact + bootstrap cặp, không cần `scipy`); (3) **recall@k/nDCG/MAP không so được giữa hai `chunk_size`** vì nhãn neo theo span làm mẫu số đổi 1,38 → 1,96 nhãn/câu → tụt 29,6% kể cả khi truy hồi y nguyên, `compare.py` tự chặn. Thêm `make truncation` (đo `TD-11` tái lập được, chia theo ngôn ngữ: EN mất 19,4% token vs VI 7,5%) và `WARNING` truncation trong mọi lần build index. Thêm `TD-17` (1 tài liệu dùng `Ê` làm dấu cách). +66 unit test (600 tổng). Evidence: `reports/w2-td11-chunk-size.md` |

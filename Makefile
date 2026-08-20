@@ -110,6 +110,11 @@ BUNDLE ?= baseline
 BASE ?= baseline
 CAND ?= chunk550
 INDEX_CONFIG = configs/indexing/$(BUNDLE).yaml
+# Nhánh truy hồi (W2-03) — thuộc lần **đo**, không thuộc index, nên không nằm
+# trong file config. `RUN` tách khỏi `BUNDLE` để hai nhánh của cùng một index ghi
+# ra hai bộ báo cáo thay vì ghi đè lên nhau.
+MODE ?= dense
+RUN ?= $(BUNDLE)
 
 .PHONY: corpus
 corpus:  ## Tải corpus theo config (idempotent)
@@ -161,6 +166,11 @@ goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
 	$(PY) python -m pipeline.goldenset.freeze --verify
 
 .PHONY: eval-retrieval
-eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline)
+eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline MODE=dense RUN=tên)
 	$(PY) python -m pipeline.eval.retrieval_eval \
-		--index-config $(INDEX_CONFIG) --run-name $(BUNDLE)
+		--index-config $(INDEX_CONFIG) --run-name $(RUN) --retrieval-mode $(MODE)
+
+.PHONY: known-item
+known-item:  ## Known-item search: tra mã tài liệu, đo dense vs sparse (W2-03)
+	$(PY) python scripts/known_item_probe.py --config $(INDEX_CONFIG) \
+		--report plans/reports/w2-03-known-item.json

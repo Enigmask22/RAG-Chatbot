@@ -1,8 +1,8 @@
 # Retrieval eval — `bgem3`
 
-- Thời điểm chạy: `2026-08-20T13:04:30+00:00`
+- Thời điểm chạy: `2026-08-20T14:18:36+00:00`
 - Số truy vấn: **242** (chấm điểm 209, bỏ qua 33 câu unanswerable)
-- Config: `{"retriever": "qdrant-dense:rag_bgem3", "top_k": 20, "index_config": "configs\\indexing\\bgem3.yaml", "index_fingerprint": "0eaaf9265487eabb25eade5ecb6a85a74ebdbee194b1b5e215befe4bec474932", "collection": "rag_bgem3", "embedding_model": "BAAI/bge-m3", "chunking": {"strategy": "hybrid", "chunk_size": 1000, "chunk_overlap": 100, "separators": ["\n\n", "\n", ". ", " ", ""], "min_chunk_size": 200, "max_chunk_size": 1500, "semantic_buffer_size": 1, "semantic_threshold_percentile": 85.0, "semantic_min_sentences": 3, "hybrid_max_docs_for_semantic": 5, "neighbor_context_chars": 100}, "span_resolution": {"resolved": 209, "kept_chunk_ids": 33, "unmatched_queries": [], "min_overlap_ratio": 0.5, "label_changed": 9}}`
+- Config: `{"retriever": "qdrant-dense:rag_bgem3", "top_k": 20, "index_config": "configs\\indexing\\bgem3.yaml", "index_fingerprint": "0eaaf9265487eabb25eade5ecb6a85a74ebdbee194b1b5e215befe4bec474932", "collection": "rag_bgem3", "embedding_model": "BAAI/bge-m3", "retrieval_mode": "dense", "chunking": {"strategy": "hybrid", "chunk_size": 1000, "chunk_overlap": 100, "separators": ["\n\n", "\n", ". ", " ", ""], "min_chunk_size": 200, "max_chunk_size": 1500, "semantic_buffer_size": 1, "semantic_threshold_percentile": 85.0, "semantic_min_sentences": 3, "hybrid_max_docs_for_semantic": 5, "neighbor_context_chars": 100}, "span_resolution": {"resolved": 209, "kept_chunk_ids": 33, "unmatched_queries": [], "min_overlap_ratio": 0.5, "label_changed": 9}}`
 - Môi trường: platform=Windows-11-10.0.26200-SP0, python=3.13.11
 
 ## Tổng thể
@@ -29,11 +29,11 @@
 
 | Phân vị | ms |
 |---|---:|
-| mean | 31.0 |
-| p50 | 30.4 |
-| p95 | 46.5 |
-| max | 49.5 |
-| stdev | 9.6 |
+| mean | 30.2 |
+| p50 | 30.2 |
+| p95 | 45.7 |
+| max | 49.7 |
+| stdev | 9.7 |
 
 ## Theo nhóm truy vấn
 

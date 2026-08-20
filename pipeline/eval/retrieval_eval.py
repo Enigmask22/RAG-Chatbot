@@ -13,6 +13,7 @@ mà không cần chạy lại retrieval (chỉ cần file kết quả thô).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import platform
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from rag_core.retrieval.base import Retriever
+from rag_core.schemas import RetrievalMode
 
 from .golden import GoldenQuery, load_golden_set
 from .metrics import (
@@ -77,6 +79,15 @@ class QueryScore:
     n_relevant: int
     n_retrieved: int
     scores: dict[str, float]
+    relevant_digest: str = ""
+    """Băm của **tập** `chunk_id` được coi là liên quan cho câu này.
+
+    `n_relevant` một mình không đủ để hai lần chạy so được với nhau: hai cấu hình
+    có thể cho cùng *số* nhãn mà nhãn **khác nhau** — chuyện xảy ra ngay khi một
+    lần chạy tính lại nhãn từ span (`TD-12`) còn lần kia rơi về nhãn ghi sẵn
+    trong file. Lúc đó `hit_rate` của hai bên đo hai bài toán khác nhau, và không
+    có gì báo lỗi. `compare.py` từ chối so khi băm lệch.
+    """
 
 
 @dataclass
@@ -158,6 +169,12 @@ class EvalReport:
         return "\n".join(lines)
 
 
+def _label_digest(chunk_ids: Sequence[str]) -> str:
+    """Băm tập nhãn, không phụ thuộc thứ tự — xem `QueryScore.relevant_digest`."""
+    blob = "\n".join(sorted(set(chunk_ids)))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
 def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else float("nan")
 
@@ -225,6 +242,7 @@ def evaluate_run(
                 n_relevant=len(query.relevant_chunk_ids),
                 n_retrieved=len(retrieved),
                 scores=scores,
+                relevant_digest=_label_digest(query.relevant_chunk_ids),
             )
         )
 
@@ -317,6 +335,7 @@ def _eval_against_index(
     *,
     run_name: str,
     top_k: int,
+    mode: str = "dense",
     min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
 ) -> EvalReport:
     """Dựng retriever từ chính config đã build index rồi chạy eval.
@@ -324,8 +343,13 @@ def _eval_against_index(
     Dùng lại **cùng một file config** thay vì khai báo model/collection lần nữa
     ở phía eval. Nếu hai bên khai báo riêng thì sớm muộn cũng lệch — eval sẽ đo
     một index được build bằng model khác, và không có gì báo lỗi cả.
+
+    `mode` chọn **nhánh** truy hồi trên cùng index đó (`W2-03`). Nó không phải
+    một trường của `IndexConfig` vì nó không quyết định vector nào được ghi —
+    xem `rag_core/retrieval/branch.py`.
     """
     # Import cục bộ: eval chấm điểm từ file `--retrieved` không cần qdrant-client.
+    from rag_core.retrieval import build_branch
     from rag_core.settings import get_settings
 
     from ..indexing.config import load_index_config
@@ -333,17 +357,24 @@ def _eval_against_index(
     index_config = load_index_config(index_config_path)
     settings = get_settings()
     embeddings = index_config.build_embeddings()
-    retriever = index_config.build_retriever(
+    store = index_config.build_retriever(
         embeddings,
         url=settings.qdrant_url,
         api_key=(settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None),
     )
+    # Kiểm schema **trước** khi quét span và trước khi truy vấn. Đây là chỗ trả
+    # lời chính cái lo của docstring trên: config eval và collection thật có thể
+    # lệch nhau (đổi model → đổi số chiều), và không có bước này thì lỗi hiện ra
+    # sau vài giây quét vô ích — hoặc tệ hơn là không hiện ra.
+    store.verify_schema()
+    retriever = build_branch(store, mode)
 
     config: dict[str, Any] = {
         "index_config": str(index_config_path),
         "index_fingerprint": index_config.fingerprint,
         "collection": index_config.collection_name,
         "embedding_model": index_config.embedding_model,
+        "retrieval_mode": mode,
         "chunking": json.loads(index_config.chunking.model_dump_json()),
     }
 
@@ -418,6 +449,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument(
+        "--retrieval-mode",
+        default="dense",
+        choices=[m.value for m in RetrievalMode],
+        help="Nhánh truy hồi trên index đã build. `dense` là mặc định và là thứ "
+        "mọi lần chạy trước W2-03 đã đo; `sparse` dùng trọng số lexical.",
+    )
+    parser.add_argument(
         "--min-overlap-ratio",
         type=float,
         default=DEFAULT_MIN_OVERLAP_RATIO,
@@ -442,6 +480,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             queries,
             run_name=args.run_name,
             top_k=args.top_k,
+            mode=args.retrieval_mode,
             min_overlap_ratio=args.min_overlap_ratio,
         )
     elif args.retrieved is not None:

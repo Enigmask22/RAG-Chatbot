@@ -174,3 +174,41 @@ class TestGoldenSet:
         path.write_text('{"query_id": "q1"}\n', encoding="utf-8")
         with pytest.raises(ValueError, match=r":1 —"):
             load_golden_set(path)
+
+
+class TestLabelDigest:
+    """`W2-03` — băm tập nhãn, để `compare.py` từ chối so hai lần chạy dùng nhãn
+    khác nhau. Xem `QueryScore.relevant_digest`."""
+
+    def test_written_for_every_scored_query(self) -> None:
+        report = evaluate_run(QUERIES, {"q1": ["c1"], "q2": ["c2"], "q3": ["c3", "c4"]})
+        assert all(row.relevant_digest for row in report.per_query)
+
+    def test_same_labels_same_digest(self) -> None:
+        a = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c1", "c2"])], {})
+        b = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c1", "c2"])], {})
+        assert a.per_query[0].relevant_digest == b.per_query[0].relevant_digest
+
+    def test_order_does_not_matter(self) -> None:
+        """Tập nhãn, không phải danh sách nhãn: ánh xạ span sinh nhãn theo thứ tự
+        chunk trong tài liệu, và thứ tự đó không mang thông tin về độ liên quan."""
+        a = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c1", "c2"])], {})
+        b = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c2", "c1"])], {})
+        assert a.per_query[0].relevant_digest == b.per_query[0].relevant_digest
+
+    def test_different_labels_different_digest(self) -> None:
+        a = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c1"])], {})
+        b = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c9"])], {})
+        assert a.per_query[0].relevant_digest != b.per_query[0].relevant_digest
+
+    def test_same_count_different_labels_is_caught(self) -> None:
+        """Đúng ca mà `n_relevant` một mình không thấy."""
+        a = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c1", "c2"])], {})
+        b = evaluate_run([_query("q", QueryCategory.FACTOID, Language.VI, ["c1", "c3"])], {})
+        assert a.per_query[0].n_relevant == b.per_query[0].n_relevant
+        assert a.per_query[0].relevant_digest != b.per_query[0].relevant_digest
+
+    def test_digest_is_in_the_jsonl(self) -> None:
+        report = evaluate_run(QUERIES, {"q1": ["c1"]})
+        row = json.loads(report.to_jsonl().splitlines()[0])
+        assert len(row["relevant_digest"]) == 16
