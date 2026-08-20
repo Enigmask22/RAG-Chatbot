@@ -1,7 +1,7 @@
 # CHECKLIST — RAG Platform Upgrade
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
-> Cập nhật lần cuối: 2026-08-17 · Trạng thái tổng: **tuần 1: 10/13 task xong · index baseline 15.814 chunk · 266 câu nháp golden set · gate `G1` 2/4**
+> Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 11/13 task xong · index baseline 15.814 chunk · 266 câu nháp golden set · corpus đã version bằng DVC · gate `G1` 2/4**
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -50,7 +50,7 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 | Giai đoạn | Tổng | `[x]` Done | `[!]` Chờ test | `[~]` Đang làm | `[?]` Bị chặn | `[ ]` TODO | Gate |
 |---|---:|---:|---:|---:|---:|---:|:---:|
 | W0 · Chuẩn bị | 8 | 1 | 0 | 1 | 3 | 3 | — |
-| W1 · Nền móng + Eval baseline | 13 | 10 | 0 | 0 | 3 | 0 | `G1` ⬜ |
+| W1 · Nền móng + Eval baseline | 13 | 11 | 0 | 1 | 1 | 0 | `G1` ⬜ |
 | W2 · Retrieval upgrade | 9 | 0 | 0 | 0 | 0 | 9 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
@@ -148,8 +148,13 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · **Bắt được 3 lỗi chỉ lộ khi chạy thật**: (a) `HybridChunker` luôn chọn semantic vì cache chia lô thành 1 tài liệu → sửa bằng `Chunker.prepare(n)`; (b) `HybridChunker.name` không phân biệt nhánh → hai lần chạy đọc nhầm cache của nhau; (c) **p95 độ trễ 15.219 ms là thời gian nạp model**, không phải truy hồi → thêm warm-up, p95 còn 98 ms
   · Đo được **hệ số 1.24x**: `neighbor_context_chars=100` của bản POC làm text đem embed phình từ 14,3 lên 17,7 triệu ký tự
   · `IndexConfig` là tiền thân của `RagBundle` (`W4-01`): `fingerprint` băm đúng thứ quyết định vector, **không** gồm `device`/`batch_size` để đổi máy không phải build lại — có test canh cả hai chiều
-- [?] `W1-09` **DVC init + version corpus** (`data/corpus`, `data/golden`)
-  · DoD: `dvc status` clean, remote local hoặc GDrive hoạt động · Test: `dvc pull` trên clone sạch lấy đủ file · Evidence: `.dvc/` committed
+- [x] `W1-09` **DVC init + version corpus** — `data/corpus` (60 tài liệu, md5 `9aeb1b77…`, 14,7 MiB)
+  · DoD: `dvc status` sạch ✅ · remote local hoạt động ✅ · Test: `tests/unit/test_dvc_state.py` **23 case** + phép thử clone sạch chạy thật · Evidence: `.dvc/` committed + `reports/w1-09-dvc.md`
+  · **Clone sạch → `dvc pull` → 61 file trong 1,9s**, rồi so sha256 từng tài liệu với manifest: **60/60 khớp**. Đây là bằng chứng mạnh hơn `dvc status`, vì nó chứng minh nội dung DVC phục hồi là byte-identical với thứ tải từ World Bank
+  · **Remote KHÔNG nằm trong `.dvc/config`** (file được commit) mà ở `.dvc/config.local`. Một URL `D:/...` commit vào config dùng chung thì mọi clone nhận remote trỏ vào ổ đĩa không tồn tại — cùng loại lỗi với đường dẫn tuyệt đối trong `.venv/*.pth` vừa gặp lúc đổi tên workspace
+  · ⚠️ **Làm khác checklist: `data/golden` giữ trong git, không đưa vào DVC.** Golden set là thước đo, thứ cần nhất ở nó là diff đọc được lúc review (ai đổi nhãn câu nào, từ gì sang gì); DVC thay file bằng một hash nên mất đúng thứ đó. 284 KB text không phải lý do để tránh git. Tính tái lập không mất: một commit ghim cả hai. Lý lẽ đầy đủ ở report §3.2
+  · Corpus giờ có **hai** cơ chế versioning (sha256/manifest + md5/DVC) và chỗ cả hai đều mù là phép so **số lượng**. `pipeline/corpus/dvc_state.py` canh chỗ đó: thêm file vào `data/corpus/` rồi `dvc add` mà quên manifest thì không lỗi nào nổ ra — build index bỏ qua file lạ, `dvc status` vẫn sạch, `dvc push` vẫn đem nó lên remote
+  · Bắt được lúc chạy thật: `load_manifest` trả `[]` cho đường dẫn không tồn tại (chủ ý, `fetch_corpus.py` cần thế ở lần đầu) → gõ sai đường dẫn manifest sẽ báo thành "hai cơ chế lệch nhau", dẫn đi sai hướng. Đã thêm guard riêng
 - [x] `W1-10` **Script sinh nháp golden set** — DeepSeek sinh Q + relevant_chunk_ids từ chunk thật, kèm phân loại category
   · DoD: **266 câu nháp** (≥250 ✅) · chi phí **$0,5821** ($0,00219/câu) · khử trùng lặp có · Test: `test_goldenset_gen.py` **35 case** + `test_goldenset_dedupe.py` **19 case** + `test_goldenset_sampling.py` **23 case** + `test_llm_provider.py` **23 case** · Evidence: `reports/w1-10-goldenset-draft.md` + `data/golden/draft_v1.jsonl`
   · Phân bố: factoid 78 · cross_lingual 46 · unanswerable 40 · adversarial 36 · multi_hop 34 · aggregation 28 · table_lookup 4. Ngôn ngữ vi 167 / en 99, trải trên **44/60 tài liệu**
@@ -372,6 +377,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | `TD-06` | Toàn bộ `Document` nằm trong RAM khi build index | 60 tài liệu = 14 MB, tối ưu sớm là lãng phí | `W3-07` (re-index tăng dần) sẽ đọc theo luồng |
 | ~~`TD-07`~~ | ~~`plans/` bị thêm vào `.gitignore`~~ | **Đã xử lý**: bỏ dòng đó, vì DoD của dự án bắt buộc mỗi task có đường dẫn Evidence | ✅ |
 | `TD-08` | 22/163 lời gọi LLM bị cắt ở `max_tokens=6000` — toàn bộ ngân sách đi vào chuỗi suy luận | Vẫn đủ 266 câu; nâng tiếp là trả tiền cho phần suy luận không dùng tới | Thử `--questions-per-call 1` (prompt ngắn → suy luận ngắn) khi cần thêm câu |
+| `TD-10` | DVC remote chỉ là thư mục local `D:/dvc-remote/rag-chatbot` | Nguồn (a) còn đường phục hồi độc lập: `scripts/fetch_corpus.py` tải lại từ World Bank rồi so sha256. Mất remote chưa mất corpus | **Bắt buộc dựng remote dùng chung trước khi thêm nguồn (b)/(c)** — văn bản pháp luật + báo cáo HOSE phải chọn tay, không script nào tải lại được, mất remote là mất corpus |
 | `TD-09` | Chưa kiểm được câu `unanswerable` có **thật sự** không trả lời được từ corpus | Model có thể vô tình hỏi thứ mà một tài liệu khác trả lời được; code không phát hiện ra | `W1-11`: chạy chính retriever lên 40 câu đó, câu nào ra chunk điểm rất cao thì phân loại lại |
 
 ---
@@ -380,6 +386,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-20 | **`W1-09` xong — corpus đã version bằng DVC**: 60 tài liệu / 14,7 MiB, `dvc pull` trên clone sạch lấy đủ 61 file trong 1,9s và **60/60 sha256 khớp manifest**. Thêm `pipeline/corpus/dvc_state.py` canh lệch giữa hai cơ chế versioning + 23 test (317 → 338 unit). Remote đặt ở `.dvc/config.local` chứ không phải `.dvc/config`. Làm khác checklist: `data/golden` giữ trong git (lý lẽ ở `reports/w1-09-dvc.md` §3.2). Thêm `TD-10` |
+| 2026-08-20 | **Dọn codebase + đổi tên repo**: bản POC chuyển vào `legacy/` (giữ lịch sử qua `git mv`), repo đổi tên `project_1.2_chatbot_rag` → `RAG-Chatbot`. Evidence: `reports/rename-workspace.md` |
 | 2026-08-17 | **`W1-10` xong — 266 câu nháp golden set** ($0,5821 · 640s · 163 lời gọi). Thêm `packages/rag_core/llm/` và `pipeline/goldenset/`, 100 test mới. Phát hiện `deepseek-chat` chỉ là bí danh của `deepseek-v4-flash`; phát hiện model suy luận tiêu hết ngân sách token trước khi viết JSON; phát hiện 27,8% chunk bị trộn hai cột PDF. Thêm `NEW-05`, `NEW-06`, `TD-08`, `TD-09`; trả xong `TD-07`. `W0-04` hết bị chặn |
 | 2026-08-17 | **`W1-08` xong — index baseline đã build**: 60 tài liệu → 15.814 chunk (768 chiều, cuda, 202s). Thêm `pipeline/indexing/` (config + corpus loader + build_index), `configs/indexing/{baseline,smoke}.yaml`, 59 test mới. Trả xong `TD-02`, `TD-03`; thêm `NEW-03`, `NEW-04`, `TD-06`, `TD-07`. Ghim torch CUDA (`cu126`) vì wheel PyPI trên Windows là bản CPU-only |
 | 2026-08-17 | **Corpus nguồn (a) xong**: 60 tài liệu World Bank (40 EN + 20 VI) qua `scripts/fetch_corpus.py`. Thêm `pipeline/corpus/` (manifest ép giấy phép + adapter WDS) và 23 test. Phát hiện ADB chặn truy cập tự động (403) → phải tải tay qua `seed_list`. Thêm `NEW-02`, `TD-04`, `TD-05`; tổng 72 → 73 task |

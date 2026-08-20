@@ -226,6 +226,23 @@ class TestCountAgreement:
 
         assert verify_corpus_tracking(dvc, manifest, root).tracked_documents == 1
 
+    def test_missing_manifest_is_its_own_error(self, tmp_path: Path) -> None:
+        """Gõ sai đường dẫn manifest KHÔNG được báo thành "hai cơ chế lệch nhau".
+
+        `load_manifest` trả `[]` cho file không tồn tại (chủ ý, vì
+        `fetch_corpus.py` cần thế ở lần chạy đầu), nên nếu không chặn thì lỗi
+        hiện ra là "DVC 60 vs manifest 0" — dẫn người đọc đi sai hướng hoàn toàn.
+        """
+        dvc = _write_dvc(tmp_path / "corpus.dvc", nfiles=61)
+        with pytest.raises(DvcTrackingError, match="Không thấy manifest"):
+            verify_corpus_tracking(dvc, tmp_path / "go-sai.csv", corpus_dir=None)
+
+    def test_empty_manifest_is_its_own_error(self, tmp_path: Path) -> None:
+        dvc = _write_dvc(tmp_path / "corpus.dvc", nfiles=61)
+        manifest = _write_manifest(tmp_path / "m.csv", [])
+        with pytest.raises(DvcTrackingError, match="không có dòng dữ liệu nào"):
+            verify_corpus_tracking(dvc, manifest, corpus_dir=None)
+
     def test_error_message_carries_the_numbers(self, tmp_path: Path) -> None:
         """Thông báo phải đủ để sửa mà không cần mở lại code."""
         dvc = _write_dvc(tmp_path / "corpus.dvc", nfiles=11)

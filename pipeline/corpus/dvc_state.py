@@ -141,7 +141,19 @@ def verify_corpus_tracking(
         DvcTrackingError: số lượng lệch, hoặc thiếu file mà manifest khai.
     """
     out = load_dvc_out(dvc_file)
+
+    # `load_manifest` cố ý trả `[]` khi file không tồn tại — `fetch_corpus.py`
+    # cần thế cho lần chạy đầu. Ở đây thì ngược lại: manifest thiếu luôn là lỗi,
+    # và nếu để trôi thì lỗi kế tiếp là "DVC 60 vs manifest 0" — đọc lên tưởng
+    # hai cơ chế lệch nhau, trong khi thật ra chỉ là gõ sai đường dẫn.
+    if not Path(manifest_path).exists():
+        raise DvcTrackingError(
+            f"Không thấy manifest {manifest_path}. Chạy "
+            "`scripts/fetch_corpus.py --config configs/corpus/worldbank_vietnam.yaml` trước."
+        )
     entries = load_manifest(manifest_path)
+    if not entries:
+        raise DvcTrackingError(f"Manifest {manifest_path} không có dòng dữ liệu nào.")
 
     root = Path(corpus_dir) if corpus_dir is not None else None
     if root is not None:
