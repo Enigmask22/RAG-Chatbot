@@ -1,7 +1,8 @@
 # CHECKLIST — RAG Platform Upgrade
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
-> Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 13/13 task xong · `golden_v1` 242 câu (review bằng MODEL, không phải người) · baseline recall@5 = 0,1746 · gate `G1` 4/4 ⚠️ với một điều kiện**
+> Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 13/13 task xong · `golden_v1` 242 câu (review bằng MODEL, không phải người) · baseline recall@5 = 0,1746 · gate `G1` 4/4 ⚠️ với một điều kiện · sẵn sàng vào `W2`**
+> Việc đầu tiên của `W2` đã chốt: **`TD-11`** (56,8% chunk bị cắt lúc embed) rồi **`W2-01`** BGE-M3 — hai nguyên nhân đã định lượng của recall@5 = 0,17, xem §4
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -49,32 +50,47 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 
 | Giai đoạn | Tổng | `[x]` Done | `[!]` Chờ test | `[~]` Đang làm | `[?]` Bị chặn | `[ ]` TODO | Gate |
 |---|---:|---:|---:|---:|---:|---:|:---:|
-| W0 · Chuẩn bị | 8 | 1 | 0 | 1 | 3 | 3 | — |
+| W0 · Chuẩn bị | 8 | 1 | 0 | 2 | 2 | 3 | — |
 | W1 · Nền móng + Eval baseline | 13 | 13 | 0 | 0 | 0 | 0 | `G1` 🟡 |
 | W2 · Retrieval upgrade | 9 | 0 | 0 | 0 | 0 | 9 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng** | **73** | **12** | **0** | **2** | **6** | **53** | 0/6 |
+| **Tổng backlog gốc** | **71** | **14** | **0** | **2** | **2** | **53** | 0/6 |
+| §9 Task thêm mới (`NEW-xx`) | 6 | 6 | 0 | 0 | 0 | 0 | — |
+| **Tổng cộng** | **77** | **20** | **0** | **2** | **2** | **53** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
+
+> ⚠️ Con số tổng cũ ("73") là lỗi sổ sách tích lại: `NEW-03`…`NEW-06` được thêm vào §9 mà
+> không cộng vào tổng. Đã đếm lại trực tiếp từ các mục §2–§8 (**71**) và §9 (**6**).
 
 **Chỉ số chất lượng (điền dần, lấy từ `plans/reports/`)**
 
 | Metric | Baseline (hệ thống hiện tại) | Hiện tại | Mục tiêu | Nguồn |
 |---|---|---|---|---|
-| Recall@10 | — | — | ≥ 0.90 | `reports/baseline.md` |
-| nDCG@10 | — | — | ≥ 0.82 | — |
-| MRR | — | — | ≥ 0.75 | — |
-| Faithfulness | — | — | ≥ 0.92 | — |
-| Citation accuracy | — | — | ≥ 0.85 | — |
-| Refusal correctness | — | — | ≥ 0.85 | — |
-| p95 latency | — | — | ≤ 3500 ms | — |
-| Cost / query | — | — | ≤ $0.005 | — |
-| Judge–human kappa | — | — | ≥ 0.6 | — |
+| Recall@10 | **0,2257** | 0,2257 | ≥ 0.90 | `reports/baseline-retrieval.md` |
+| Recall@5 | **0,1746** | 0,1746 | — | `reports/baseline-retrieval.md` |
+| nDCG@10 | **0,1621** | 0,1621 | ≥ 0.82 | `reports/baseline-retrieval.md` |
+| MRR | **0,1660** | 0,1660 | ≥ 0.75 | `reports/baseline-retrieval.md` |
+| MAP@20 | **0,1349** | 0,1349 | — | `reports/baseline-retrieval.md` |
+| Faithfulness | *chưa đo* | — | ≥ 0.92 | `W5-01` |
+| Citation accuracy | *chưa đo* | — | ≥ 0.85 | `W5-02` |
+| Refusal correctness | *chưa đo* | — | ≥ 0.85 | `W5-02` (33 câu `unanswerable`) |
+| p95 latency (truy hồi) | **39,9 ms** | 39,9 ms | — | `reports/baseline-retrieval.md` |
+| p95 latency (end-to-end) | *chưa đo* | — | ≤ 3500 ms | `W4-13` / `W6-05` |
+| Cost / query | *chưa đo* | — | ≤ $0.005 | `W5-11` |
+| Judge–human kappa | *chưa đo* | — | ≥ 0.6 | `W5-04` |
 
-> Cột **Baseline** phải được điền xong ở `W1-13` trước khi làm bất cứ việc tối ưu nào của W2.
+> ✅ Cột **Baseline** đã điền ở `W1-13` (2026-08-20) — điều kiện để bắt đầu W2.
+> Năm metric xếp hạng đo trên **209/242 câu** của `golden_v1`; 33 câu `unanswerable` trả
+> `None` ở mọi metric xếp hạng và được đo riêng bằng refusal correctness (`W5-02`).
+> **p95 39,9 ms là độ trễ truy hồi thuần** (embed câu hỏi + tìm trong Qdrant, sau warm-up),
+> không phải end-to-end — chỉ so được với ngưỡng 3500 ms sau `W4-13`.
+> ⚠️ Đừng đọc "Recall@10 ≥ 0,90" như một khoảng cách lấp được bằng tinh chỉnh retrieval:
+> `cross_lingual` (20% tập đo) đang bằng **0** vì model embedding **đơn ngữ** — đổi model
+> là đổi hẳn tầng nền, không phải tinh chỉnh tham số.
 
 ---
 
@@ -93,8 +109,9 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · Lấy bản `.txt` mà World Bank trích sẵn (`txturl`) thay vì PDF → baseline `W1-13` không bị chặn bởi chất lượng Docling (`W3-01`)
   · ⚠️ **ADB trả HTTP 403 cho mọi truy cập tự động** — không viết adapter được. Tài liệu ADB phải tải tay rồi khai báo qua block `seed_list` (đã có mẫu trong config)
   · Còn thiếu: nguồn (b) văn bản pháp luật ~30 và (c) báo cáo thường niên HOSE ~30 — cả hai đều cần bạn chọn tay
-- [?] `W0-04` **Chuẩn bị secrets & `.env.example`** (`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `HF_TOKEN`, DB/Qdrant creds)
-  · DoD: `.env.example` đủ biến, `.env` trong `.gitignore`, startup fail-fast báo rõ biến nào thiếu · Test: `pytest tests/unit/test_settings.py` · Evidence: —
+- [x] `W0-04` **Chuẩn bị credential & biến môi trường** (`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `HF_TOKEN`, DB/Qdrant creds)
+  · DoD: file mẫu `.env.example` đủ biến ✅ · file thật nằm trong `.gitignore` ✅ · startup fail-fast báo **tất cả** biến thiếu trong một lần thay vì lần lượt ✅ · Test: `tests/unit/test_settings.py` — **8 case**, gồm `test_secret_not_in_repr` và `test_password_not_in_repr_but_in_dsn` (giá trị bí mật không lọt vào log/repr nhưng vẫn vào được DSN) · Evidence: `reports/w1-foundation.md`
+  · Đã dùng thật ở `W1-10` (gọi DeepSeek, $0,5821) và ở `W1-13` (chạy với key **rỗng** để chứng minh eval truy hồi không cần LLM API). Trước đây đánh `[?]` là **nhầm** — đã hết bị chặn từ 2026-08-17, changelog có ghi mà quên đổi ký hiệu
 - [ ] `W0-05` **Dựng môi trường RunPod** — Secure Cloud, **RTX 4090 24GB**, Pod On-Demand, + **Network Volume** gắn `/workspace` với `HF_HOME=/workspace/.hf`
   · DoD: pod khởi động lại lần 2 **không phải tải lại trọng số**; chạy thử load `bge-m3` + `bge-reranker-v2-m3` + vLLM `Qwen3-8B`, ghi VRAM & thời gian · Test: — · Evidence: `reports/gpu-env.md`
   · Chỉ 3 task cần GPU thuê: `W3-04`, `W5-11`, fine-tune (tùy chọn). Tổng ~10–20 GPU-hour ≈ vài chục USD trở xuống.
@@ -177,7 +194,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · **Freeze không đoán hộ**: `fix_chunk_ids` mà người review để trống thì báo lỗi, không lấy top-1 của retriever điền vào — làm thế là dạy golden set trả lời đúng theo hệ thống hiện tại. Ba từ vựng tách rời: `suggested_decision` (máy hỏi) / `decision` (người trả lời: accept·reject·edit) / ô trống (chưa review, **không** phải accept)
   · **Nhãn đã neo theo span ký tự** trước khi review, để 6–8 giờ công không hỏng ở bước `W2` đầu tiên (`TD-12`). `make goldenset-anchor`. Nội dung chunk **không đổi một byte** — digest trên corpus thật khớp trước/sau, đó là bất biến số một của lần refactor đó
   · Hai file, không phải một: `queue_v1.md` tối ưu cho **đọc** (toàn văn chunk đã gán + top-3 + trích dẫn, không phải tra cứu qua lại), `decisions_v1.csv` tối ưu cho **ghi**. `write_decisions_template` từ chối ghi đè — mất 6 giờ công review vì chạy lại một lệnh là chuyện không được xảy ra
-  · DoD: mỗi câu có `relevant_chunk_ids` đã người xác nhận; file read-only, có checksum · Test: `tests/unit/test_goldenset_schema.py` (schema + phân bố category + không rỗng chunk_ids trừ nhóm unanswerable) · Evidence: `data/golden/golden_v1.jsonl` + `reports/goldenset-v1.md` (quy trình + phân bố)
+  · DoD: mỗi câu có `relevant_chunk_ids` đã người xác nhận; file read-only, có checksum · Test: `tests/unit/test_goldenset_schema.py` (schema + phân bố category + không rỗng chunk_ids trừ nhóm unanswerable) · Evidence: `data/golden/golden_v1.jsonl` + `reports/w1-11-review.md` (quy trình + phân bố) + `reports/goldenset-v1.json` (số liệu freeze) + `reports/w1-11-triage.md` + `reports/w1-11-spans.md`
 - [x] `W1-12` **`pipeline/eval/retrieval_eval.py`** — Recall@{1,5,10,20}, Precision@k, MRR, nDCG@10, HitRate; breakdown theo category & language
   · DoD: bảng MD + JSON; metric đúng trên fixture có đáp án tính tay · Test: `tests/unit/test_retrieval_metrics.py` (**35 case**) + `tests/unit/test_retrieval_eval.py` (**19 case**) · Evidence: `reports/w1-foundation.md`
   · Kỳ vọng viết bằng công thức tường minh với thứ hạng ghi rõ; cố ý **không** gọi lại hàm đang test để sinh kỳ vọng
@@ -196,6 +213,10 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 > ⚠️ Bốn hạng mục đều chạy được và có bằng chứng, nhưng golden set là **review bằng
 > model**, không phải người. Gate này nên coi là **PASS có điều kiện**: đủ để đi tiếp
 > `W2`, chưa đủ để gọi baseline là "human-verified" ở bất kỳ đâu.
+>
+> **Điều kiện để 🟡 → ✅ là `TD-13`** và chỉ nó: người đọc lại 33 câu `unanswerable` +
+> 43 câu `cross_lingual`, rồi `make goldenset-freeze` với `--reviewer human`. Không cần
+> làm lại gì khác — đo lại baseline sau đó mất **20 giây**.
 - [x] `make eval-retrieval BUNDLE=baseline` chạy được — đường ống thông từ `make corpus` tới `make eval-retrieval`, trên `golden_v1` thật (242 câu)
   · Kiểm chứng bằng golden set giả sinh từ chính chunk trong index (13 câu, **không** commit): `recall@5 0.9167 · p50 32.6ms · p95 97.7ms`. Đây **không phải** baseline — câu hỏi chính là text của chunk nên gần như chắc chắn tìm lại được chính nó
 - [x] Retrieval eval chạy **không cần bất kỳ LLM API nào** — đã chạy thật với `DEEPSEEK_API_KEY=""` và `OPENROUTER_API_KEY=""`, kết quả trùng khít lượt có key (sai số 0,0000%)
@@ -206,6 +227,27 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 ---
 
 ## 4. W2 · Retrieval upgrade
+
+> **Thứ tự tấn công chốt theo số baseline, không theo thứ tự trong plan.** recall@5 = 0,1746
+> có hai nguyên nhân **đã định lượng**, và cả hai nằm ở tầng embed chứ không ở tầng xếp hạng:
+> 1. **`TD-11` — 56,8% chunk bị cắt ở 256 token, 15,7% text không bao giờ tới được vector.**
+>    Rẻ nhất: hạ `chunk_size` xuống ~600 ký tự, build lại index (~3 phút GPU), đo lại. Làm
+>    **trước** `W2-01` để có cặp số trước/sau **tách riêng** khỏi việc đổi model.
+> 2. **Model embedding đơn ngữ** → `cross_lingual` (43/209 câu, 20% tập đo) recall@5 = 0.
+>    Đây là việc của `W2-01` (BGE-M3, cửa sổ 8192 token, đa ngữ) — nó **đồng thời** xoá luôn
+>    nguyên nhân (1), nên gộp hai bước thì không biết phần cải thiện nào thuộc về ai.
+>
+> Hệ quả cho `W2-08`: ma trận ablation phải có **cả hai chiều** `chunk_size` × `embedding`,
+> không thì bảng số sẽ gán toàn bộ mức tăng cho BGE-M3 một cách sai.
+>
+> ⚠️ Mọi số W2 đo trên `golden_v1` — vốn **review bằng model** (`TD-13`). So sánh *tương đối*
+> giữa các cấu hình vẫn hợp lệ (cùng một thước đo); con số *tuyệt đối* thì chưa được gọi là
+> "human-verified".
+>
+> 💡 `make eval-retrieval` giờ tự ánh xạ nhãn span → `chunk_id` của index đang đo (`TD-12`),
+> nên đổi `chunk_size` **không** làm hỏng golden set. Nhưng phải build index bằng
+> `--recreate` để point mang `start_char`/`end_char`, nếu không `span_resolution` sẽ rơi về
+> nhãn `chunk_id` cũ và im lặng đo sai.
 
 - [ ] `W2-01` **BGE-M3 provider** (dense + sparse lexical weights cùng lúc)
   · DoD: trả cả dense vector 1024-d và sparse dict; cache model load · Test: `tests/unit/test_bge_m3.py` (dim, sparse không rỗng, VI & EN) · Evidence: —
@@ -377,10 +419,11 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | ID | Đợi gì | Ai xử lý | Từ ngày | Ảnh hưởng |
 |---|---|---|---|---|
-| `W0-01` | Bạn đọc lại plan sau khi sửa diagram | Bạn | 2026-08-14 | Chặn toàn bộ W1 |
-| `W0-02` | Quyết định tên repo mới + có tạo repo riêng hay nâng cấp in-place | Bạn | 2026-08-14 | Code đã push lên nhánh `feat/w1-foundation` của repo cũ (`f5ec22b`, `c253fa5`). `main` chưa đụng tới vì đang là link trong CV. Cần quyết: merge vào `main` hay tách repo mới |
+| `W0-01` | Bạn đọc lại plan sau khi sửa diagram | Bạn | 2026-08-14 | **Không còn chặn gì** — W1 đã làm xong 13/13 theo plan hiện tại. Giữ lại vì §3.6 (phân vai LLM) và §8 (nháp CV) sẽ được dùng lại ở W5/W6 |
+| `W0-02` | Quyết định tên repo mới + có tạo repo riêng hay nâng cấp in-place | Bạn | 2026-08-14 | Toàn bộ tuần 1 đã push lên nhánh `feat/w1-foundation` (`f5ec22b` … `b9fcbce`, 15 commit tính cả `f5ec22b`). `main` vẫn là bản POC cũ vì đang là link trong CV. Cần quyết: merge vào `main` hay tách repo mới. **Càng để lâu càng khó**: `W6-02` (demo HF Spaces) và `W6-07` (đổi link CV) đều trỏ vào quyết định này |
 | `W0-03` | Nguồn (b) văn bản pháp luật ~30 và (c) báo cáo HOSE ~30 — cần chọn tay rồi khai báo qua `seed_list` | Bạn | 2026-08-14 | Nguồn (a) xong (60 tài liệu, đã index). Thiếu (b)/(c) thì golden set không có nhóm `table_lookup` và `section_path` |
 | `W0-07` | `@preset/my-luna-pro` resolve ra model slug nào (cần biết để chọn judge cross-check khác họ DeepSeek) | Bạn | 2026-08-14 | Chặn `W5-04`, không chặn W1–W4 |
+| `TD-13` | **Người đọc lại 33 câu `unanswerable` + 43 câu `cross_lingual`** rồi `make goldenset-freeze` với `--reviewer human` (~2–3h, hàng đợi đã xếp sẵn) | Bạn | 2026-08-20 | **Không chặn `W2`** — so sánh tương đối giữa các cấu hình vẫn hợp lệ. Chặn việc gọi baseline là "human-verified" ở README / CV / phỏng vấn, và chặn `G1` chuyển từ 🟡 sang ✅ |
 
 ---
 
@@ -402,6 +445,10 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | ~~`TD-09`~~ | ~~Chưa kiểm được câu `unanswerable` có thật sự không trả lời được~~ | **Đã trả**: `triage.py` chạy retriever lên cả 40 câu, **15 câu** vượt ngưỡng hiệu chuẩn 0,5797 → đầu hàng đợi review | ✅ Nhưng kế hoạch cũ phải sửa: điểm cao **không** đủ để phân loại lại tự động. Ví dụ đầu hàng đợi có điểm 0,7287 mà chunk top-1 vẫn không trả lời được câu hỏi — điểm cao chứng minh *cùng chủ đề*, không chứng minh *trả lời được* |
 | ~~`TD-12`~~ | ~~`chunk_id` thuần vị trí làm golden set hỏng âm thầm khi đổi chunking~~ | **Đã trả**: nhãn neo theo **span ký tự** trong văn bản gốc (`TextSpan`, `Chunk.start_char/end_char`), eval tự ánh xạ span → chunk_id của index đang đo. 226/226 câu đã neo, 299 span (62% thu về đúng câu trích dẫn). Đo ở 3 cấu hình chunking (1000/600/400): **0 câu mất nhãn**; ở 1000 dựng lại đúng nhãn cũ 216/226 | ✅ `reports/w1-11-spans.md` |
 | `TD-11` ⭐ | **56,8% chunk bị cắt lúc embed** — `chunk_size=1000` **ký tự** ≈ 340 token, `vietnamese-bi-encoder` (PhoBERT) có `max_seq_length=256` **token**. `sentence-transformers` cắt âm thầm, không cảnh báo. **15,7% toàn bộ text đem embed không bao giờ tới được vector** (mẫu ngẫu nhiên 1200 chunk, seed 20260820; riêng chunk đã gán thì 91,1% vì bộ lọc prose-like chọn chunk dài) | **Cố ý không sửa trước `W1-13`**: đây là hành vi thật của bản POC, sửa trước rồi gọi kết quả là "baseline" thì mọi so sánh về sau đo lẫn cải tiến này vào. Chiều câu hỏi an toàn: p50 = 44 token, 0/266 bị cắt | **Hạng mục đầu tiên của `W2`** vì rẻ nhất: hạ `chunk_size` xuống ~600 ký tự, hoặc đổi sang model cửa sổ dài (BGE-M3 8192). Đo lại ngay sau `W1-13` để có cặp số trước/sau |
+| `TD-13` ⭐ | **`golden_v1` review bằng MODEL, không phải người.** `reviewed_by_human=false`, `reviewed_by="model:claude-opus-5"` trong cả 242 dòng | Bạn không có ~6–8h để đọc tay, mà thiếu golden set thì cả W2–W6 không có thước đo. DeepSeek sinh → Claude review là **cross-model** nên không phải tự chấm mình; và mọi kết luận đều được đối chiếu với **văn bản gốc**, không phải với retriever (dùng retriever để lọc golden set là tự thổi phồng recall) | Người đọc lại **hai nhóm loại nhiều nhất** = hai nhóm model kém tự tin nhất: 33 câu `unanswerable` (đã tìm ra 7/40 sai nhãn, tỉ lệ sai 17,5%) + 43 câu `cross_lingual`. Rồi `make goldenset-freeze` với `--reviewer human`. Cho tới lúc đó: **cấm** chữ "human-verified" ở README, report, CV, phỏng vấn |
+| `TD-14` | **7 `reference_answer` lẫn ngữ cảnh lúc sinh** — "Theo đoạn văn…", "Đoạn văn không nói…", "không có trong các đoạn văn được cung cấp" (`multi_hop-78a942bf28`, `multi_hop-d8e57b6cb1`, `multi_hop-6af19bc73a`, `adversarial-8ce6a8483a`, `adversarial-87b49c12d2`, `unanswerable-200ea2a853`, `unanswerable-599b31f973`) | **Vô hại cho eval truy hồi** (`W1-13` chỉ dùng `relevant_chunk_ids`/`relevant_spans`, không đọc `reference_answer`). Câu hỏi thì sạch: **0/242** câu có lỗi này | Dọn trước `W5-01`: judge so câu trả lời của hệ thống với `reference_answer`, mà "Theo đoạn văn 1" là thứ hệ thống thật không bao giờ nói được → judge sẽ trừ điểm oan. Làm cùng lượt người review `TD-13` |
+| `TD-15` | **Nhãn liên quan chưa đầy đủ** — một dữ kiện có mặt ở nhiều tài liệu nhưng chỉ 1 chỗ được gán. Ví dụ "92% tài sản của các định chế tài chính" có trong **cả hai** *Financial sector assessment* và *Taking stock* | Hiếm: phép thử Jaccard ở `W1-11` cho **1/78** câu. Sửa cho đủ nghĩa là gán chéo toàn corpus × toàn golden set — đắt hơn giá trị mang lại ở giai đoạn này | Recall thật **cao hơn** số đo, tức baseline là **cận dưới** — sai theo chiều an toàn (không thổi phồng cải tiến). Nếu W2 đưa recall lên >0,6 mà vẫn có câu "trượt", kiểm chỗ này trước khi kết luận hệ thống sai |
+| `TD-16` | **Nhóm `unanswerable` thiếu đa dạng** — 10/33 câu theo cùng một khuôn "hỏi về nước khác" (Thái Lan, Trung Quốc, Indonesia…) | 33 câu vẫn đủ để đo refusal correctness ở `W5-02`, và khuôn này đúng là một dạng câu không trả lời được | Thêm 2 khuôn khác khi có nguồn (b)/(c): hỏi về **mốc thời gian ngoài phạm vi** tài liệu, và hỏi số liệu **chi tiết hơn mức tài liệu có**. Nếu chỉ đo được một khuôn thì refusal correctness cao có thể chỉ nghĩa là hệ thống giỏi nhận ra tên nước lạ |
 
 ---
 
@@ -409,6 +456,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-20 | **Đóng sổ tuần 1, mở sổ tuần 2.** Điền cột **Baseline** ở §1 (recall@10 0,2257 · nDCG@10 0,1621 · MRR 0,1660 · p95 truy hồi 39,9 ms) và tách rõ metric *chưa đo* thuộc W4/W5 khỏi metric đã có số. `W0-04` `[?]` → `[x]` (đánh nhầm từ 2026-08-17, DoD đã đủ và đã dùng thật ở `W1-10`/`W1-13`). Đếm lại tổng task: **77** (71 backlog gốc + 6 `NEW-xx`), số cũ "73" là lỗi sổ sách vì `NEW-03`…`NEW-06` không được cộng vào. Chốt **thứ tự tấn công W2** vào §4: `TD-11` trước, `W2-01` sau, để cặp số trước/sau tách được phần của `chunk_size` khỏi phần của BGE-M3. Thêm `TD-13`…`TD-16` (review bằng model · 7 `reference_answer` lẫn ngữ cảnh · nhãn liên quan chưa đầy đủ · nhóm `unanswerable` thiếu đa dạng) |
 | 2026-08-20 | **`W1-11` + `W1-13` xong — tuần 1 đủ 13/13.** `golden_v1` 242 câu (loại 24/266), baseline **recall@5 0,1746 · MRR 0,1660 · p95 39,9ms**, chạy lại 2 lần sai số **0,0000%**, chạy được với API key rỗng. ⚠️ Review bằng **model** (`reviewed_by_human=false`), không phải người — `G1` là PASS **có điều kiện**. Trả xong `TD-09` bằng cách tra thẳng văn bản gốc: 7/40 câu `unanswerable` sai nhãn. Bắt được `freeze` làm rơi `relevant_spans`. Thêm `reviewed_by` vào `GoldenQuery` và `--reviewer` vào `freeze`. 534 unit test. Evidence: `reports/w1-11-review.md` |
 | 2026-08-20 | **`TD-12` đã trả — golden set neo theo span ký tự.** `TextSpan` + `Chunk.start_char/end_char`; `split_pieces()` thay `split_text()` làm API chính của Chunker; `pipeline/eval/spans.py` ánh xạ span → chunk_id của index đang đo; `pipeline/goldenset/anchor.py` chuyển 266 nháp sang span (299 span, 62% thu theo trích dẫn). Đo ở `chunk_size` 1000/600/400: **0 câu mất nhãn**, còn nhãn `chunk_id` cũ thì "hợp lệ" 226/226 ở cả ba mà trỏ vào văn bản khác. Bất biến: nội dung chunk khớp từng byte trước/sau (digest `b381634d51e39365`). Chạy `--recreate` để point mang offset (170s). +121 unit test (530), +5 integration (38). Evidence: `reports/w1-11-spans.md` |
 | 2026-08-20 | **`W1-11` phần máy xong — triage + freeze, và ba phát hiện về retrieval.** Chạy retriever thật lên 266 câu nháp (24,3s): chỉ **65/226 = 28,8%** câu có chunk đã gán trong top-20. Điều tra ra ba nguyên nhân: (a) model embedding **đơn ngữ** → cùng ngôn ngữ 42,6% vs khác ngôn ngữ 7,8%, chênh 5,5× (`cross_lingual` trượt 95,7%); (b) giả thuyết "corpus gần trùng nên nhãn không đầy đủ" **bị loại** (0/78 câu có Jaccard ≥ 0,5); (c) **`TD-11`** — 56,8% chunk bị cắt ở 256 token, 15,7% text không tới được vector. Trả xong `TD-09` (15/40 câu unanswerable bị nghi). +71 unit test (409), +5 integration (38). Evidence: `reports/w1-11-triage.md` |
