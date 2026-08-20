@@ -7,33 +7,27 @@
   "embedding_dim": 768,
   "chunker_name": "hybrid->fixed:bf526f417134",
   "n_documents": 60,
-  "n_documents_indexed": 60,
-  "n_documents_skipped": 0,
+  "n_documents_indexed": 0,
+  "n_documents_skipped": 60,
   "n_documents_removed": 0,
-  "n_chunks_written": 15814,
+  "n_chunks_written": 0,
   "n_stale_points_deleted": 0,
   "collection_count": 15814,
   "chars_in": 14284300,
-  "chars_out": 17745511,
-  "chunk_len": {
-    "mean": 1122.139306943215,
-    "p50": 1137.0,
-    "p95": 1193.0,
-    "min": 323.0,
-    "max": 1251.0
-  },
+  "chars_out": 0,
+  "chunk_len": {},
   "seconds": {
-    "load": 0.058381199996802025,
-    "chunk": 1.8093066999826988,
-    "upsert": 159.3305165999882,
-    "total": 202.25572810000085
+    "load": 0.05488040000000183,
+    "chunk": 0.0,
+    "upsert": 0.0,
+    "total": 35.7066605
   },
   "cache": {
     "hits": 0.0,
-    "misses": 60.0,
+    "misses": 0.0,
     "hit_rate": 0.0,
     "entries": 60.0
   },
-  "created_at": "2026-08-17T08:27:24+00:00",
-  "context_inflation": 1.2423
+  "created_at": "2026-08-20T04:35:38+00:00",
+  "context_inflation": 0.0
 }

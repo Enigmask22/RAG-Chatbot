@@ -33,3 +33,11 @@ data/raw/
 # `data/corpus/` KHÔNG liệt kê ở đây: DVC tự sinh `data/.gitignore` khi
 # `dvc add`. Ignore ở hai chỗ thì `dvc checkout` vẫn chạy nhưng `dvc status`
 # không còn phản ánh đúng thứ git thấy — nguồn sự thật phải là một.
+
+# Artifact triage golden set. Sinh lại bằng `make goldenset-triage` trong ~25s,
+# và chúng chỉ đúng với đúng một index (cùng `IndexConfig.fingerprint`), nên
+# commit một bản cũ còn tệ hơn không commit. Giữ lại trong git:
+#   · `decisions_*.csv`   — công review của người, không sinh lại được
+#   · `triage_summary.json` — bằng chứng của lần chạy
+data/golden/review/queue_*.md
+data/golden/review/triage_*.jsonl

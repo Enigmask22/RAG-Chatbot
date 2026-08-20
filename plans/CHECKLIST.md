@@ -1,7 +1,7 @@
 # CHECKLIST — RAG Platform Upgrade
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
-> Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 11/13 task xong · index baseline 15.814 chunk · 266 câu nháp golden set · corpus đã version bằng DVC · gate `G1` 2/4**
+> Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 11/13 task xong · index baseline 15.814 chunk · 266 câu nháp đã triage, chờ review tay · corpus đã version bằng DVC · gate `G1` 2/4**
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -163,7 +163,12 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · Ba bộ lọc chất lượng corpus phải thêm (trộn hai cột PDF 27,8% chunk · chú thích biểu đồ · trang bìa) — chi tiết ở report. Chúng **chỉ áp cho việc chọn mẫu**, không áp cho index
   · `table_lookup` chỉ 4 câu là **đúng, không phải lỗi**: corpus `.txt` đã làm phẳng bảng. Nhóm này chờ nguồn (c) HOSE + `W3-01`
 - [~] `W1-11` **Review tay → freeze `golden_v1` (≥150 câu)** — đủ 7 nhóm: factoid, multi_hop, aggregation, table_lookup, cross_lingual, unanswerable, adversarial
-  · **Sẵn sàng review**: 266 nháp ở `data/golden/draft_v1.jsonl`. Thứ tự đọc theo rủi ro — 16 câu `needs_close_review` trước, rồi 40 câu `unanswerable` (nhóm dễ sai nhất, code không kiểm được), rồi 34 câu `multi_hop`
+  · **Công cụ xong, đã chạy thật** (`reports/w1-11-triage.md`): `pipeline/goldenset/triage.py` (retriever thật → hàng đợi review) + `freeze.py` (quyết định → `golden_v1` + checksum + read-only). +71 unit test (409 tổng), +5 integration (38 tổng). `make goldenset-triage` chạy 24,3s
+  · **Thứ tự đọc đã xếp sẵn** trong `queue_v1.md`: 15 câu `unanswerable_but_retrieved` → 16 câu `quote_unverified` → 2 câu `trivially_easy` → 161 câu `answerable_but_not_retrieved` (mặc định **accept**) → 72 câu không cờ. `gold_chunk_missing` = 0
+  · ⚠️ **Bất đối xứng phải giữ đúng.** Câu `unanswerable` mà retriever tự tin = bằng chứng nhãn sai (mệnh đề về corpus bị phản chứng). Câu trả lời được mà retriever trượt **không** phải bằng chứng nhãn sai — đó là thứ eval tồn tại để đo, loại nó đi là tự thổi phồng recall baseline. Nên tín hiệu thứ hai xếp **cuối** hàng đợi, đề xuất `accept`, và có 2 test canh (`TestSignalB`)
+  · Ngưỡng nghi ngờ **hiệu chuẩn từ dữ liệu**, không phải hằng số: trung vị điểm top-1 của các câu trả lời được = **0,5797**. Ghim `0.8` là đoán, vì "điểm cao" phụ thuộc model embedding và corpus
+  · **Freeze không đoán hộ**: `fix_chunk_ids` mà người review để trống thì báo lỗi, không lấy top-1 của retriever điền vào — làm thế là dạy golden set trả lời đúng theo hệ thống hiện tại. Ba từ vựng tách rời: `suggested_decision` (máy hỏi) / `decision` (người trả lời: accept·reject·edit) / ô trống (chưa review, **không** phải accept)
+  · Hai file, không phải một: `queue_v1.md` tối ưu cho **đọc** (toàn văn chunk đã gán + top-3 + trích dẫn, không phải tra cứu qua lại), `decisions_v1.csv` tối ưu cho **ghi**. `write_decisions_template` từ chối ghi đè — mất 6 giờ công review vì chạy lại một lệnh là chuyện không được xảy ra
   · DoD: mỗi câu có `relevant_chunk_ids` đã người xác nhận; file read-only, có checksum · Test: `tests/unit/test_goldenset_schema.py` (schema + phân bố category + không rỗng chunk_ids trừ nhóm unanswerable) · Evidence: `data/golden/golden_v1.jsonl` + `reports/goldenset-v1.md` (quy trình + phân bố)
 - [x] `W1-12` **`pipeline/eval/retrieval_eval.py`** — Recall@{1,5,10,20}, Precision@k, MRR, nDCG@10, HitRate; breakdown theo category & language
   · DoD: bảng MD + JSON; metric đúng trên fixture có đáp án tính tay · Test: `tests/unit/test_retrieval_metrics.py` (**35 case**) + `tests/unit/test_retrieval_eval.py` (**19 case**) · Evidence: `reports/w1-foundation.md`
@@ -378,7 +383,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | ~~`TD-07`~~ | ~~`plans/` bị thêm vào `.gitignore`~~ | **Đã xử lý**: bỏ dòng đó, vì DoD của dự án bắt buộc mỗi task có đường dẫn Evidence | ✅ |
 | `TD-08` | 22/163 lời gọi LLM bị cắt ở `max_tokens=6000` — toàn bộ ngân sách đi vào chuỗi suy luận | Vẫn đủ 266 câu; nâng tiếp là trả tiền cho phần suy luận không dùng tới | Thử `--questions-per-call 1` (prompt ngắn → suy luận ngắn) khi cần thêm câu |
 | `TD-10` | DVC remote chỉ là thư mục local `D:/dvc-remote/rag-chatbot` | Nguồn (a) còn đường phục hồi độc lập: `scripts/fetch_corpus.py` tải lại từ World Bank rồi so sha256. Mất remote chưa mất corpus | **Bắt buộc dựng remote dùng chung trước khi thêm nguồn (b)/(c)** — văn bản pháp luật + báo cáo HOSE phải chọn tay, không script nào tải lại được, mất remote là mất corpus |
-| `TD-09` | Chưa kiểm được câu `unanswerable` có **thật sự** không trả lời được từ corpus | Model có thể vô tình hỏi thứ mà một tài liệu khác trả lời được; code không phát hiện ra | `W1-11`: chạy chính retriever lên 40 câu đó, câu nào ra chunk điểm rất cao thì phân loại lại |
+| ~~`TD-09`~~ | ~~Chưa kiểm được câu `unanswerable` có thật sự không trả lời được~~ | **Đã trả**: `triage.py` chạy retriever lên cả 40 câu, **15 câu** vượt ngưỡng hiệu chuẩn 0,5797 → đầu hàng đợi review | ✅ Nhưng kế hoạch cũ phải sửa: điểm cao **không** đủ để phân loại lại tự động. Ví dụ đầu hàng đợi có điểm 0,7287 mà chunk top-1 vẫn không trả lời được câu hỏi — điểm cao chứng minh *cùng chủ đề*, không chứng minh *trả lời được* |
+| `TD-11` ⭐ | **56,8% chunk bị cắt lúc embed** — `chunk_size=1000` **ký tự** ≈ 340 token, `vietnamese-bi-encoder` (PhoBERT) có `max_seq_length=256` **token**. `sentence-transformers` cắt âm thầm, không cảnh báo. **15,7% toàn bộ text đem embed không bao giờ tới được vector** (mẫu ngẫu nhiên 1200 chunk, seed 20260820; riêng chunk đã gán thì 91,1% vì bộ lọc prose-like chọn chunk dài) | **Cố ý không sửa trước `W1-13`**: đây là hành vi thật của bản POC, sửa trước rồi gọi kết quả là "baseline" thì mọi so sánh về sau đo lẫn cải tiến này vào. Chiều câu hỏi an toàn: p50 = 44 token, 0/266 bị cắt | **Hạng mục đầu tiên của `W2`** vì rẻ nhất: hạ `chunk_size` xuống ~600 ký tự, hoặc đổi sang model cửa sổ dài (BGE-M3 8192). Đo lại ngay sau `W1-13` để có cặp số trước/sau |
 
 ---
 
@@ -386,6 +392,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-20 | **`W1-11` phần máy xong — triage + freeze, và ba phát hiện về retrieval.** Chạy retriever thật lên 266 câu nháp (24,3s): chỉ **65/226 = 28,8%** câu có chunk đã gán trong top-20. Điều tra ra ba nguyên nhân: (a) model embedding **đơn ngữ** → cùng ngôn ngữ 42,6% vs khác ngôn ngữ 7,8%, chênh 5,5× (`cross_lingual` trượt 95,7%); (b) giả thuyết "corpus gần trùng nên nhãn không đầy đủ" **bị loại** (0/78 câu có Jaccard ≥ 0,5); (c) **`TD-11`** — 56,8% chunk bị cắt ở 256 token, 15,7% text không tới được vector. Trả xong `TD-09` (15/40 câu unanswerable bị nghi). +71 unit test (409), +5 integration (38). Evidence: `reports/w1-11-triage.md` |
 | 2026-08-20 | **`W1-09` xong — corpus đã version bằng DVC**: 60 tài liệu / 14,7 MiB, `dvc pull` trên clone sạch lấy đủ 61 file trong 1,9s và **60/60 sha256 khớp manifest**. Thêm `pipeline/corpus/dvc_state.py` canh lệch giữa hai cơ chế versioning + 23 test (317 → 338 unit). Remote đặt ở `.dvc/config.local` chứ không phải `.dvc/config`. Làm khác checklist: `data/golden` giữ trong git (lý lẽ ở `reports/w1-09-dvc.md` §3.2). Thêm `TD-10` |
 | 2026-08-20 | **Dọn codebase + đổi tên repo**: bản POC chuyển vào `legacy/` (giữ lịch sử qua `git mv`), repo đổi tên `project_1.2_chatbot_rag` → `RAG-Chatbot`. Evidence: `reports/rename-workspace.md` |
 | 2026-08-17 | **`W1-10` xong — 266 câu nháp golden set** ($0,5821 · 640s · 163 lời gọi). Thêm `packages/rag_core/llm/` và `pipeline/goldenset/`, 100 test mới. Phát hiện `deepseek-chat` chỉ là bí danh của `deepseek-v4-flash`; phát hiện model suy luận tiêu hết ngân sách token trước khi viết JSON; phát hiện 27,8% chunk bị trộn hai cột PDF. Thêm `NEW-05`, `NEW-06`, `TD-08`, `TD-09`; trả xong `TD-07`. `W0-04` hết bị chặn |

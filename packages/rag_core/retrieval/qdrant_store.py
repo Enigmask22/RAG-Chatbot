@@ -109,6 +109,32 @@ class QdrantDenseRetriever(Retriever):
     def count(self) -> int:
         return int(self.client.count(self.collection, exact=True).count)
 
+    def fetch_chunks(self, chunk_ids: Sequence[str]) -> dict[str, Chunk]:
+        """Lấy chunk theo `chunk_id`, bỏ qua id không có trong collection.
+
+        Cố ý trả dict thay vì list: người gọi hầu như luôn cần biết id **nào**
+        thiếu, và một list ngắn hơn đầu vào chỉ nói được rằng có thiếu. Việc
+        `set(chunk_ids) - result.keys()` là chỗ duy nhất phát hiện được golden set
+        đang trỏ tới chunk không còn tồn tại — chuyện xảy ra ngay khi index được
+        build lại với cấu hình chunking khác.
+        """
+        if not chunk_ids:
+            return {}
+        wanted = list(dict.fromkeys(chunk_ids))
+        points = self.client.retrieve(
+            collection_name=self.collection,
+            ids=[chunk_point_id(cid) for cid in wanted],
+            with_payload=True,
+        )
+        found: dict[str, Chunk] = {}
+        for point in points:
+            raw_chunk = (point.payload or {}).get("chunk")
+            if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
+                continue
+            chunk = Chunk.model_validate(raw_chunk)
+            found[chunk.chunk_id] = chunk
+        return found
+
     # ------------------------------------------------------------ ghi
 
     def upsert(self, chunks: Sequence[Chunk], *, batch_size: int = 128) -> int:

@@ -1,0 +1,24 @@
+{
+  "total": 266,
+  "top_k": 20,
+  "answerable": 226,
+  "unanswerable": 40,
+  "score_threshold": 0.5796559,
+  "trivial_threshold": 0.6623168800000001,
+  "flag_counts": {
+    "answerable_but_not_retrieved": 161,
+    "trivially_easy": 2,
+    "quote_unverified": 16,
+    "unanswerable_but_retrieved": 15
+  },
+  "by_category": {
+    "aggregation": 28,
+    "multi_hop": 34,
+    "adversarial": 36,
+    "factoid": 78,
+    "cross_lingual": 46,
+    "table_lookup": 4,
+    "unanswerable": 40
+  },
+  "gold_found_in_top_k": 65
+}

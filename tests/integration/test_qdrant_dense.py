@@ -164,3 +164,34 @@ def test_delete_by_doc(retriever: QdrantDenseRetriever) -> None:
     retriever.upsert(CHUNKS)
     retriever.delete_by_doc("doc-weather")
     assert retriever.count() == len(CHUNKS) - 1
+
+
+class TestFetchChunks:
+    """`fetch_chunks` là chỗ duy nhất phát hiện golden set trỏ tới chunk đã mất."""
+
+    def test_returns_chunks_keyed_by_chunk_id(self, retriever: QdrantDenseRetriever) -> None:
+        retriever.upsert(CHUNKS)
+        found = retriever.fetch_chunks(["doc-budget::00000", "doc-weather::00000"])
+        assert set(found) == {"doc-budget::00000", "doc-weather::00000"}
+        assert found["doc-budget::00000"].content == _TOPICS["budget"]
+
+    def test_missing_ids_are_absent_not_an_error(self, retriever: QdrantDenseRetriever) -> None:
+        """Người gọi cần biết id NÀO thiếu — đó là lý do trả dict chứ không phải list."""
+        retriever.upsert(CHUNKS)
+        wanted = ["doc-budget::00000", "doc-khong-ton-tai::00000"]
+        found = retriever.fetch_chunks(wanted)
+        assert set(wanted) - set(found) == {"doc-khong-ton-tai::00000"}
+
+    def test_empty_input_does_not_hit_qdrant(self, retriever: QdrantDenseRetriever) -> None:
+        assert retriever.fetch_chunks([]) == {}
+
+    def test_duplicate_ids_are_collapsed(self, retriever: QdrantDenseRetriever) -> None:
+        retriever.upsert(CHUNKS)
+        found = retriever.fetch_chunks(["doc-budget::00000"] * 3)
+        assert len(found) == 1
+
+    def test_deleted_chunk_disappears(self, retriever: QdrantDenseRetriever) -> None:
+        """Đúng kịch bản build lại index với cấu hình chunking khác."""
+        retriever.upsert(CHUNKS)
+        retriever.delete_by_doc("doc-weather")
+        assert retriever.fetch_chunks(["doc-weather::00000"]) == {}

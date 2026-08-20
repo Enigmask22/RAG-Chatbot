@@ -126,6 +126,18 @@ goldenset-dry:  ## Xem phân bố lô chunk + prompt mẫu, KHÔNG gọi API
 goldenset-draft:  ## Sinh nháp golden set bằng DeepSeek (TỐN TIỀN API)
 	$(PY) python -m pipeline.goldenset.generate --index-config $(INDEX_CONFIG)
 
+.PHONY: goldenset-triage
+goldenset-triage:  ## Chạy retriever thật lên tập nháp → hàng đợi review (W1-11)
+	$(PY) python -m pipeline.goldenset.triage --index-config $(INDEX_CONFIG)
+
+.PHONY: goldenset-freeze
+goldenset-freeze:  ## Đóng băng golden_v1 từ decisions_v1.csv (cần review xong)
+	$(PY) python -m pipeline.goldenset.freeze 		--report plans/reports/goldenset-v1.json
+
+.PHONY: goldenset-verify
+goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
+	$(PY) python -m pipeline.goldenset.freeze --verify
+
 .PHONY: eval-retrieval
 eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline)
 	$(PY) python -m pipeline.eval.retrieval_eval \
