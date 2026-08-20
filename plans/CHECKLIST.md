@@ -2,7 +2,7 @@
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
 > Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 13/13 task xong · `golden_v1` 242 câu (review bằng MODEL, không phải người) · baseline recall@5 = 0,1746 · gate `G1` 4/4 ⚠️ với một điều kiện · sẵn sàng vào `W2`**
-> Việc đầu tiên của `W2` đã chốt: **`TD-11`** (56,8% chunk bị cắt lúc embed) rồi **`W2-01`** BGE-M3 — hai nguyên nhân đã định lượng của recall@5 = 0,17, xem §4
+> **W2 đang chạy.** `TD-11` xong: hạ `chunk_size` đưa truncation 56,9% → 0,4% mà **không cải thiện gì đo được** (`p = 0,711`) — giả định của nợ đó bị phản chứng. Việc tiếp theo là `W2-01` BGE-M3. Kèm phát hiện về thước đo: `golden_v1` chỉ phân giải được mức chênh ≥ 6 điểm `hit_rate`, xem §4 và `reports/w2-td11-chunk-size.md`
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -228,14 +228,28 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 ## 4. W2 · Retrieval upgrade
 
-> **Thứ tự tấn công chốt theo số baseline, không theo thứ tự trong plan.** recall@5 = 0,1746
-> có hai nguyên nhân **đã định lượng**, và cả hai nằm ở tầng embed chứ không ở tầng xếp hạng:
-> 1. **`TD-11` — 56,8% chunk bị cắt ở 256 token, 15,7% text không bao giờ tới được vector.**
->    Rẻ nhất: hạ `chunk_size` xuống ~600 ký tự, build lại index (~3 phút GPU), đo lại. Làm
->    **trước** `W2-01` để có cặp số trước/sau **tách riêng** khỏi việc đổi model.
-> 2. **Model embedding đơn ngữ** → `cross_lingual` (43/209 câu, 20% tập đo) recall@5 = 0.
->    Đây là việc của `W2-01` (BGE-M3, cửa sổ 8192 token, đa ngữ) — nó **đồng thời** xoá luôn
->    nguyên nhân (1), nên gộp hai bước thì không biết phần cải thiện nào thuộc về ai.
+> ### Đã làm: `TD-11` (2026-08-20) — kết quả **âm**, và nó đổi thứ tự phần còn lại
+>
+> Thứ tự ban đầu là `TD-11` trước (hạ `chunk_size`) rồi `W2-01` (BGE-M3), để tách cặp số
+> trước/sau. Đã chạy: `chunk_size` 1000 → 550 đưa truncation **56,9% → 0,4%** chunk và
+> **không cải thiện gì đo được** — McNemar `p = 0,711`, mọi CI bootstrap chứa 0.
+>
+> Ba thứ rút ra, cả ba đều đổi cách làm phần còn lại của W2:
+>
+> 1. **Hạ `chunk_size` là đánh đổi, không phải thu hồi.** Baseline bị cắt nhưng mỗi vector
+>    vẫn đọc ~950 ký tự; `chunk550` không bị cắt nhưng mỗi vector chỉ đọc 678. Nên **không
+>    quét thêm `chunk_size` với `vietnamese-bi-encoder`** — hai điểm đo đã cho thấy chiều.
+> 2. **`golden_v1` chỉ phân giải được mức chênh ≥ 6 điểm `hit_rate` (≈28% tương đối).**
+>    209 câu, `hit_rate@5` ≈ 0,20. Mọi so sánh mịn hơn thế **phải** có kiểm định, nếu không
+>    thì cái thắng chỉ là cái may. Đã thêm `make eval-compare` + `*-per-query.jsonl`.
+> 3. **recall@k/nDCG/MAP không so được giữa hai `chunk_size`.** Nhãn neo theo span nên chunk
+>    nhỏ hơn làm số nhãn/câu tăng 1,38 → 1,96, và mẫu số của recall là chính con số đó →
+>    tụt 29,6% kể cả khi truy hồi y nguyên. `compare.py` tự từ chối những metric này.
+>
+> ### Việc tiếp theo: `W2-01` BGE-M3, giữ `chunk_size=1000`
+>
+> Cửa sổ 8192 token xoá truncation **mà không** phải hạ `chunk_size`, đồng thời là model đa
+> ngữ nên nhắm cả `cross_lingual` = 0. Hai dấu hiệu từ `TD-11` cùng chỉ về đây (§`W2-01`).
 >
 > Hệ quả cho `W2-08`: ma trận ablation phải có **cả hai chiều** `chunk_size` × `embedding`,
 > không thì bảng số sẽ gán toàn bộ mức tăng cho BGE-M3 một cách sai.
@@ -244,13 +258,16 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 > giữa các cấu hình vẫn hợp lệ (cùng một thước đo); con số *tuyệt đối* thì chưa được gọi là
 > "human-verified".
 >
-> 💡 `make eval-retrieval` giờ tự ánh xạ nhãn span → `chunk_id` của index đang đo (`TD-12`),
-> nên đổi `chunk_size` **không** làm hỏng golden set. Nhưng phải build index bằng
-> `--recreate` để point mang `start_char`/`end_char`, nếu không `span_resolution` sẽ rơi về
-> nhãn `chunk_id` cũ và im lặng đo sai.
+> 💡 `make eval-retrieval` tự ánh xạ nhãn span → `chunk_id` của index đang đo (`TD-12`), nên
+> đổi `chunk_size` **không** làm hỏng golden set — đã chứng minh trên `chunk550`: 209/209 câu
+> ánh xạ được, 0 câu mất nhãn. Nhưng phải build bằng `--recreate` để point mang
+> `start_char`/`end_char`, nếu không `span_resolution` rơi về nhãn cũ và im lặng đo sai.
 
-- [ ] `W2-01` **BGE-M3 provider** (dense + sparse lexical weights cùng lúc)
-  · DoD: trả cả dense vector 1024-d và sparse dict; cache model load · Test: `tests/unit/test_bge_m3.py` (dim, sparse không rỗng, VI & EN) · Evidence: —
+- [ ] `W2-01` **BGE-M3 provider** (dense + sparse lexical weights cùng lúc) — **việc tiếp theo**
+  · DoD: trả cả dense vector 1024-d và sparse dict; cache model load; **`max_sequence_tokens` báo đúng 8192** · Test: `tests/unit/test_bge_m3.py` (dim, sparse không rỗng, VI & EN) · Evidence: —
+  · **Giữ `chunk_size=1000` của baseline, chỉ đổi model.** `TD-11` đã đo: hạ `chunk_size` không cải thiện gì, vì nó đánh đổi ngữ cảnh mỗi vector lấy việc không bị cắt. BGE-M3 (cửa sổ 8192) lấy được phần lợi **mà không** trả phần ngữ cảnh
+  · Hai dấu hiệu từ `TD-11` cùng chỉ về đây, dù riêng lẻ chưa đạt ngưỡng ý nghĩa: EN (bị cắt nặng nhất 19,4%) `hit_rate@5` 0,1707 → 0,2073 khi bớt cắt, VI (7,5%) 0,2441 → 0,1969; và `cross_lingual` lần đầu khác 0 (0 → 2/43 câu)
+  · Chạy `make truncation BUNDLE=<config>` **trước** khi eval để xác nhận cửa sổ 8192 đưa truncation về 0
 - [ ] `W2-02` **Qdrant named vectors + sparse index** + script migrate collection
   · DoD: 1 collection chứa cả dense & sparse, query được độc lập · Test: `tests/integration/test_qdrant_hybrid_schema.py` · Evidence: —
 - [ ] `W2-03` **Sparse / BM25 retriever**
@@ -264,12 +281,18 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 - [ ] `W2-07` **Experiment Runner** — YAML config matrix → chạy tuần tự → MLflow tracking
   · DoD: 1 lệnh chạy hết grid, resume được khi crash giữa đường · Test: `tests/unit/test_experiment_runner.py` (expand grid đúng số tổ hợp, resume) · Evidence: MLflow UI screenshot
 - [ ] `W2-08` **Ablation #1**: chunking × embedding × retrieval mode × rerank
-  · DoD: ≥ 12 tổ hợp có kết quả đầy đủ, xác định được cấu hình thắng · Test: — · Evidence: MLflow run IDs
+  · DoD: ≥ 12 tổ hợp có kết quả đầy đủ, xác định được cấu hình thắng **kèm `p`/CI cho từng dòng** · Test: — · Evidence: MLflow run IDs
+  · ⚠️ Ma trận phải có **cả hai chiều** `chunk_size` × `embedding`: BGE-M3 xoá luôn nguyên nhân truncation nên gộp hai chiều sẽ gán toàn bộ mức tăng cho model một cách sai
+  · ⚠️ Chiều `chunk_size` **không dùng** recall@k/nDCG/MAP (mẫu số là số nhãn — xem `G2`). `pipeline/eval/compare.py` tự từ chối những metric đó khi phân bố nhãn khác nhau
 - [ ] `W2-09` **Report `reports/exp-001-retrieval.md`** — bảng số vs baseline + phân tích tại sao thắng/thua
   · DoD: có bảng delta, có ít nhất 2 nhận xét về *category nào cải thiện nhiều nhất* · Test: — · Evidence: file report
 
 ### `G2` — Gate tuần 2 ⬜
 - [ ] nDCG@10 tăng so với baseline (kỳ vọng ≥ +0.08 tuyệt đối)
+  · ⚠️ **Chỉ so được khi số nhãn/câu không đổi** — nDCG có mẫu số là số nhãn, mà nhãn neo theo span nên đổi `chunk_size` là đổi mẫu số (`TD-11` đo được: 1,38 → 1,96 nhãn/câu khi hạ 1000 → 550, làm nDCG tụt 29,6% **kể cả khi truy hồi y nguyên**). Đổi `chunk_size` thì phải dùng `hit_rate@k`/`MRR`
+  · Tin tốt: +0,08 tuyệt đối trên 0,1621 là **+49% tương đối** — nằm trong tầm phân giải của `golden_v1`
+- [ ] **Mọi dòng ablation có `p` hoặc CI95** (`make eval-compare`), và chỉ tuyên bố người thắng khi kiểm định nói vậy
+  · Đo được ở `TD-11`: với 209 câu và `hit_rate@5` ≈ 0,20, phải chênh **≥ 6 điểm tuyệt đối (≈28% tương đối)** mới phát hiện được. Xếp hạng 12 tổ hợp bằng mức chênh vài phần trăm là tung đồng xu
 - [ ] Có bảng ablation ≥ 12 dòng, tái lập được bằng `make eval EXP=exp_001`
 - [ ] Không tổ hợp nào làm p95 latency vượt 3500 ms
 
@@ -444,7 +467,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | `TD-10` | DVC remote chỉ là thư mục local `D:/dvc-remote/rag-chatbot` | Nguồn (a) còn đường phục hồi độc lập: `scripts/fetch_corpus.py` tải lại từ World Bank rồi so sha256. Mất remote chưa mất corpus | **Bắt buộc dựng remote dùng chung trước khi thêm nguồn (b)/(c)** — văn bản pháp luật + báo cáo HOSE phải chọn tay, không script nào tải lại được, mất remote là mất corpus |
 | ~~`TD-09`~~ | ~~Chưa kiểm được câu `unanswerable` có thật sự không trả lời được~~ | **Đã trả**: `triage.py` chạy retriever lên cả 40 câu, **15 câu** vượt ngưỡng hiệu chuẩn 0,5797 → đầu hàng đợi review | ✅ Nhưng kế hoạch cũ phải sửa: điểm cao **không** đủ để phân loại lại tự động. Ví dụ đầu hàng đợi có điểm 0,7287 mà chunk top-1 vẫn không trả lời được câu hỏi — điểm cao chứng minh *cùng chủ đề*, không chứng minh *trả lời được* |
 | ~~`TD-12`~~ | ~~`chunk_id` thuần vị trí làm golden set hỏng âm thầm khi đổi chunking~~ | **Đã trả**: nhãn neo theo **span ký tự** trong văn bản gốc (`TextSpan`, `Chunk.start_char/end_char`), eval tự ánh xạ span → chunk_id của index đang đo. 226/226 câu đã neo, 299 span (62% thu về đúng câu trích dẫn). Đo ở 3 cấu hình chunking (1000/600/400): **0 câu mất nhãn**; ở 1000 dựng lại đúng nhãn cũ 216/226 | ✅ `reports/w1-11-spans.md` |
-| `TD-11` ⭐ | **56,8% chunk bị cắt lúc embed** — `chunk_size=1000` **ký tự** ≈ 340 token, `vietnamese-bi-encoder` (PhoBERT) có `max_seq_length=256` **token**. `sentence-transformers` cắt âm thầm, không cảnh báo. **15,7% toàn bộ text đem embed không bao giờ tới được vector** (mẫu ngẫu nhiên 1200 chunk, seed 20260820; riêng chunk đã gán thì 91,1% vì bộ lọc prose-like chọn chunk dài) | **Cố ý không sửa trước `W1-13`**: đây là hành vi thật của bản POC, sửa trước rồi gọi kết quả là "baseline" thì mọi so sánh về sau đo lẫn cải tiến này vào. Chiều câu hỏi an toàn: p50 = 44 token, 0/266 bị cắt | **Hạng mục đầu tiên của `W2`** vì rẻ nhất: hạ `chunk_size` xuống ~600 ký tự, hoặc đổi sang model cửa sổ dài (BGE-M3 8192). Đo lại ngay sau `W1-13` để có cặp số trước/sau |
+| ~~`TD-11`~~ ⭐ | ~~**56,8% chunk bị cắt lúc embed**~~ — `chunk_size=1000` **ký tự** ≈ 340 token, `vietnamese-bi-encoder` (PhoBERT) có `max_seq_length=256` **token**. `sentence-transformers` cắt âm thầm, không cảnh báo. **15,7% toàn bộ text đem embed không bao giờ tới được vector** (mẫu ngẫu nhiên 1200 chunk, seed 20260820; riêng chunk đã gán thì 91,1% vì bộ lọc prose-like chọn chunk dài) | **Cố ý không sửa trước `W1-13`**: đây là hành vi thật của bản POC, sửa trước rồi gọi kết quả là "baseline" thì mọi so sánh về sau đo lẫn cải tiến này vào. Chiều câu hỏi an toàn: p50 = 44 token, 0/266 bị cắt | **✅ Đã trả phần đo ở W2 (2026-08-20) — và giả định của nợ này bị phản chứng.** Hạ `chunk_size` 1000 → 550 đưa truncation từ 56,9% về **0,4%** chunk (token mất 15,4% → 0,1%) và **không cải thiện gì đo được**: McNemar `p = 0,711`, mọi CI bootstrap chứa 0. Lý do: baseline bị cắt nhưng mỗi vector vẫn đọc ~950 ký tự, chunk550 không bị cắt nhưng mỗi vector chỉ đọc 678 — hạ `chunk_size` là **đánh đổi**, không phải thu hồi. Còn lại là `W2-01` (BGE-M3, cửa sổ 8192): xoá truncation **mà không** phải hạ `chunk_size`. Evidence: `reports/w2-td11-chunk-size.md` |
+| `TD-17` | **1/60 tài liệu dùng `Ê` (U+00CA) làm dấu cách** — `wb-099553007092621441` (*Điểm lại*, bản VI mới nhất): 5,7% ký tự của nó là `Ê`, tức văn bản **không có ranh giới từ**. Hệ quả: splitter không cắt được theo `" "` nên rơi xuống mức ký tự, tokenizer nổ ra 0,63 token/ký tự (bình thường 0,20) và 31/36 chunk vẫn bị cắt kể cả ở `chunk_size=550`. Embedding của tài liệu này về cơ bản là rác | Ảnh hưởng hẹp và đã đo: **1/242 câu** golden set trỏ vào nó (`factoid-caa304ba55`), 36/31.155 chunk của index. Sửa đúng chỗ là ở tầng đọc tài liệu, không phải ở chunking — chữa bằng cách hạ `chunk_size` là chữa triệu chứng | `W3-01` (Docling) đọc lại từ PDF gốc thay vì bản `.txt` mà World Bank trích. Trước đó thêm **cổng chất lượng corpus**: tỉ lệ whitespace < 10% thì cảnh báo — corpus hiện tại p50 là 37,5%, tài liệu này 16,4% với 5,7% là `Ê` giả dạng. Phép kiểm rẻ, và nó bắt được cả họ lỗi 'PDF trích ra chữ nhưng mất ranh giới' |
 | `TD-13` ⭐ | **`golden_v1` review bằng MODEL, không phải người.** `reviewed_by_human=false`, `reviewed_by="model:claude-opus-5"` trong cả 242 dòng | Bạn không có ~6–8h để đọc tay, mà thiếu golden set thì cả W2–W6 không có thước đo. DeepSeek sinh → Claude review là **cross-model** nên không phải tự chấm mình; và mọi kết luận đều được đối chiếu với **văn bản gốc**, không phải với retriever (dùng retriever để lọc golden set là tự thổi phồng recall) | Người đọc lại **hai nhóm loại nhiều nhất** = hai nhóm model kém tự tin nhất: 33 câu `unanswerable` (đã tìm ra 7/40 sai nhãn, tỉ lệ sai 17,5%) + 43 câu `cross_lingual`. Rồi `make goldenset-freeze` với `--reviewer human`. Cho tới lúc đó: **cấm** chữ "human-verified" ở README, report, CV, phỏng vấn |
 | `TD-14` | **7 `reference_answer` lẫn ngữ cảnh lúc sinh** — "Theo đoạn văn…", "Đoạn văn không nói…", "không có trong các đoạn văn được cung cấp" (`multi_hop-78a942bf28`, `multi_hop-d8e57b6cb1`, `multi_hop-6af19bc73a`, `adversarial-8ce6a8483a`, `adversarial-87b49c12d2`, `unanswerable-200ea2a853`, `unanswerable-599b31f973`) | **Vô hại cho eval truy hồi** (`W1-13` chỉ dùng `relevant_chunk_ids`/`relevant_spans`, không đọc `reference_answer`). Câu hỏi thì sạch: **0/242** câu có lỗi này | Dọn trước `W5-01`: judge so câu trả lời của hệ thống với `reference_answer`, mà "Theo đoạn văn 1" là thứ hệ thống thật không bao giờ nói được → judge sẽ trừ điểm oan. Làm cùng lượt người review `TD-13` |
 | `TD-15` | **Nhãn liên quan chưa đầy đủ** — một dữ kiện có mặt ở nhiều tài liệu nhưng chỉ 1 chỗ được gán. Ví dụ "92% tài sản của các định chế tài chính" có trong **cả hai** *Financial sector assessment* và *Taking stock* | Hiếm: phép thử Jaccard ở `W1-11` cho **1/78** câu. Sửa cho đủ nghĩa là gán chéo toàn corpus × toàn golden set — đắt hơn giá trị mang lại ở giai đoạn này | Recall thật **cao hơn** số đo, tức baseline là **cận dưới** — sai theo chiều an toàn (không thổi phồng cải tiến). Nếu W2 đưa recall lên >0,6 mà vẫn có câu "trượt", kiểm chỗ này trước khi kết luận hệ thống sai |
@@ -456,6 +480,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-20 | **W2 bắt đầu — `TD-11` trả xong, kết quả ÂM.** Hạ `chunk_size` 1000 → 550 đưa truncation **56,9% → 0,4%** chunk (token mất 15,4% → 0,1%) và **không cải thiện gì đo được**: McNemar `p = 0,711`, mọi CI bootstrap chứa 0. Giả định của `TD-11` bị phản chứng — hạ `chunk_size` là **đánh đổi** (mỗi vector đọc 950 → 678 ký tự), không phải thu hồi nội dung. Ba thứ đổi cách làm phần còn lại của W2: (1) **không quét thêm `chunk_size`** với model đơn ngữ, đi thẳng `W2-01` BGE-M3 giữ `chunk_size=1000`; (2) **`golden_v1` chỉ phân giải được mức chênh ≥ 6 điểm `hit_rate`** nên mọi dòng ablation phải có `p`/CI — thêm `*-per-query.jsonl` + `pipeline/eval/compare.py` (McNemar exact + bootstrap cặp, không cần `scipy`); (3) **recall@k/nDCG/MAP không so được giữa hai `chunk_size`** vì nhãn neo theo span làm mẫu số đổi 1,38 → 1,96 nhãn/câu → tụt 29,6% kể cả khi truy hồi y nguyên, `compare.py` tự chặn. Thêm `make truncation` (đo `TD-11` tái lập được, chia theo ngôn ngữ: EN mất 19,4% token vs VI 7,5%) và `WARNING` truncation trong mọi lần build index. Thêm `TD-17` (1 tài liệu dùng `Ê` làm dấu cách). +66 unit test (600 tổng). Evidence: `reports/w2-td11-chunk-size.md` |
 | 2026-08-20 | **Đóng sổ tuần 1, mở sổ tuần 2.** Điền cột **Baseline** ở §1 (recall@10 0,2257 · nDCG@10 0,1621 · MRR 0,1660 · p95 truy hồi 39,9 ms) và tách rõ metric *chưa đo* thuộc W4/W5 khỏi metric đã có số. `W0-04` `[?]` → `[x]` (đánh nhầm từ 2026-08-17, DoD đã đủ và đã dùng thật ở `W1-10`/`W1-13`). Đếm lại tổng task: **77** (71 backlog gốc + 6 `NEW-xx`), số cũ "73" là lỗi sổ sách vì `NEW-03`…`NEW-06` không được cộng vào. Chốt **thứ tự tấn công W2** vào §4: `TD-11` trước, `W2-01` sau, để cặp số trước/sau tách được phần của `chunk_size` khỏi phần của BGE-M3. Thêm `TD-13`…`TD-16` (review bằng model · 7 `reference_answer` lẫn ngữ cảnh · nhãn liên quan chưa đầy đủ · nhóm `unanswerable` thiếu đa dạng) |
 | 2026-08-20 | **`W1-11` + `W1-13` xong — tuần 1 đủ 13/13.** `golden_v1` 242 câu (loại 24/266), baseline **recall@5 0,1746 · MRR 0,1660 · p95 39,9ms**, chạy lại 2 lần sai số **0,0000%**, chạy được với API key rỗng. ⚠️ Review bằng **model** (`reviewed_by_human=false`), không phải người — `G1` là PASS **có điều kiện**. Trả xong `TD-09` bằng cách tra thẳng văn bản gốc: 7/40 câu `unanswerable` sai nhãn. Bắt được `freeze` làm rơi `relevant_spans`. Thêm `reviewed_by` vào `GoldenQuery` và `--reviewer` vào `freeze`. 534 unit test. Evidence: `reports/w1-11-review.md` |
 | 2026-08-20 | **`TD-12` đã trả — golden set neo theo span ký tự.** `TextSpan` + `Chunk.start_char/end_char`; `split_pieces()` thay `split_text()` làm API chính của Chunker; `pipeline/eval/spans.py` ánh xạ span → chunk_id của index đang đo; `pipeline/goldenset/anchor.py` chuyển 266 nháp sang span (299 span, 62% thu theo trích dẫn). Đo ở `chunk_size` 1000/600/400: **0 câu mất nhãn**, còn nhãn `chunk_id` cũ thì "hợp lệ" 226/226 ở cả ba mà trỏ vào văn bản khác. Bất biến: nội dung chunk khớp từng byte trước/sau (digest `b381634d51e39365`). Chạy `--recreate` để point mang offset (170s). +121 unit test (530), +5 integration (38). Evidence: `reports/w1-11-spans.md` |

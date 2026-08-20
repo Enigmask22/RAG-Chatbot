@@ -45,6 +45,7 @@ test-all:  ## Toàn bộ test
 .PHONY: cov
 cov:  ## Unit test + báo cáo coverage của rag_core
 	$(PY) pytest -m "not integration and not gpu" \
+ \
 		--cov --cov-report=term-missing --cov-report=html:.coverage_html
 
 # ---------------------------------------------------------------- hạ tầng
@@ -103,6 +104,8 @@ data-track:  ## Ghi lại hash sau khi corpus đổi, rồi kiểm chéo với m
 
 # ---------------------------------------------------------------- pipeline
 BUNDLE ?= baseline
+BASE ?= baseline
+CAND ?= chunk550
 INDEX_CONFIG = configs/indexing/$(BUNDLE).yaml
 
 .PHONY: corpus
@@ -112,11 +115,22 @@ corpus:  ## Tải corpus theo config (idempotent)
 .PHONY: index
 index:  ## Build index Qdrant (BUNDLE=baseline). Cần `make up` trước
 	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) \
+ \
 		--report plans/reports/index-$(BUNDLE).json
 
 .PHONY: index-dry
 index-dry:  ## Chunk thử vài tài liệu và in thống kê, không chạm Qdrant
 	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) --dry-run
+
+.PHONY: eval-compare
+eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAND=chunk550)
+	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
+		--out plans/reports/cmp-$(BASE)-vs-$(CAND).md
+
+.PHONY: truncation
+truncation:  ## Đo phần text bị model embedding cắt (TD-11). Không cần Qdrant
+	$(PY) python -m pipeline.indexing.truncation_report --config $(INDEX_CONFIG) \
+		--report plans/reports/truncation-$(BUNDLE).json
 
 .PHONY: goldenset-dry
 goldenset-dry:  ## Xem phân bố lô chunk + prompt mẫu, KHÔNG gọi API
@@ -128,7 +142,8 @@ goldenset-draft:  ## Sinh nháp golden set bằng DeepSeek (TỐN TIỀN API)
 
 .PHONY: goldenset-anchor
 goldenset-anchor:  ## Neo nhãn nháp vào văn bản gốc (span thay chunk_id — TD-12)
-	$(PY) python -m pipeline.goldenset.anchor --index-config $(INDEX_CONFIG) 		--report plans/reports/goldenset-anchor.json
+	$(PY) python -m pipeline.goldenset.anchor --index-config $(INDEX_CONFIG) \
+		--report plans/reports/goldenset-anchor.json
 
 .PHONY: goldenset-triage
 goldenset-triage:  ## Chạy retriever thật lên tập nháp → hàng đợi review (W1-11)
@@ -136,7 +151,8 @@ goldenset-triage:  ## Chạy retriever thật lên tập nháp → hàng đợi 
 
 .PHONY: goldenset-freeze
 goldenset-freeze:  ## Đóng băng golden_v1 từ decisions_v1.csv (cần review xong)
-	$(PY) python -m pipeline.goldenset.freeze 		--report plans/reports/goldenset-v1.json
+	$(PY) python -m pipeline.goldenset.freeze \
+		--report plans/reports/goldenset-v1.json
 
 .PHONY: goldenset-verify
 goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
@@ -145,4 +161,5 @@ goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
 .PHONY: eval-retrieval
 eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline)
 	$(PY) python -m pipeline.eval.retrieval_eval \
+ \
 		--index-config $(INDEX_CONFIG) --run-name $(BUNDLE)

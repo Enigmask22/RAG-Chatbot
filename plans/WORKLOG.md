@@ -4,7 +4,7 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13, đang chờ vào `W2`.
+> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2 đã bắt đầu, `TD-11` xong với kết quả âm.
 > Sắp xếp theo thứ tự thời gian, mục mới thêm vào **cuối**.
 
 ---
@@ -413,5 +413,144 @@ make eval-retrieval                  # đo lại baseline, ~20 giây
 4. Việc đầu tiên gõ tay: tạo config mới với `chunk_size` ~600, build index bằng `--recreate`
    vào collection **riêng**, rồi `make eval-retrieval` để có cặp số trước/sau của `TD-11`
    **tách riêng** khỏi việc đổi model embedding.
+
+---
+
+## Phiên 2026-08-20 (tiếp) · Tuần 2 — `TD-11`
+
+**Mục tiêu phiên:** hạng mục đầu của W2 — sửa truncation bằng cách hạ `chunk_size`,
+lấy cặp số trước/sau.
+
+**Kết quả: giả định của `TD-11` bị phản chứng.** Phép sửa chạy đúng (56,9% → 0,4%
+chunk bị cắt) và không cải thiện gì đo được (`p = 0,711`). Thứ đáng giá nhất lại là
+phát hiện về **thước đo**, không phải về `chunk_size`.
+
+### Lệnh để kiểm tra trạng thái hiện tại
+
+```bash
+make truncation BUNDLE=baseline                  # đo TD-11, không cần Qdrant
+make index BUNDLE=chunk550                       # ~257s trên RTX 4060
+make eval-retrieval BUNDLE=chunk550              # ~20s
+make eval-compare BASE=baseline CAND=chunk550    # McNemar + bootstrap
+make test                                        # 600 unit test
+```
+
+### Bảng tiến độ phiên
+
+| Việc | Trạng thái | Ghi chú |
+|---|---|---|
+| Đo truncation thành thứ quan sát được | ✅ | `max_sequence_tokens` + `count_tokens` + `TruncationStats`; `WARNING` trong mọi lần build |
+| Hiệu chuẩn `chunk_size` từ dữ liệu | ✅ | 574 ký tự (an toàn cho mọi ngôn ngữ); chốt 550 |
+| `chunk550` + `chunk550nb55` build & đo | ✅ | 31.155 chunk mỗi config |
+| Kiểm định cặp giữa hai lần chạy | ✅ | `*-per-query.jsonl` + `pipeline/eval/compare.py` |
+| `TD-11` | ✅ trả xong phần đo | Kết luận **âm** — xem `reports/w2-td11-chunk-size.md` |
+| `W2-01` BGE-M3 | ⬜ việc tiếp theo | Giữ `chunk_size=1000`, chỉ đổi model |
+
+**Tổng kết:** 600 unit (+66) + 38 integration test xanh · `ruff` + `mypy --strict`
+sạch trên 79 file.
+
+### Quyết định kỹ thuật phát sinh trong phiên
+
+*(tiếp số từ 48)*
+
+49. **Việc đầu tiên không phải sửa lỗi mà là làm cho lỗi có triệu chứng.**
+    `sentence-transformers` cắt ở `max_seq_length` không cảnh báo, không lỗi — đó
+    là lý do `TD-11` sống được suốt W1. Nên `BuildReport` giờ mang `truncation` và
+    in ở mức **WARNING**: một dòng INFO giữa mười dòng INFO khác thì cũng trốn
+    được lần nữa.
+
+50. **`None` = "không biết giới hạn", KHÁC "không có giới hạn".** Provider không
+    đếm được token thì phép đo trả `None` và người gọi phải cảnh báo. Quy ước
+    thành 0 là báo "không bị cắt" cho mọi model — đúng cái cách bug ban đầu trốn
+    được. Có 3 test riêng cho bất biến này.
+
+51. **`truncation=False` khi gọi tokenizer, nếu không phép đo thành hằng số 0.**
+    Mặc định tokenizer *cắt ở `model_max_length`*, tức trả về đúng con số ngưỡng
+    cho mọi text dài. Bỏ sót cờ này thì mọi cấu hình đều báo "đã sửa xong".
+
+52. **Đếm kèm `[CLS]`/`[SEP]`**, và text dài **đúng bằng** giới hạn thì **không**
+    bị cắt (`>` chứ không `>=`). Hai lỗi off-by-one theo hai chiều khác nhau.
+
+53. **`truncated_ratio` và `tokens_lost_ratio` phải tách rời.** 90% chunk bị cắt
+    mất mỗi chunk 1 token là chuyện nhỏ; 10% chunk mất mỗi chunk một nửa là mất
+    hẳn nội dung. Một con số duy nhất không phân biệt được hai ca đó.
+
+54. **Hiệu chuẩn `chunk_size` phải dùng phân vị THẤP của mật độ ký tự/token, không
+    phải trung bình — tôi viết sai lần đầu.** Bản trung bình cho ra 946 ký tự,
+    trong khi ở 1000 ký tự đã có 56,9% chunk bị cắt. Con số vô lý mà trông hợp lý,
+    vì nó trả lời "chunk *trung bình* vừa khít cửa sổ" = ngưỡng mà một nửa vẫn bị
+    cắt. Bản đúng: 574 ký tự. Có test hồi quy cho đúng cái bug này.
+
+55. **`max_chunk_size` phải hạ cùng `chunk_size`** — nó là cùng một đại lượng. Để
+    nguyên 1500 thì hậu xử lý vẫn thả ra chunk 1500 ký tự và chúng vẫn bị cắt;
+    phép sửa chỉ có tác dụng một nửa.
+
+56. **Nhãn neo theo span làm mẫu số của recall thay đổi khi đổi `chunk_size`.**
+    Chunk nhỏ hơn → một span phủ nhiều chunk hơn → **1,38 → 1,96 nhãn/câu**.
+    `recall@k = |tìm được ∩ liên quan| / |liên quan|` nên nó tụt `1 − 1,38/1,96 =
+    29,6%` **kể cả khi truy hồi y nguyên**; thực tế tụt 25,8%. Suýt viết vào báo
+    cáo là "hạ `chunk_size` làm tụt recall 26%".
+    Metric miễn nhiễm: `hit_rate@k` (mẫu số 1), `precision@k` (mẫu số k), `MRR`.
+
+57. **Không có điểm từng câu thì không kiểm định được gì.** `hit_rate@5` 0,2153 →
+    0,2010 trên 209 câu là **45 câu xuống 42 câu** — chênh 3 câu. Đã thêm
+    `{run}-per-query.jsonl` và `pipeline/eval/compare.py`: McNemar exact cho metric
+    nhị phân, bootstrap cặp (seed cố định) cho metric liên tục. Không cần `scipy`.
+
+58. **`compare.py` TỪ CHỐI so `recall@k`/`nDCG@k`/`MAP@k` khi số nhãn/câu khác
+    nhau**, và in kèm "metric này tụt X% ngay cả khi truy hồi y nguyên". Bài học
+    của quyết định 56 đóng thành hàng rào, không để trong docstring.
+
+59. **`golden_v1` chỉ phân giải được mức chênh ≥ 6 điểm `hit_rate` (≈28% tương
+    đối).** 209 câu, base rate ≈ 0,20: với ~30 câu đổi chiều phải lệch ~12 câu mới
+    đạt `p < 0,05`. Đây là **giới hạn của thước đo**, và nó chi phối cả W2: xếp
+    hạng 12 tổ hợp ablation bằng mức chênh vài phần trăm là tung đồng xu. Tin tốt:
+    ngưỡng `G2` (+0,08 nDCG trên 0,1621 = +49% tương đối) nằm trong tầm đo.
+
+60. **Hạ `chunk_size` là ĐÁNH ĐỔI, không phải thu hồi nội dung đã mất.** Baseline
+    bị cắt nhưng mỗi vector vẫn đọc **~950 ký tự**; chunk550 không bị cắt nhưng mỗi
+    vector chỉ đọc **678**. Ba cấu hình xếp đúng theo con số đó (950 → 678 → 589,
+    `hit_rate@5` 0,2153 → 0,2010 → 0,1770) — chiều thì đơn điệu, độ lớn thì dưới
+    ngưỡng phân giải.
+
+61. **Giả thuyết "pha loãng bởi ngữ cảnh hàng xóm" bị số liệu bác.** `chunk550`
+    giữ `neighbor_context_chars: 100` nên 36% mỗi chunk là text của chunk bên cạnh
+    (baseline 20%). Tôi cho rằng đó là lỗi thiết kế thí nghiệm và dựng
+    `chunk550nb55` để đối chứng — nó đi tiếp xuống, không lấy lại được gì. Lập luận
+    "giữ giá trị tuyệt đối làm đổi giá trị tương đối" vẫn đúng; kết luận rút ra từ
+    nó thì sai. Đo vẫn rẻ hơn suy luận.
+
+62. **1 tài liệu dùng `Ê` (U+00CA) làm dấu cách** (`TD-17`). Font PDF map glyph dấu
+    cách thành `Ê` → văn bản **không có ranh giới từ** → splitter rơi xuống mức ký
+    tự → tokenizer nổ ra 0,63 token/ký tự (bình thường 0,20) → 31/36 chunk vẫn bị
+    cắt kể cả ở `chunk_size=550`. Phạm vi hẹp và đã đo: 1/60 tài liệu, 1/242 câu
+    golden set. Phép phát hiện rẻ: **tỉ lệ ký tự whitespace** (corpus p50 37,5%,
+    tài liệu này 16,4%) — nên thành cổng chất lượng corpus ở `W3-01`.
+
+63. **Chạy lại `baseline` sau khi thêm per-query cho đúng từng chữ số** trên cả 15
+    metric. Lần xác nhận thứ ba cho tính xác định của đường eval.
+
+### Vấn đề đang mở
+
+- **`W2-01` là việc tiếp theo, và giữ `chunk_size=1000`.** Đừng quét thêm
+  `chunk_size` với `vietnamese-bi-encoder`.
+- ⚠️ **Mọi so sánh W2 từ giờ phải qua `make eval-compare`.** Bảng số không kèm
+  `p`/CI thì không kết luận được gì ở mức chênh dưới 6 điểm `hit_rate`.
+- ⚠️ Đổi `chunk_size` thì **không** dùng recall@k/nDCG/MAP. `compare.py` tự chặn,
+  nhưng bảng Markdown của `eval-retrieval` thì không — nó vẫn in mọi metric.
+- `TD-17` — tài liệu `Ê`, sửa ở `W3-01`.
+- `TD-13` — golden set vẫn là review bằng model. Thêm câu hỏi sẽ cải thiện **cả**
+  độ phân giải (quyết định 59) **và** `TD-13`; gộp hai việc được.
+- Collection `rag_chunk550` + `rag_chunk550nb55` còn trong Qdrant (~62k point) để
+  đối chiếu lại. Xoá bằng `make down-clean` rồi build lại từ config nếu cần chỗ.
+- Các mục còn lại của phiên trước (`TD-10`, `TD-05`, `TD-08`, `W0-02`) không đổi.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` (600 unit test).
+2. Đọc `reports/w2-td11-chunk-size.md` §8 (kiểm định + độ phân giải) và §10 (bước tiếp).
+3. `W2-01`: thêm provider BGE-M3, `max_sequence_tokens` phải báo 8192. Chạy
+   `make truncation` với config mới **trước** khi eval để xác nhận truncation về 0.
+4. Config mới đặt tên riêng + collection riêng; **không** sửa `baseline.yaml`.
 
 ---

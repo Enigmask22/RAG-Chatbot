@@ -94,6 +94,30 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
             raise RuntimeError(f"Không đọc được số chiều của model {self.model_name!r}")
         return int(dim)
 
+    @property
+    def max_sequence_tokens(self) -> int | None:
+        """`max_seq_length` của model — ngưỡng mà `encode()` cắt không báo gì."""
+        limit = getattr(self.model, "max_seq_length", None)
+        return int(limit) if limit else None
+
+    def count_tokens(self, texts: Sequence[str]) -> list[int]:
+        """Đếm token bằng chính tokenizer của model.
+
+        `truncation=False` là điểm quan trọng: mặc định của tokenizer là cắt ở
+        `model_max_length`, tức là nó sẽ trả về đúng con số ngưỡng cho mọi text
+        dài — và phép đo "bao nhiêu phần trăm bị cắt" trở thành hằng số 0.
+        """
+        if not texts:
+            return []
+        encoded = self.model.tokenizer(
+            list(texts),
+            add_special_tokens=True,
+            truncation=False,
+            padding=False,
+            verbose=False,
+        )
+        return [len(ids) for ids in encoded["input_ids"]]
+
     def _encode(self, texts: Sequence[str]) -> FloatArray:
         if not texts:
             return np.zeros((0, self.dimension), dtype=np.float32)

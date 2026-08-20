@@ -12,6 +12,9 @@ Quy ước chung cho mọi implementation:
 * Batch phải cho **kết quả y hệt** khi gọi từng cái một (có test canh). Nghe hiển
   nhiên nhưng padding trong một số backend làm sai điều này.
 * Nếu `normalize=True` thì vector có norm 1, khi đó dot product == cosine.
+* `max_sequence_tokens` và `count_tokens` phơi ra **giới hạn cửa sổ** của model.
+  Hai thứ này không phục vụ việc embed; chúng tồn tại để việc cắt bớt text
+  không thể xảy ra âm thầm nữa — xem `TD-11` và `truncation.py`.
 """
 
 from __future__ import annotations
@@ -51,6 +54,36 @@ class EmbeddingProvider(ABC):
         quên bước này làm tụt recall rất nhiều mà không có lỗi nào báo ra.
         """
         return cast(FloatArray, self.embed_documents([text])[0])
+
+    # ------------------------------------------------------- giới hạn cửa sổ
+
+    @property
+    def max_sequence_tokens(self) -> int | None:
+        """Số token tối đa model thật sự đọc. `None` = provider không biết.
+
+        Lý do property này tồn tại: `sentence-transformers` **cắt âm thầm** ở
+        `max_seq_length` — không cảnh báo, không lỗi, phần text vượt quá chỉ
+        đơn giản không tới được vector. Ở baseline `W1-13` chỗ này làm **15,7%
+        văn bản** của corpus không bao giờ được embed, và không một con số nào
+        trong report lộ ra điều đó (`TD-11`).
+
+        `None` là "không biết", **không phải** "không có giới hạn". Người gọi
+        phải phân biệt hai thứ đó, vì coi "không biết" thành "không giới hạn"
+        đúng là cách bug ban đầu trốn được sáu tuần.
+        """
+        return None
+
+    def count_tokens(self, texts: Sequence[str]) -> list[int] | None:
+        """Số token của từng text theo tokenizer **thật** của model.
+
+        Trả `None` nếu provider không đếm được. Đừng quy ước thành `0` — mọi
+        model sẽ trông như "không cắt gì".
+
+        Phải đếm **kèm special token** (`[CLS]`/`[SEP]`) vì đó là thứ đem so
+        với `max_sequence_tokens`; bỏ hai token đó ra là báo thiếu đúng hai
+        token ở mọi chunk sát ngưỡng.
+        """
+        return None
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(name={self.name!r}, dim={self.dimension})"

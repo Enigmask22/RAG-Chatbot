@@ -37,6 +37,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rag_core.chunking import Chunker
 from rag_core.chunking.cache import CachedChunker
+from rag_core.embedding import EmbeddingProvider
+from rag_core.embedding.truncation import token_stats
 from rag_core.schemas import Chunk, Document
 from rag_core.settings import get_settings
 
@@ -115,6 +117,7 @@ class BuildReport:
     chars_in: int
     chars_out: int
     chunk_len: dict[str, float] = field(default_factory=dict)
+    truncation: dict[str, float] = field(default_factory=dict)
     seconds: dict[str, float] = field(default_factory=dict)
     cache: dict[str, float] = field(default_factory=dict)
     created_at: str = ""
@@ -165,6 +168,7 @@ class BuildReport:
                 self.chunk_len.get("p95", 0),
                 self.chunk_len.get("max", 0),
             )
+        self._log_truncation()
         logger.info(
             "  ký tự            vào %s → embed %s (hệ số %.2fx)",
             f"{self.chars_in:,}",
@@ -189,6 +193,41 @@ class BuildReport:
         if total > 0 and self.n_chunks_written:
             logger.info("  thông lượng      %.1f chunk/giây", self.n_chunks_written / total)
         logger.info("─" * 62)
+
+    def _log_truncation(self) -> None:
+        """In phần `TD-11`. Cố ý dùng WARNING, không phải INFO.
+
+        Đây là lỗi đã trốn được suốt W1 vì nó **không có triệu chứng**: index
+        đủ chunk, đủ chiều, mọi số trong report đều đẹp, chỉ có phần đuôi văn
+        bản là không tồn tại đối với vector. Một dòng INFO giữa mười dòng INFO
+        khác thì cũng trốn được lần nữa.
+        """
+        if not self.truncation and not self.n_chunks_written:
+            logger.info("  cắt token        không có chunk mới nên không đo lại")
+            return
+        if not self.truncation:
+            logger.warning(
+                "  ⚠️ TD-11          KHÔNG đo được (provider không cho biết giới hạn token). "
+                "Đây là 'không biết', không phải 'không bị cắt'"
+            )
+            return
+        lost = self.truncation.get("tokens_lost_ratio", 0.0)
+        n_trunc = int(self.truncation.get("n_truncated", 0))
+        line = (
+            "  cắt token        %d/%d chunk vượt %d token (%.1f%%) · "
+            "%.1f%% token không tới được vector"
+        )
+        args = (
+            n_trunc,
+            int(self.truncation.get("n_texts", 0)),
+            int(self.truncation.get("limit", 0)),
+            100 * self.truncation.get("truncated_ratio", 0.0),
+            100 * lost,
+        )
+        if n_trunc:
+            logger.warning(line.replace("  cắt token       ", "  ⚠️ cắt token    "), *args)
+        else:
+            logger.info(line, *args)
 
 
 def _percentile(values: Sequence[float], pct: float) -> float:
@@ -310,6 +349,9 @@ def build_index(
     chars_in = 0
     chars_out = 0
     lengths: list[int] = []
+    # `None` = provider không đếm được token. Phân biệt với list rỗng (đếm được
+    # nhưng chưa có chunk nào) — hai thứ này in ra hai dòng log khác nhau.
+    token_counts: list[int] | None = [] if embeddings.max_sequence_tokens else None
     n_written = 0
     n_indexed = 0
     n_skipped = 0
@@ -330,6 +372,7 @@ def build_index(
 
         chars_out += sum(len(c.content) for c in chunks)
         lengths.extend(len(c.content) for c in chunks)
+        token_counts = _accumulate_tokens(token_counts, embeddings, chunks)
 
         t0 = time.perf_counter()
         n_written += retriever.upsert(chunks, batch_size=config.upsert_batch_size)
@@ -359,6 +402,11 @@ def build_index(
             "entries": float(stats.entries),
         }
 
+    limit = embeddings.max_sequence_tokens
+    truncation: dict[str, float] = {}
+    if token_counts and limit is not None:
+        truncation = token_stats(token_counts, limit=limit, chars=lengths).as_dict()
+
     report = BuildReport(
         config_name=config.name,
         collection=config.collection_name,
@@ -377,6 +425,7 @@ def build_index(
         chars_in=chars_in,
         chars_out=chars_out,
         chunk_len=_chunk_length_stats(lengths),
+        truncation=truncation,
         seconds={
             "load": load_seconds,
             "chunk": chunk_seconds,
@@ -388,6 +437,27 @@ def build_index(
     )
     report.log_summary()
     return report
+
+
+def _accumulate_tokens(
+    counts: list[int] | None,
+    embeddings: EmbeddingProvider,
+    chunks: Sequence[Chunk],
+) -> list[int] | None:
+    """Cộng dồn số token của lô chunk vừa sinh; `None` nghĩa là không đếm được.
+
+    Một lần trả `None` là bỏ luôn cả phép đo cho lần build này. Cố ý không
+    "đếm được bao nhiêu thì đếm": một thống kê trên tập con không rõ là tập nào
+    còn tệ hơn không có thống kê, vì nó vẫn trông như một con số.
+    """
+    if counts is None:
+        return None
+    counted = embeddings.count_tokens([c.content for c in chunks])
+    if counted is None:  # pragma: no cover - provider khai có limit mà không đếm
+        logger.warning("Provider %s có giới hạn token nhưng không đếm được", embeddings.name)
+        return None
+    counts.extend(counted)
+    return counts
 
 
 def _delete_stale(

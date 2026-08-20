@@ -1,0 +1,49 @@
+# `TD-11`: hạ kích thước chunk để hết bị cắt ở cửa sổ 256 token của PhoBERT.
+#
+# Đây là bước W2 đầu tiên, và nó cố ý chỉ đụng vào **một** thứ: kích thước chunk.
+# Model embedding vẫn là `vietnamese-bi-encoder` như baseline — đổi cả hai cùng
+# lúc (BGE-M3 có cửa sổ 8192) thì không tách được phần cải thiện nào của ai, mà
+# BGE-M3 xoá luôn nguyên nhân truncation nên sẽ mất hẳn cặp số này.
+#
+# Con số 550 KHÔNG phải đoán. `make truncation BUNDLE=baseline` đo trên corpus
+# thật cho ra ngân sách 574 ký tự — lấy phân vị 5% của mật độ `ký tự/token` (tức
+# trường hợp text bị xé vụn nhất) rồi trừ chỗ của `[CLS]`/`[SEP]` và 200 ký tự
+# ngữ cảnh hàng xóm. 550 là 574 trừ một khoảng đệm.
+#
+# ⚠️ `max_chunk_size` cũng phải hạ theo. Nó là cùng một đại lượng: để nguyên
+# 1500 thì hậu xử lý vẫn thả ra những chunk 1500 ký tự và chúng vẫn bị cắt —
+# hạ `chunk_size` mà quên nó thì phép sửa này chỉ có tác dụng một nửa.
+#
+# Giữ nguyên so với baseline, có chủ ý:
+#   * `chunk_overlap: 100` — độ chồng lấp tính bằng ký tự tuyệt đối là một knob
+#     riêng; scale nó theo là gộp hai thay đổi vào một lần đo.
+#   * `neighbor_context_chars: 100` — bật như bản POC. Ngân sách ký tự ở trên đã
+#     trừ 200 cho nó (dán cả trước và sau).
+
+name: chunk550
+collection: rag_chunk550
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+chunking:
+  strategy: hybrid
+  chunk_size: 550          # baseline 1000 · ngân sách đo được 574
+  chunk_overlap: 100       # giữ nguyên
+  min_chunk_size: 200      # giữ nguyên
+  max_chunk_size: 800      # baseline 1500 · giữ tỉ lệ ~1.45x so với chunk_size
+  semantic_buffer_size: 1
+  semantic_threshold_percentile: 85.0
+  semantic_min_sentences: 3
+  hybrid_max_docs_for_semantic: 5
+  neighbor_context_chars: 100
+
+embedding_model: bkai-foundation-models/vietnamese-bi-encoder
+embedding_device: auto
+embedding_batch_size: 64
+embedding_normalize: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

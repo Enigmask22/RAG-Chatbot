@@ -1,0 +1,41 @@
+# Đối chứng cho `chunk550`: `neighbor_context_chars` tỉ lệ theo `chunk_size`.
+#
+# `chunk550` giữ `neighbor_context_chars: 100` "để chỉ đổi một thứ" — và đó là
+# một lỗi thiết kế thí nghiệm. Giữ nguyên giá trị TUYỆT ĐỐI làm đổi giá trị
+# TƯƠNG ĐỐI, mà cái quyết định chất lượng vector là tương đối:
+#
+#   baseline    200 / 1000 =  20% mỗi chunk là text của chunk bên cạnh (đo 1.24x)
+#   chunk550    200 /  550 =  36%                                     (đo 1.48x)
+#   chunk550nb55 110 / 550 =  20%  <- khớp tỉ lệ baseline
+#
+# Nếu `chunk550` tụt vì pha loãng thì config này phải lấy lại được phần đó. Nếu
+# không lấy lại được thì nguyên nhân là chính việc chunk ngắn đi, và kết luận
+# nghiêng hẳn về `W2-01` (BGE-M3, cửa sổ 8192 — không phải đánh đổi gì cả).
+
+name: chunk550nb55
+collection: rag_chunk550nb55
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+chunking:
+  strategy: hybrid
+  chunk_size: 550
+  chunk_overlap: 100
+  min_chunk_size: 200
+  max_chunk_size: 800
+  semantic_buffer_size: 1
+  semantic_threshold_percentile: 85.0
+  semantic_min_sentences: 3
+  hybrid_max_docs_for_semantic: 5
+  neighbor_context_chars: 55    # 550 * 0.10, khớp tỉ lệ của baseline
+
+embedding_model: bkai-foundation-models/vietnamese-bi-encoder
+embedding_device: auto
+embedding_batch_size: 64
+embedding_normalize: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

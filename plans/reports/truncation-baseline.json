@@ -1,0 +1,98 @@
+{
+  "config_name": "baseline",
+  "embedding_model": "bkai-foundation-models/vietnamese-bi-encoder",
+  "limit": 256,
+  "chunk_size": 1000,
+  "neighbor_context_chars": 100,
+  "overall": {
+    "limit": 256.0,
+    "n_texts": 15814.0,
+    "n_truncated": 9001.0,
+    "truncated_ratio": 0.5692,
+    "tokens_total": 3932391.0,
+    "tokens_kept": 3328311.0,
+    "tokens_lost_ratio": 0.1536,
+    "tokens_per_char": 0.2216,
+    "chars_per_token_p05": 3.079,
+    "char_budget": 782.0,
+    "token_p50": 274.0,
+    "token_p95": 375.0,
+    "token_max": 684.0
+  },
+  "by_language": {
+    "en": {
+      "limit": 256.0,
+      "n_texts": 9393.0,
+      "n_truncated": 6133.0,
+      "truncated_ratio": 0.6529,
+      "tokens_total": 2594508.0,
+      "tokens_kept": 2091054.0,
+      "tokens_lost_ratio": 0.194,
+      "tokens_per_char": 0.2443,
+      "chars_per_token_p05": 3.049,
+      "char_budget": 774.0,
+      "token_p50": 313.0,
+      "token_p95": 381.0,
+      "token_max": 447.0
+    },
+    "vi": {
+      "limit": 256.0,
+      "n_texts": 6421.0,
+      "n_truncated": 2868.0,
+      "truncated_ratio": 0.4467,
+      "tokens_total": 1337883.0,
+      "tokens_kept": 1237257.0,
+      "tokens_lost_ratio": 0.0752,
+      "tokens_per_char": 0.1878,
+      "chars_per_token_p05": 3.657,
+      "char_budget": 928.0,
+      "token_p50": 244.0,
+      "token_p95": 315.0,
+      "token_max": 684.0
+    }
+  },
+  "worst_documents": [
+    {
+      "doc_id": "wb-099553007092621441",
+      "lang": "vi",
+      "n_chunks": 22,
+      "tokens_lost_ratio": 0.473,
+      "token_max": 684
+    },
+    {
+      "doc_id": "wb-404881634191796759",
+      "lang": "en",
+      "n_chunks": 10,
+      "tokens_lost_ratio": 0.2974,
+      "token_max": 402
+    },
+    {
+      "doc_id": "wb-399061468128396981",
+      "lang": "en",
+      "n_chunks": 194,
+      "tokens_lost_ratio": 0.2425,
+      "token_max": 407
+    },
+    {
+      "doc_id": "wb-124271468349801200",
+      "lang": "en",
+      "n_chunks": 783,
+      "tokens_lost_ratio": 0.2417,
+      "token_max": 409
+    },
+    {
+      "doc_id": "wb-745271590429811414",
+      "lang": "en",
+      "n_chunks": 457,
+      "tokens_lost_ratio": 0.2386,
+      "token_max": 404
+    }
+  ],
+  "suggested_chunk_size": {
+    "overall": 582,
+    "en": 574,
+    "vi": 728,
+    "safe_for_all_languages": 574
+  },
+  "created_at": "2026-08-20T07:50:19+00:00"
+}

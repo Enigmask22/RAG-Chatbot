@@ -45,7 +45,7 @@ from .spans import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["EvalReport", "evaluate_run", "run_retrieval_eval"]
+__all__ = ["EvalReport", "QueryScore", "evaluate_run", "run_retrieval_eval"]
 
 DEFAULT_K_VALUES = (1, 5, 10, 20)
 
@@ -54,6 +54,29 @@ DEFAULT_K_VALUES = (1, 5, 10, 20)
 class GroupMetrics:
     n_queries: int
     metrics: dict[str, float]
+
+
+@dataclass
+class QueryScore:
+    """Điểm của **một** truy vấn — thứ cần để kiểm định cặp giữa hai lần chạy.
+
+    Không có tầng này thì không so được hai config nào một cách có ý nghĩa:
+    chênh 0,2153 vs 0,2010 ở `hit_rate@5` trên 209 câu là **3 câu**, và không
+    ai biết đó là cải thiện hay là nhiễu. `pipeline/eval/compare.py` đọc chính
+    file này để chạy McNemar và bootstrap cặp.
+
+    `n_relevant` có mặt vì nó là **cái bẫy** phát hiện ở `TD-11`: nhãn neo theo
+    span nên đổi `chunk_size` làm số nhãn mỗi câu thay đổi, và recall@k có mẫu
+    số là chính con số đó. Ghi lại để công cụ so sánh từ chối so recall khi hai
+    lần chạy có phân bố nhãn khác nhau.
+    """
+
+    query_id: str
+    category: str
+    lang: str
+    n_relevant: int
+    n_retrieved: int
+    scores: dict[str, float]
 
 
 @dataclass
@@ -69,11 +92,24 @@ class EvalReport:
     latency_ms: dict[str, float] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
     environment: dict[str, str] = field(default_factory=dict)
+    per_query: list[QueryScore] = field(default_factory=list)
+
+    def to_jsonl(self) -> str:
+        """Một dòng JSON cho mỗi truy vấn — định dạng để so sánh và để diff."""
+        return "\n".join(
+            json.dumps(asdict(row), ensure_ascii=False, sort_keys=True) for row in self.per_query
+        )
 
     def to_json(self) -> str:
         payload = asdict(self)
         payload["by_category"] = {k: asdict(v) for k, v in self.by_category.items()}
         payload["by_language"] = {k: asdict(v) for k, v in self.by_language.items()}
+        # Điểm từng câu đi ra file JSONL riêng: 209 dòng × 15 metric làm file
+        # tóm tắt không đọc được nữa, mà file tóm tắt là thứ người ta mở trước.
+        payload.pop("per_query", None)
+        payload["n_relevant_mean"] = round(
+            _mean([float(row.n_relevant) for row in self.per_query]), 4
+        )
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
     def to_markdown(self) -> str:
@@ -172,13 +208,25 @@ def evaluate_run(
     qua sẽ làm điểm cao lên một cách sai.
     """
     per_query: list[tuple[GoldenQuery, dict[str, float]]] = []
+    rows: list[QueryScore] = []
     skipped = 0
     for query in queries:
         if not query.relevant_chunk_ids:
             skipped += 1
             continue
         retrieved = list(retrieved_by_query.get(query.query_id, []))
-        per_query.append((query, _score_one(retrieved, query.relevant_chunk_ids, k_values)))
+        scores = _score_one(retrieved, query.relevant_chunk_ids, k_values)
+        per_query.append((query, scores))
+        rows.append(
+            QueryScore(
+                query_id=query.query_id,
+                category=str(query.category.value),
+                lang=str(query.lang.value),
+                n_relevant=len(query.relevant_chunk_ids),
+                n_retrieved=len(retrieved),
+                scores=scores,
+            )
+        )
 
     overall = _aggregate([scores for _, scores in per_query])
 
@@ -220,6 +268,7 @@ def evaluate_run(
         latency_ms=latency_summary,
         config=config or {},
         environment={"python": platform.python_version(), "platform": platform.platform()},
+        per_query=rows,
     )
 
 
@@ -407,9 +456,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     md_path = args.out_dir / f"{args.run_name}-retrieval.md"
     json_path = args.out_dir / f"{args.run_name}-retrieval.json"
+    jsonl_path = args.out_dir / f"{args.run_name}-per-query.jsonl"
     md_path.write_text(report.to_markdown(), encoding="utf-8")
     json_path.write_text(report.to_json(), encoding="utf-8")
-    print(f"Đã ghi {md_path} và {json_path}")
+    jsonl_path.write_text(report.to_jsonl() + "\n", encoding="utf-8")
+    print(f"Đã ghi {md_path}, {json_path} và {jsonl_path}")
     return 0
 
 

@@ -1,6 +1,6 @@
 # Retrieval eval — `baseline`
 
-- Thời điểm chạy: `2026-08-20T05:55:07+00:00`
+- Thời điểm chạy: `2026-08-20T08:09:58+00:00`
 - Số truy vấn: **242** (chấm điểm 209, bỏ qua 33 câu unanswerable)
 - Config: `{"retriever": "qdrant-dense:rag_baseline", "top_k": 20, "index_config": "configs\\indexing\\baseline.yaml", "index_fingerprint": "72c87744d258ed2c068dc4869572131bd69a596a2921dff6722a09398d035d02", "collection": "rag_baseline", "embedding_model": "bkai-foundation-models/vietnamese-bi-encoder", "chunking": {"strategy": "hybrid", "chunk_size": 1000, "chunk_overlap": 100, "separators": ["\n\n", "\n", ". ", " ", ""], "min_chunk_size": 200, "max_chunk_size": 1500, "semantic_buffer_size": 1, "semantic_threshold_percentile": 85.0, "semantic_min_sentences": 3, "hybrid_max_docs_for_semantic": 5, "neighbor_context_chars": 100}, "span_resolution": {"resolved": 209, "kept_chunk_ids": 33, "unmatched_queries": [], "min_overlap_ratio": 0.5, "label_changed": 9}}`
 - Môi trường: platform=Windows-11-10.0.26200-SP0, python=3.13.11
@@ -29,11 +29,11 @@
 
 | Phân vị | ms |
 |---|---:|
-| mean | 24.3 |
-| p50 | 22.5 |
-| p95 | 39.9 |
+| mean | 26.3 |
+| p50 | 29.8 |
+| p95 | 32.8 |
 | max | 45.5 |
-| stdev | 8.1 |
+| stdev | 7.1 |
 
 ## Theo nhóm truy vấn
 

@@ -2,13 +2,17 @@
 
 from .base import EmbeddingProvider, FloatArray, l2_normalize
 from .hashing import HashingEmbeddingProvider
+from .truncation import TruncationStats, measure_truncation, token_stats
 
 __all__ = [
     "EmbeddingProvider",
     "FloatArray",
     "HashingEmbeddingProvider",
+    "TruncationStats",
     "build_embedding_provider",
     "l2_normalize",
+    "measure_truncation",
+    "token_stats",
 ]
 
 
