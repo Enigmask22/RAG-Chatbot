@@ -4,7 +4,7 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2 đã bắt đầu, `TD-11` xong với kết quả âm.
+> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2: `TD-11` (kết quả âm) và `W2-01` BGE-M3 (nDCG@10 0,1621 → 0,4442) đều xong. Việc tiếp theo: `W2-02`.
 > Sắp xếp theo thứ tự thời gian, mục mới thêm vào **cuối**.
 
 ---
@@ -552,5 +552,169 @@ sạch trên 79 file.
 3. `W2-01`: thêm provider BGE-M3, `max_sequence_tokens` phải báo 8192. Chạy
    `make truncation` với config mới **trước** khi eval để xác nhận truncation về 0.
 4. Config mới đặt tên riêng + collection riêng; **không** sửa `baseline.yaml`.
+
+---
+
+## Phiên 2026-08-20 (tiếp) · Tuần 2 — `W2-01` BGE-M3
+
+**Mục tiêu phiên:** hạng mục W2 thật đầu tiên — đổi model embedding sang BGE-M3,
+giữ nguyên chunking của baseline, lấy cặp số có kiểm định.
+
+**Kết quả: mức tăng lớn nhất của dự án tới giờ, và một bài học về quy kết nguyên
+nhân.** nDCG@10 `0,1621 → 0,4442`, cả 15 metric có ý nghĩa thống kê,
+`cross_lingual` từ **0** lên `0,3023`. Nhưng mức tăng đó **không** phải công của
+việc sửa truncation — xem quyết định 68.
+
+### Lệnh để kiểm tra trạng thái hiện tại
+
+```bash
+make truncation BUNDLE=bgem3                  # 0/15814 chunk bị cắt
+make eval-compare BASE=baseline CAND=bgem3    # McNemar + bootstrap, 15/15 metric
+make test                                     # 644 unit test (~3s)
+make test-gpu                                 # 11 test cần model thật (2,2GB)
+```
+
+Build lại từ đầu (~405 s trên RTX 4060, **bắt buộc** `--recreate` vì 768 → 1024 chiều):
+
+```bash
+python -m pipeline.indexing.build_index --config configs/indexing/bgem3.yaml \
+  --recreate --report plans/reports/index-bgem3.json
+python -m pipeline.eval.retrieval_eval --index-config configs/indexing/bgem3.yaml \
+  --run-name bgem3
+```
+
+### Bảng tiến độ phiên
+
+| Việc | Trạng thái | Ghi chú |
+|---|---|---|
+| `SparseVector` + `HybridVectors` | ✅ | Kiểu bất biến, cưỡng chế 3 bất biến lúc khởi tạo |
+| Năng lực sparse tuỳ chọn trên `EmbeddingProvider` | ✅ | Mặc định `None`; `None` ≠ rỗng |
+| `BgeM3EmbeddingProvider` | ✅ | Dense + sparse **một** forward pass |
+| Truncation với cửa sổ 8192 | ✅ | 56,9% → **0,0%** (0/15814) |
+| Index + eval + kiểm định | ✅ | 15/15 metric "khác biệt thật" |
+| `W2-01` | ✅ | `reports/w2-01-bge-m3.md` |
+| `W2-02` Qdrant sparse | ⬜ việc tiếp theo | Sparse đã có, cần chỗ chứa |
+
+**Tổng kết:** 644 unit (+44) + 38 integration + 11 gpu test xanh · `ruff` +
+`mypy --strict` sạch trên 83 file.
+
+### Quyết định kỹ thuật phát sinh trong phiên
+
+*(tiếp số từ 63)*
+
+64. **Sparse của BGE-M3 không nằm trong `sentence-transformers`, và không nạp
+    model lần thứ hai để lấy nó.** `modules.json` chỉ có
+    `Transformer → Pooling → Normalize`; sparse là một `Linear(1024 → 1)` đặt lên
+    `last_hidden_state`, trọng số ở `sparse_linear.pt` mà ST không đọc. Cách làm:
+    nạp file đó riêng và **dùng lại chính `XLMRobertaModel` mà ST đã nạp**
+    (`self.model[0].auto_model`). 2,2GB nhân đôi thì 4060 8GB hết chỗ.
+
+65. **Không thêm dependency `FlagEmbedding`.** Nó kéo theo `peft`, `datasets` và
+    một vòng đời phát hành riêng, để có đúng một `Linear(1024 → 1)` và một phép
+    gộp max. Tự viết là ~40 dòng và kiểm chứng được.
+
+66. **`_forward` là đường sinh dense DUY NHẤT — `_encode` cũng đi qua nó.** Cái
+    giá của việc không gọi `model.encode()` là dense có đường code riêng, và hai
+    đường sinh dense song song là cách chắc chắn để hai nhánh ablation vô tình đo
+    hai thứ khác nhau. Nên có test canh `embed_documents()` khớp
+    `SentenceTransformer.encode()`: đo được **max |Δ| = 1,5e-8**, cosine 1,0000.
+
+67. **Phải tự làm lại phép sắp batch theo độ dài mà `encode()` vốn tự làm.**
+    Padding tới câu dài nhất trong batch, nên trộn câu 40 token với câu 500 token
+    làm hầu hết phép tính đổ vào padding. Sắp **giảm dần** có lợi ích thứ hai:
+    câu dài nhất rơi vào batch đầu, nên cấu hình sẽ OOM thì OOM ở giây thứ nhất
+    chứ không phải ở phút thứ ba của job 15.000 chunk.
+
+68. ⭐ **Mức tăng +174% nDCG là của MODEL, không phải của việc hết truncation —
+    và `TD-11` là thứ chứng minh điều đó.** Lần chạy này đổi ba thứ cùng lúc
+    (model, cửa sổ, tính đa ngữ) nên bảng số một mình không tách được. Nhưng đặt
+    ba thí nghiệm cạnh nhau thì tách được:
+
+    | | truncation | `hit_rate@5` | |
+    |---|---:|---:|---|
+    | baseline (PhoBERT 256) | 56,9% | 0,2153 | — |
+    | `chunk550` (PhoBERT, hết cắt) | 0,4% | 0,2010 | `p = 0,711` |
+    | `bgem3` (BGE-M3, hết cắt) | 0,0% | 0,5455 | `p < 0,001` |
+
+    Hai dòng dưới **cùng** đưa truncation về ~0; một dòng không đổi gì, dòng kia
+    +153%. Vai trò thật của cửa sổ 8192 là *cho phép giữ `chunk_size=1000`* — tức
+    làm phép đo sạch — không phải tạo ra mức tăng. Kết quả âm của `TD-11` hoá ra
+    là thứ có giá trị nhất ở đây: không có nó thì đã gán sai nguyên nhân.
+
+69. **Giữ `chunk_size=1000` làm nhãn BIT-IDENTICAL với baseline.**
+    `n_relevant_mean` 1,3828 ở cả hai lần chạy, `span_resolution` giống nhau từng
+    trường (`resolved: 209`, `label_changed: 9`). Nên recall@k/nDCG/MAP so được
+    trực tiếp và `compare.py` không từ chối metric nào — khác hẳn `TD-11`. Đây là
+    lợi ích *đo lường* của việc không đụng vào chunking, không chỉ lợi ích ngữ cảnh.
+
+70. **Gộp trọng số sparse theo token bằng `max`, không `sum`**, và bỏ
+    `[CLS]`/`[SEP]`/`[PAD]`/`[UNK]`. Max là định nghĩa của BGE-M3 và nó có nghĩa:
+    trọng số trả lời "token này quan trọng thế nào cho đoạn text", không phải "nó
+    xuất hiện bao nhiêu lần". Bỏ `[CLS]` là bắt buộc — nó thường là chiều nặng
+    nhất, để lại thì mọi cặp text khớp nhau ở đúng chiều đó và điểm sparse gần
+    thành hằng số.
+
+71. **Padding phải bỏ theo `attention_mask`, không theo trọng số bằng 0.** Vị trí
+    bị mask vẫn đi qua matmul nên vẫn có trọng số dương. Có test riêng cho ca này.
+
+72. **`batch_size` một mình không chặn được VRAM khi cửa sổ là 8192.** 16 câu ×
+    8192 token = 131k token, OOM ngay. Thêm trần `max_batch_tokens` tính theo độ
+    dài **thật** của batch; chunk ngắn vẫn chạy full batch. Là knob tốc độ nên
+    `embedding_max_batch_tokens` nằm **ngoài** `fingerprint`, cùng lý do như
+    `device` và `batch_size`.
+
+73. **Chọn provider theo TÊN MODEL, không theo cờ riêng.** `BAAI/bge-m3` → provider
+    hybrid. Thêm `use_bge_m3: bool` vào config thì tồn tại được cấu hình
+    `model=bge-m3, use_bge_m3=false` vừa hợp lệ về cú pháp vừa vô nghĩa về nội dung.
+
+74. **`None` ≠ `SparseVector` rỗng — bài học `TD-11` lần thứ hai.** `None` =
+    "provider không sinh sparse"; rỗng = "đã tính, không token nào dương" (text
+    chỉ gồm special token), một kết quả hợp lệ. Gộp lại thì `W2-03` không phân
+    biệt được "provider chỉ có dense" với "sparse trả 0 kết quả", và cả hai trông
+    giống nhau: im lặng.
+
+75. **Tokenizer BGE-M3 tốn ít hơn 30% token cho text tiếng Anh** (0,172 vs 0,244
+    token/ký tự của PhoBERT), và chiều bất đối xứng **đảo**: với PhoBERT thì `en`
+    tốn nhiều hơn `vi`, với BGE-M3 thì `en` tốn ít hơn. Đây là gốc của việc `en`
+    bị cắt nặng nhất ở baseline (65,3% chunk, mất 19,4% token).
+
+76. **`Ê`-document (`TD-17`) hết truncation nhưng nợ vẫn mở.** Cửa sổ 8192 xoá
+    *triệu chứng* (0/36 chunk bị cắt), nhưng văn bản vẫn không có ranh giới từ.
+    Triệu chứng mất, nguyên nhân còn — vẫn sửa ở `W3-01`.
+
+77. **Sửa lỗi sổ sách: p95 truy hồi của baseline là 32,8 ms, không phải 39,9 ms.**
+    `reports/baseline-retrieval.md` ghi 32,8; CHECKLIST §1 chép sai. Đã sửa cả
+    cột **Baseline** lẫn ghi chú dưới bảng.
+
+### Vấn đề đang mở
+
+- **`W2-02` là việc tiếp theo.** Sparse đã sinh được nhưng **chưa dùng**: eval
+  của `W2-01` là dense-only. Qdrant **không** thêm named vector vào collection đã
+  tồn tại → `rag_bgem3` phải build lại bằng `--recreate` (~405 s).
+- ⚠️ **Đừng kể mức tăng của `W2-01` là "sửa được truncation".** Xem quyết định 68.
+  Trong CV/interview thì câu đúng là: *"kết quả âm của thí nghiệm trước là thứ cho
+  phép quy kết đúng nguyên nhân của thí nghiệm sau"*.
+- ⚠️ **Cảnh báo khách quan:** BGE-M3 train trên MIRACL/mC4 và corpus dự án là tài
+  liệu World Bank — thể loại model rất có thể đã thấy nhiều. Không phải rò rỉ tập
+  test (nhãn sinh từ chunk của chính corpus, chunk giống nhau cả hai lần chạy),
+  nhưng mức tăng chưa chắc giữ nguyên trên corpus đóng của doanh nghiệp.
+- `TD-13` — golden set vẫn review bằng model, và giờ **càng đáng làm**: mức tăng
+  lớn thế này thì con số *tuyệt đối* bắt đầu được dùng để kể chuyện.
+- Chi phí phải theo dõi: p95 truy hồi 32,8 → 46,0 ms (+40%, gần như toàn bộ là
+  embed truy vấn bằng model lớn hơn). `W2-05` (reranker) sẽ cộng thêm, và `G2` có
+  điều kiện p95 < 3500 ms.
+- Collection còn trong Qdrant: `rag_baseline`, `rag_chunk550`, `rag_chunk550nb55`,
+  `rag_bgem3`. Xoá bằng `make down-clean` rồi build lại từ config nếu cần chỗ.
+- Các mục còn lại không đổi: `TD-05`, `TD-08`, `TD-10`, `TD-14`…`TD-17`, `W0-02`.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` (644 unit test) · `make test-gpu` nếu có GPU.
+2. Đọc `reports/w2-01-bge-m3.md` §5 (vì sao mức tăng không phải của `TD-11`) và
+   §7 (thứ chưa được kiểm chứng đầu-cuối).
+3. `W2-02`: thêm named vector `sparse` vào schema Qdrant, dùng
+   `SparseVector.as_qdrant()`. Build lại `rag_bgem3` bằng `--recreate`.
+4. Mọi so sánh vẫn phải qua `make eval-compare`. Đổi `chunk_size` thì **không**
+   dùng recall@k/nDCG/MAP.
 
 ---

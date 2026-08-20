@@ -1,0 +1,55 @@
+{
+  "config_name": "bgem3",
+  "collection": "rag_bgem3",
+  "fingerprint": "0eaaf9265487eabb25eade5ecb6a85a74ebdbee194b1b5e215befe4bec474932",
+  "embedding_model": "BAAI/bge-m3",
+  "embedding_device": "cuda",
+  "embedding_dim": 1024,
+  "chunker_name": "hybrid->fixed:bf526f417134",
+  "n_documents": 60,
+  "n_documents_indexed": 60,
+  "n_documents_skipped": 0,
+  "n_documents_removed": 0,
+  "n_chunks_written": 15814,
+  "n_stale_points_deleted": 0,
+  "collection_count": 15814,
+  "chars_in": 14284300,
+  "chars_out": 17745511,
+  "chunk_len": {
+    "mean": 1122.139306943215,
+    "p50": 1137.0,
+    "p95": 1193.0,
+    "min": 323.0,
+    "max": 1251.0
+  },
+  "truncation": {
+    "limit": 8192.0,
+    "n_texts": 15814.0,
+    "n_truncated": 0.0,
+    "truncated_ratio": 0.0,
+    "tokens_total": 3140090.0,
+    "tokens_kept": 3140090.0,
+    "chars_total": 17745511.0,
+    "tokens_lost_ratio": 0.0,
+    "tokens_per_char": 0.177,
+    "chars_per_token_p05": 3.912,
+    "char_budget": 32039.0,
+    "token_p50": 218.0,
+    "token_p95": 295.0,
+    "token_max": 734.0
+  },
+  "seconds": {
+    "load": 0.061699899999894114,
+    "chunk": 1.1535869000013008,
+    "upsert": 380.35099579999996,
+    "total": 405.30759050000006
+  },
+  "cache": {
+    "hits": 60.0,
+    "misses": 0.0,
+    "hit_rate": 1.0,
+    "entries": 366.0
+  },
+  "created_at": "2026-08-20T09:47:23+00:00",
+  "context_inflation": 1.2423
+}

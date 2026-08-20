@@ -61,6 +61,14 @@ class IndexConfig(BaseModel):
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"
     embedding_device: str = "auto"
     embedding_batch_size: int = Field(default=32, ge=1)
+    embedding_max_batch_tokens: int | None = Field(default=None, ge=1)
+    """Trần token mỗi forward pass, chỉ có ý nghĩa với provider cửa sổ dài.
+
+    `embedding_batch_size` một mình không chặn được VRAM khi cửa sổ là 8192:
+    16 câu × 8192 token = 131k token và OOM ngay. `None` = dùng mặc định của
+    provider. Là knob **tốc độ/bộ nhớ** nên nằm ngoài `fingerprint`, cùng lý do
+    như `device` và `batch_size`.
+    """
     embedding_normalize: bool = True
     embedding_kwargs: dict[str, Any] = Field(default_factory=dict)
     """`query_prefix` / `document_prefix` cho model bất đối xứng (E5, BGE)."""
@@ -112,12 +120,15 @@ class IndexConfig(BaseModel):
     # ------------------------------------------------------------ factory
 
     def build_embeddings(self) -> EmbeddingProvider:
+        extra: dict[str, Any] = dict(self.embedding_kwargs)
+        if self.embedding_max_batch_tokens is not None:
+            extra["max_batch_tokens"] = self.embedding_max_batch_tokens
         return build_embedding_provider(
             self.embedding_model,
             device=self.embedding_device,
             batch_size=self.embedding_batch_size,
             normalize=self.embedding_normalize,
-            **self.embedding_kwargs,
+            **extra,
         )
 
     def build_chunker(self, embeddings: EmbeddingProvider) -> Chunker:

@@ -1,0 +1,59 @@
+# `W2-01`: đổi model embedding sang BGE-M3, GIỮ NGUYÊN chunking của baseline.
+#
+# Khối `chunking` dưới đây là bản sao đúng từng chữ của `baseline.yaml`, có chủ
+# ý. `TD-11` đã đo: hạ `chunk_size` để hết bị cắt là một **đánh đổi** (mỗi vector
+# đọc 950 → 678 ký tự), không phải thu hồi nội dung, và nó không cải thiện gì đo
+# được (McNemar `p = 0,711`, mọi CI bootstrap chứa 0).
+#
+# BGE-M3 có cửa sổ **8192 token** nên nó lấy được phần lợi — hết truncation — mà
+# KHÔNG phải trả phần ngữ cảnh. Ở `chunk_size=1000` ký tự, mật độ xấu nhất đo
+# được trên corpus (~0,25 token/ký tự cho tiếng Anh) cho ~250 token, còn cách
+# 8192 hơn ba mươi lần.
+#
+# Hai dấu hiệu từ `TD-11` cùng chỉ về model đa ngữ, dù riêng lẻ chưa đạt ngưỡng:
+#   * Tiếng Anh bị cắt nặng nhất (mất 19,4% token) và là nhóm khá lên khi bớt
+#     cắt (`hit_rate@5` 0,1707 → 0,2073); tiếng Việt (7,5%) thì tụt.
+#   * `cross_lingual` lần đầu khác 0. Baseline dùng PhoBERT — model đơn ngữ, nên
+#     recall@5 của nhóm đó bằng 0 là chuyện đương nhiên.
+#
+# ⚠️ Đổi model là đổi **số chiều** 768 → 1024, nên phải là collection riêng và
+# phải build bằng `--recreate`. Upsert vector 1024-d vào collection 768-d thì
+# Qdrant từ chối; tệ hơn là dùng lại collection cũ và so hai thước đo khác nhau.
+#
+# ⚠️ `embedding_batch_size: 16` chứ không phải 64 của baseline. BGE-M3 là XLM-R
+# large (24 lớp, hidden 1024) — nặng hơn PhoBERT base nhiều, và 4060 có 8GB.
+# Đây là knob tốc độ, KHÔNG vào `fingerprint`, nên hạ/nâng không làm index khác.
+
+name: bgem3
+collection: rag_bgem3
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+# ---- Y NGUYÊN baseline.yaml từ đây ----
+chunking:
+  strategy: hybrid
+  chunk_size: 1000
+  chunk_overlap: 100
+  min_chunk_size: 200
+  max_chunk_size: 1500
+  semantic_buffer_size: 1
+  semantic_threshold_percentile: 85.0
+  semantic_min_sentences: 3
+  hybrid_max_docs_for_semantic: 5
+  neighbor_context_chars: 100
+# ---- hết phần y nguyên baseline ----
+
+# BGE-M3 **không** dùng instruction prefix, khác BGE v1.5 và E5 — nên
+# `embedding_kwargs` để rỗng. Thêm "query: " vào là làm lệch phân bố đầu vào so
+# với lúc train mà không có lỗi nào báo ra.
+embedding_model: BAAI/bge-m3
+embedding_device: auto
+embedding_batch_size: 16
+embedding_max_batch_tokens: 8192
+embedding_normalize: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

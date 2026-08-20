@@ -21,14 +21,28 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import cast
+from typing import NamedTuple, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["EmbeddingProvider", "FloatArray"]
+from .sparse import SparseVector
+
+__all__ = ["EmbeddingProvider", "FloatArray", "HybridVectors"]
 
 FloatArray = NDArray[np.float32]
+
+
+class HybridVectors(NamedTuple):
+    """Kết quả một lượt embed hybrid: dense `(n, dim)` và `n` sparse vector.
+
+    NamedTuple chứ không phải tuple trần: `dense, sparse = ...` đúng thứ tự thì
+    chạy, sai thứ tự thì **cũng chạy** — và sai thầm lặng. Bài học từ
+    `DocumentLoss` ở `TD-11`.
+    """
+
+    dense: FloatArray
+    sparse: list[SparseVector]
 
 
 class EmbeddingProvider(ABC):
@@ -83,6 +97,33 @@ class EmbeddingProvider(ABC):
         với `max_sequence_tokens`; bỏ hai token đó ra là báo thiếu đúng hai
         token ở mọi chunk sát ngưỡng.
         """
+        return None
+
+    # ------------------------------------------------------------ sparse
+    # Ba thành viên dưới đây là **năng lực tuỳ chọn**, theo đúng quy ước của
+    # `max_sequence_tokens` ở trên: `None` = "provider này không sinh sparse".
+    #
+    # ⚠️ `None` KHÁC `SparseVector` rỗng. Rỗng = "đã tính, không token nào có
+    # trọng số dương" (text chỉ gồm special token) — một kết quả hợp lệ. Gộp hai
+    # thứ đó lại thì `W2-03` sẽ không phân biệt được "provider chỉ có dense" với
+    # "sparse retrieval trả 0 kết quả", và cả hai trông giống nhau: im lặng.
+
+    @property
+    def sparse_vocab_size(self) -> int | None:
+        """Số chiều của không gian sparse. `None` = không sinh sparse vector."""
+        return None
+
+    def embed_documents_hybrid(self, texts: Sequence[str]) -> HybridVectors | None:
+        """Dense + sparse trong **một** forward pass. `None` = không hỗ trợ.
+
+        Một pass chứ không hai: sparse của BGE-M3 chỉ là một `Linear(dim → 1)`
+        đặt lên cùng `last_hidden_state` đã dùng cho dense, nên gọi model hai
+        lần là trả gấp đôi tiền tính toán cho đúng một kết quả.
+        """
+        return None
+
+    def embed_query_hybrid(self, text: str) -> tuple[FloatArray, SparseVector] | None:
+        """Bản một-truy-vấn của `embed_documents_hybrid`. `None` = không hỗ trợ."""
         return None
 
     def __repr__(self) -> str:

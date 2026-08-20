@@ -38,6 +38,10 @@ test:  ## Unit test (không cần Docker)
 test-integration:  ## Integration test (cần `make up` trước)
 	$(PY) pytest -m integration
 
+.PHONY: test-gpu
+test-gpu:  ## Test cần GPU + trọng số model thật (BGE-M3 ~2,2GB)
+	$(PY) pytest -m gpu
+
 .PHONY: test-all
 test-all:  ## Toàn bộ test
 	$(PY) pytest
@@ -45,7 +49,6 @@ test-all:  ## Toàn bộ test
 .PHONY: cov
 cov:  ## Unit test + báo cáo coverage của rag_core
 	$(PY) pytest -m "not integration and not gpu" \
- \
 		--cov --cov-report=term-missing --cov-report=html:.coverage_html
 
 # ---------------------------------------------------------------- hạ tầng
@@ -115,7 +118,6 @@ corpus:  ## Tải corpus theo config (idempotent)
 .PHONY: index
 index:  ## Build index Qdrant (BUNDLE=baseline). Cần `make up` trước
 	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) \
- \
 		--report plans/reports/index-$(BUNDLE).json
 
 .PHONY: index-dry
@@ -161,5 +163,4 @@ goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
 .PHONY: eval-retrieval
 eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline)
 	$(PY) python -m pipeline.eval.retrieval_eval \
- \
 		--index-config $(INDEX_CONFIG) --run-name $(BUNDLE)
