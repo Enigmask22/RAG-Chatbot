@@ -1,0 +1,10 @@
+{
+  "drafts_total": 266,
+  "answerable": 226,
+  "anchored": 226,
+  "spans_total": 299,
+  "narrowed_by_quote": 186,
+  "widened_to_chunk": 113,
+  "missing_chunk_ids": [],
+  "unanchored_query_ids": []
+}

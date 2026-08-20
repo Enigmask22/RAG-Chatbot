@@ -31,15 +31,30 @@ from pydantic import TypeAdapter, ValidationError
 
 from ..schemas import Chunk, Document
 from .base import Chunker
+from .pieces import TextPiece
 
-__all__ = ["CacheStats", "CachedChunker", "SQLiteChunkCache"]
+__all__ = ["CACHE_TABLE", "CacheStats", "CachedChunker", "SQLiteChunkCache"]
 
 logger = logging.getLogger(__name__)
 
 _CHUNK_LIST = TypeAdapter(list[Chunk])
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS chunk_cache (
+# Version nằm trong TÊN BẢNG, không phải trong một cột.
+#
+# Cần version vì `Chunk` có thể thêm field **optional** — `start_char`/`end_char`
+# của `W1-11` là ví dụ. Thêm field optional thì `TypeAdapter.validate_json` trên
+# payload cũ **không** báo lỗi, nó chỉ điền `None`. Nên cái guard `ValidationError`
+# ở `get()` không bắt được, và cache cũ sẽ lặng lẽ trả về chunk không có offset —
+# đúng loại hỏng âm thầm mà cả `W1-08` lẫn `W1-11` đã mất thời gian truy.
+#
+# Đổi tên bảng thì entry cũ trở thành không tồn tại (miss, tính lại) chứ không
+# phải hỏng, và bảng cũ bị DROP nên file cache không phình mãi.
+_PAYLOAD_VERSION = 2
+CACHE_TABLE = f"chunk_cache_v{_PAYLOAD_VERSION}"
+
+_SCHEMA = f"""
+DROP TABLE IF EXISTS chunk_cache;
+CREATE TABLE IF NOT EXISTS {CACHE_TABLE} (
     content_hash  TEXT    NOT NULL,
     config_hash   TEXT    NOT NULL,
     chunker_name  TEXT    NOT NULL,
@@ -50,7 +65,7 @@ CREATE TABLE IF NOT EXISTS chunk_cache (
     hit_count     INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (content_hash, config_hash, chunker_name)
 );
-CREATE INDEX IF NOT EXISTS idx_chunk_cache_lru ON chunk_cache (last_used_at);
+CREATE INDEX IF NOT EXISTS idx_{CACHE_TABLE}_lru ON {CACHE_TABLE} (last_used_at);
 """
 
 
@@ -120,7 +135,7 @@ class SQLiteChunkCache:
     def get(self, content_hash: str, config_hash: str, chunker_name: str) -> list[Chunk] | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT payload, created_at FROM chunk_cache "
+                f"SELECT payload, created_at FROM {CACHE_TABLE} "
                 "WHERE content_hash=? AND config_hash=? AND chunker_name=?",
                 (content_hash, config_hash, chunker_name),
             ).fetchone()
@@ -132,7 +147,7 @@ class SQLiteChunkCache:
             payload, created_at = row
             if self.ttl_seconds is not None and time.time() - created_at > self.ttl_seconds:
                 conn.execute(
-                    "DELETE FROM chunk_cache "
+                    f"DELETE FROM {CACHE_TABLE} "
                     "WHERE content_hash=? AND config_hash=? AND chunker_name=?",
                     (content_hash, config_hash, chunker_name),
                 )
@@ -145,7 +160,7 @@ class SQLiteChunkCache:
                 # Entry hỏng hoặc schema Chunk đã đổi. Coi như miss và dọn đi.
                 logger.warning("Entry cache hỏng cho %s, xoá và tính lại", content_hash[:12])
                 conn.execute(
-                    "DELETE FROM chunk_cache "
+                    f"DELETE FROM {CACHE_TABLE} "
                     "WHERE content_hash=? AND config_hash=? AND chunker_name=?",
                     (content_hash, config_hash, chunker_name),
                 )
@@ -153,7 +168,7 @@ class SQLiteChunkCache:
                 return None
 
             conn.execute(
-                "UPDATE chunk_cache SET last_used_at=?, hit_count=hit_count+1 "
+                f"UPDATE {CACHE_TABLE} SET last_used_at=?, hit_count=hit_count+1 "
                 "WHERE content_hash=? AND config_hash=? AND chunker_name=?",
                 (time.time(), content_hash, config_hash, chunker_name),
             )
@@ -171,7 +186,7 @@ class SQLiteChunkCache:
         now = time.time()
         with self._connect() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO chunk_cache "
+                f"INSERT OR REPLACE INTO {CACHE_TABLE} "
                 "(content_hash, config_hash, chunker_name, payload, size_bytes, "
                 " created_at, last_used_at, hit_count) VALUES (?,?,?,?,?,?,?,0)",
                 (
@@ -187,12 +202,12 @@ class SQLiteChunkCache:
             self._evict(conn)
 
     def _evict(self, conn: sqlite3.Connection) -> None:
-        (count,) = conn.execute("SELECT COUNT(*) FROM chunk_cache").fetchone()
+        (count,) = conn.execute(f"SELECT COUNT(*) FROM {CACHE_TABLE}").fetchone()
         if count <= self.max_entries:
             return
         conn.execute(
-            "DELETE FROM chunk_cache WHERE rowid IN ("
-            "  SELECT rowid FROM chunk_cache ORDER BY last_used_at ASC LIMIT ?"
+            f"DELETE FROM {CACHE_TABLE} WHERE rowid IN ("
+            f"  SELECT rowid FROM {CACHE_TABLE} ORDER BY last_used_at ASC LIMIT ?"
             ")",
             (count - self.max_entries,),
         )
@@ -200,13 +215,13 @@ class SQLiteChunkCache:
     def stats(self) -> CacheStats:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM chunk_cache"
+                f"SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM {CACHE_TABLE}"
             ).fetchone()
         return CacheStats(entries=row[0], total_bytes=row[1], hits=self.hits, misses=self.misses)
 
     def clear(self) -> None:
         with self._connect() as conn:
-            conn.execute("DELETE FROM chunk_cache")
+            conn.execute(f"DELETE FROM {CACHE_TABLE}")
         self.hits = 0
         self.misses = 0
 
@@ -224,8 +239,8 @@ class CachedChunker(Chunker):
     def name(self) -> str:
         return self.inner.name
 
-    def split_text(self, text: str) -> list[str]:
-        return self.inner.split_text(text)
+    def split_pieces(self, text: str) -> list[TextPiece]:
+        return self.inner.split_pieces(text)
 
     def prepare(self, n_documents: int) -> None:
         super().prepare(n_documents)

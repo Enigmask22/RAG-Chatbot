@@ -175,6 +175,45 @@ class QdrantDenseRetriever(Retriever):
             payload["tenant_id"] = chunk.extra["tenant_id"]
         return payload
 
+    def fetch_doc_chunks(self, doc_ids: Sequence[str], *, batch: int = 512) -> list[Chunk]:
+        """Lấy **mọi** chunk của các tài liệu được nêu, không qua truy vấn vector.
+
+        Cần cho việc ánh xạ nhãn golden set theo span (`pipeline/eval/spans.py`):
+        muốn biết chunk nào của index hiện tại chứa một đoạn bằng chứng thì phải
+        xem hết chunk của tài liệu đó, chứ không phải top-k của một truy vấn.
+
+        Dùng `scroll` với filter `doc_id` — trường này đã có payload index từ
+        `ensure_collection`, nên đây là phép quét theo khoá chứ không phải quét
+        toàn bộ collection.
+        """
+        from qdrant_client import models
+
+        if not doc_ids:
+            return []
+        wanted = list(dict.fromkeys(doc_ids))
+        flt = models.Filter(
+            must=[models.FieldCondition(key="doc_id", match=models.MatchAny(any=wanted))]
+        )
+        out: list[Chunk] = []
+        offset: Any = None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=flt,
+                limit=batch,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                raw_chunk = (point.payload or {}).get("chunk")
+                if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
+                    continue
+                out.append(Chunk.model_validate(raw_chunk))
+            if offset is None:
+                break
+        return out
+
     def delete_points(self, point_ids: Sequence[str]) -> int:
         """Xoá đúng các point được liệt kê. Trả về số point đã yêu cầu xoá.
 

@@ -18,6 +18,7 @@ from ..embedding.base import EmbeddingProvider
 from ..schemas import Chunk, Document
 from .base import Chunker, ChunkingConfig, ChunkingStrategy
 from .fixed import FixedSizeChunker
+from .pieces import TextPiece
 from .semantic import SemanticChunker
 
 __all__ = ["HybridChunker"]
@@ -54,8 +55,8 @@ class HybridChunker(Chunker):
             self._semantic is not None and n_documents <= self.config.hybrid_max_docs_for_semantic
         )
 
-    def split_text(self, text: str) -> list[str]:
-        return self._delegate(self._batch_size_for_decision(1)).split_text(text)
+    def split_pieces(self, text: str) -> list[TextPiece]:
+        return self._delegate(self._batch_size_for_decision(1)).split_pieces(text)
 
     def _delegate(self, n_documents: int) -> Chunker:
         if self._use_semantic(n_documents) and self._semantic is not None:

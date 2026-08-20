@@ -27,6 +27,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..schemas import Chunk, Document
+from .pieces import TextPiece, merge_pieces, shift
 
 __all__ = ["Chunker", "ChunkingConfig", "ChunkingStrategy"]
 
@@ -108,8 +109,21 @@ class Chunker(ABC):
         return f"{self.strategy.value}:{self.config.config_hash[:12]}"
 
     @abstractmethod
+    def split_pieces(self, text: str) -> list[TextPiece]:
+        """Cắt text thành các mảnh thô, mỗi mảnh kèm vùng xuất xứ.
+
+        Đây là phương thức lớp con phải cài, thay cho `split_text` từ `W1-11`.
+        Span cần thiết để golden set neo được vào văn bản gốc thay vì vào
+        `chunk_id` thuần vị trí (`TD-12`).
+
+        ⚠️ `piece.text` **không** buộc bằng `text[piece.start:piece.end]` — xem
+        docstring của `pieces.py`. Ép nó thành substring nguyên văn sẽ đổi nội
+        dung chunk, tức đổi cả index và mọi con số baseline.
+        """
+
     def split_text(self, text: str) -> list[str]:
-        """Cắt một tài liệu thành các đoạn text thô, chưa hậu xử lý."""
+        """Chỉ phần text. Tiện ích dẫn xuất, không phải điểm mở rộng."""
+        return [p.text for p in self.split_pieces(text)]
 
     @property
     def planned_documents(self) -> int | None:
@@ -135,7 +149,7 @@ class Chunker(ABC):
     def chunk(self, documents: Sequence[Document]) -> list[Chunk]:
         chunks: list[Chunk] = []
         for doc in documents:
-            pieces = [p for p in self.split_text(doc.content) if p.strip()]
+            pieces = [p for p in self.split_pieces(doc.content) if p.text.strip()]
             pieces = self._enforce_size(pieces)
             pieces = self._apply_neighbor_context(pieces)
             for index, piece in enumerate(pieces):
@@ -143,53 +157,65 @@ class Chunker(ABC):
                     Chunk(
                         chunk_id=f"{doc.doc_id}::{index:05d}",
                         doc_id=doc.doc_id,
-                        content=piece,
+                        content=piece.text,
                         chunk_index=index,
                         metadata=doc.metadata,
+                        start_char=piece.start,
+                        end_char=piece.end,
                     )
                 )
         return chunks
 
     # ------------------------------------------------------------ hậu xử lý
 
-    def _enforce_size(self, pieces: list[str]) -> list[str]:
+    def _enforce_size(self, pieces: list[TextPiece]) -> list[TextPiece]:
         """Gộp đoạn quá nhỏ vào đoạn trước, cắt đoạn quá lớn bằng splitter cố định."""
-        from .fixed import split_recursive  # import cục bộ để tránh vòng lặp import
+        from .fixed import split_recursive_pieces  # import cục bộ để tránh vòng lặp
 
-        out: list[str] = []
+        out: list[TextPiece] = []
         for piece in pieces:
-            if len(piece) > self.config.max_chunk_size:
+            if len(piece.text) > self.config.max_chunk_size:
                 out.extend(
-                    split_recursive(
-                        piece,
-                        separators=list(self.config.separators),
-                        chunk_size=self.config.chunk_size,
-                        chunk_overlap=self.config.chunk_overlap,
+                    shift(
+                        split_recursive_pieces(
+                            piece.text,
+                            separators=list(self.config.separators),
+                            chunk_size=self.config.chunk_size,
+                            chunk_overlap=self.config.chunk_overlap,
+                        ),
+                        piece.start,
                     )
                 )
                 continue
 
-            if len(piece) < self.config.min_chunk_size and out:
-                merged = out[-1] + "\n" + piece
-                if len(merged) <= self.config.max_chunk_size:
+            if len(piece.text) < self.config.min_chunk_size and out:
+                merged = merge_pieces([out[-1], piece], "\n")
+                if len(merged.text) <= self.config.max_chunk_size:
                     out[-1] = merged
                     continue
 
             out.append(piece)
         return out
 
-    def _apply_neighbor_context(self, pieces: list[str]) -> list[str]:
+    def _apply_neighbor_context(self, pieces: list[TextPiece]) -> list[TextPiece]:
+        """Nối đệm từ hai chunk lân cận vào `text`, **giữ nguyên span**.
+
+        Span vẫn là vùng của riêng chunk, không gồm phần đệm — và đó là điều
+        đúng: đệm là bản sao text của chunk khác, gán nó vào span của chunk này
+        thì mỗi chunk sẽ "sở hữu" một vùng chồng lên hai chunk bên cạnh, và mọi
+        phép ánh xạ nhãn theo span sẽ khớp thừa ba lần.
+        """
         window = self.config.neighbor_context_chars
         if window == 0 or len(pieces) <= 1:
             return pieces
 
-        out: list[str] = []
+        out: list[TextPiece] = []
         for i, piece in enumerate(pieces):
             parts: list[str] = []
             if i > 0:
-                parts.append(pieces[i - 1][-window:])
-            parts.append(piece)
+                parts.append(pieces[i - 1].text[-window:])
+            parts.append(piece.text)
             if i < len(pieces) - 1:
-                parts.append(pieces[i + 1][:window])
-            out.append("\n".join(parts))
+                parts.append(pieces[i + 1].text[:window])
+            out.append(TextPiece("\n".join(parts), piece.start, piece.end))
         return out

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import platform
 import statistics
 import sys
@@ -35,6 +36,14 @@ from .metrics import (
     recall_at_k,
     reciprocal_rank,
 )
+from .spans import (
+    DEFAULT_MIN_OVERLAP_RATIO,
+    QueryResolution,
+    chunks_by_document,
+    resolve_queries,
+)
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["EvalReport", "evaluate_run", "run_retrieval_eval"]
 
@@ -259,6 +268,7 @@ def _eval_against_index(
     *,
     run_name: str,
     top_k: int,
+    min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
 ) -> EvalReport:
     """Dựng retriever từ chính config đã build index rồi chạy eval.
 
@@ -279,19 +289,73 @@ def _eval_against_index(
         url=settings.qdrant_url,
         api_key=(settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None),
     )
+
+    config: dict[str, Any] = {
+        "index_config": str(index_config_path),
+        "index_fingerprint": index_config.fingerprint,
+        "collection": index_config.collection_name,
+        "embedding_model": index_config.embedding_model,
+        "chunking": json.loads(index_config.chunking.model_dump_json()),
+    }
+
+    # Nhãn theo span được tính lại theo ĐÚNG index đang đo. Đây là chỗ golden set
+    # thoát khỏi việc phụ thuộc cấu hình chunking (`TD-12`): `relevant_chunk_ids`
+    # ghi trong file chỉ đúng với cấu hình lúc gán nhãn, còn span thì luôn đúng.
+    queries, resolution = _resolve_span_labels(retriever, queries, min_overlap_ratio)
+    if resolution is not None:
+        config["span_resolution"] = json.loads(resolution.model_dump_json())
+
     return run_retrieval_eval(
         retriever,
         queries,
         run_name=run_name,
         top_k=top_k,
-        config={
-            "index_config": str(index_config_path),
-            "index_fingerprint": index_config.fingerprint,
-            "collection": index_config.collection_name,
-            "embedding_model": index_config.embedding_model,
-            "chunking": json.loads(index_config.chunking.model_dump_json()),
-        },
+        config=config,
     )
+
+
+def _resolve_span_labels(
+    retriever: Retriever,
+    queries: Sequence[GoldenQuery],
+    min_overlap_ratio: float,
+) -> tuple[Sequence[GoldenQuery], QueryResolution | None]:
+    """Tính lại nhãn từ span, nếu golden set có span và retriever đọc được chunk.
+
+    Trả `(queries, None)` khi không có gì để làm — cố ý không im lặng bỏ qua
+    trường hợp *có* span mà retriever không lấy được chunk: chỗ đó phải cảnh báo,
+    vì recall sẽ được đo bằng nhãn cũ mà người đọc report lại tưởng là nhãn span.
+    """
+    doc_ids = sorted({s.doc_id for q in queries for s in q.relevant_spans})
+    if not doc_ids:
+        return queries, None
+
+    fetch = getattr(retriever, "fetch_doc_chunks", None)
+    if fetch is None:
+        logger.warning(
+            "Golden set có span nhưng %s không có `fetch_doc_chunks` — chấm điểm "
+            "bằng `relevant_chunk_ids` sẵn có, tức nhãn chỉ đúng nếu index này "
+            "được build bằng đúng cấu hình chunking lúc gán nhãn.",
+            type(retriever).__name__,
+        )
+        return queries, None
+
+    by_doc = chunks_by_document(fetch(doc_ids))
+    resolved, resolution = resolve_queries(queries, by_doc, min_overlap_ratio=min_overlap_ratio)
+    logger.info(
+        "Ánh xạ span → chunk: %d câu tính lại · %d câu giữ nhãn cũ · %d câu đổi nhãn",
+        resolution.resolved,
+        resolution.kept_chunk_ids,
+        resolution.label_changed,
+    )
+    if resolution.unmatched_queries:
+        logger.warning(
+            "%d câu có span nhưng không khớp chunk nào của index này: %s. "
+            "Chúng bị chấm bằng nhãn cũ — cấu hình chunking hiện tại cắt bằng "
+            "chứng quá vụn.",
+            len(resolution.unmatched_queries),
+            ", ".join(resolution.unmatched_queries[:5]),
+        )
+    return resolved, resolution
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -304,6 +368,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="YAML config index (configs/indexing/*.yaml) — truy hồi trực tiếp từ Qdrant",
     )
     parser.add_argument("--top-k", type=int, default=20)
+    parser.add_argument(
+        "--min-overlap-ratio",
+        type=float,
+        default=DEFAULT_MIN_OVERLAP_RATIO,
+        help="Phần chồng nhau tối thiểu khi ánh xạ `relevant_spans` sang chunk_id "
+        "của index đang đo. Xét theo cả hai phía (span và chunk).",
+    )
     parser.add_argument("--run-name", default="baseline")
     parser.add_argument("--out-dir", type=Path, default=Path("plans/reports"))
     args = parser.parse_args(argv)
@@ -318,7 +389,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.index_config is not None:
         report = _eval_against_index(
-            args.index_config, queries, run_name=args.run_name, top_k=args.top_k
+            args.index_config,
+            queries,
+            run_name=args.run_name,
+            top_k=args.top_k,
+            min_overlap_ratio=args.min_overlap_ratio,
         )
     elif args.retrieved is not None:
         retrieved = json.loads(args.retrieved.read_text(encoding="utf-8"))

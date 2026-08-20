@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from rag_core.chunking import ChunkingConfig, ChunkingStrategy, FixedSizeChunker
-from rag_core.chunking.cache import CachedChunker, SQLiteChunkCache
+from rag_core.chunking.cache import CACHE_TABLE, CachedChunker, SQLiteChunkCache
 from rag_core.schemas import Chunk, Document, DocumentMetadata
 
 
@@ -75,7 +75,7 @@ class TestRobustness:
     ) -> None:
         cache.put("h1", "c1", "fixed", sample_chunks)
         with sqlite3.connect(cache.path) as conn:
-            conn.execute("UPDATE chunk_cache SET payload = '{ khong phai json'")
+            conn.execute(f"UPDATE {CACHE_TABLE} SET payload = '{{ khong phai json'")
             conn.commit()
 
         assert cache.get("h1", "c1", "fixed") is None

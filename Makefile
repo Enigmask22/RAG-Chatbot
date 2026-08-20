@@ -126,6 +126,10 @@ goldenset-dry:  ## Xem phân bố lô chunk + prompt mẫu, KHÔNG gọi API
 goldenset-draft:  ## Sinh nháp golden set bằng DeepSeek (TỐN TIỀN API)
 	$(PY) python -m pipeline.goldenset.generate --index-config $(INDEX_CONFIG)
 
+.PHONY: goldenset-anchor
+goldenset-anchor:  ## Neo nhãn nháp vào văn bản gốc (span thay chunk_id — TD-12)
+	$(PY) python -m pipeline.goldenset.anchor --index-config $(INDEX_CONFIG) 		--report plans/reports/goldenset-anchor.json
+
 .PHONY: goldenset-triage
 goldenset-triage:  ## Chạy retriever thật lên tập nháp → hàng đợi review (W1-11)
 	$(PY) python -m pipeline.goldenset.triage --index-config $(INDEX_CONFIG)

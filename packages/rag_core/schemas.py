@@ -30,6 +30,7 @@ __all__ = [
     "QueryRequest",
     "RetrievalMode",
     "RetrievedChunk",
+    "TextSpan",
     "TokenUsage",
 ]
 
@@ -122,6 +123,45 @@ class Document(BaseModel):
         return sha256_of(self.content)
 
 
+class TextSpan(BaseModel):
+    """Một vùng ký tự trong **văn bản gốc** của một tài liệu.
+
+    Đây là cách neo bằng chứng độc lập với cấu hình chunking. `chunk_id` của dự
+    án này là `f"{doc_id}::{index:05d}"` — thuần vị trí. Đổi `chunk_size` là mọi
+    id cũ trỏ vào văn bản khác, mà id vẫn tồn tại nên không phép kiểm nào cảnh
+    báo (đo thật: 1000→600 ký tự cho 46/46 id còn sống, 0 id giữ nguyên nội
+    dung). Golden set gán nhãn bằng span thì đổi chunking bao nhiêu lần cũng
+    không phải gán lại — xem `TD-12`.
+
+    Neo được vào văn bản gốc là vì nó **bất biến**: `data/corpus_manifest.csv`
+    ghi sha256 từng tài liệu và `iter_documents` kiểm lại mỗi lần build index.
+
+    `end` là **loại trừ**, theo đúng quy ước slice của Python.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    doc_id: NonEmptyStr
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _check_order(self) -> TextSpan:
+        if self.end <= self.start:
+            raise ValueError(f"{self.doc_id}: span rỗng hoặc đảo ngược ({self.start}, {self.end})")
+        return self
+
+    @property
+    def length(self) -> int:
+        return self.end - self.start
+
+    def overlap(self, other: TextSpan) -> int:
+        """Số ký tự chồng nhau. 0 nếu khác tài liệu hoặc không giao nhau."""
+        if self.doc_id != other.doc_id:
+            return 0
+        return max(0, min(self.end, other.end) - max(self.start, other.start))
+
+
 class Chunk(BaseModel):
     """Một đơn vị được embed và index.
 
@@ -142,10 +182,35 @@ class Chunk(BaseModel):
     token_count: int | None = Field(default=None, ge=0)
     metadata: DocumentMetadata | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
+    start_char: int | None = Field(default=None, ge=0)
+    end_char: int | None = Field(default=None, ge=0)
+    """Vùng của `Document.content` mà chunk này được **dẫn ra từ**.
+
+    ⚠️ Cố ý **không** phải chỉ dẫn cắt: trong trường hợp chung
+    `content != document.content[start_char:end_char]`. Splitter đệ quy bỏ mảnh
+    rỗng (`[s for s in text.split(sep) if s]`) rồi nối lại bằng separator, nên
+    `"A\\n\\nB"` tách theo `"\\n"` cho ra `"A\\nB"` — ngắn hơn nguyên bản một ký
+    tự. Splitter ngữ nghĩa thì nối câu bằng dấu cách, bất kể nguyên bản ngăn
+    nhau bằng gì.
+
+    Ép `content` thành substring nguyên văn sẽ **đổi nội dung chunk**, tức đổi
+    cả index và mọi con số baseline. Nên hợp đồng đúng là: span là **vùng xuất
+    xứ**, có thể rộng hơn `content` vài ký tự khoảng trắng. Đủ để ánh xạ
+    span↔chunk qua mọi cấu hình chunking, và đó là toàn bộ mục đích của nó.
+
+    `None` với point ghi trước `W1-11` (lúc đó chunker chưa sinh offset).
+    """
 
     @property
     def content_hash(self) -> str:
         return sha256_of(self.content)
+
+    @property
+    def span(self) -> TextSpan | None:
+        """Span của chunk, `None` nếu chunker không sinh offset."""
+        if self.start_char is None or self.end_char is None:
+            return None
+        return TextSpan(doc_id=self.doc_id, start=self.start_char, end=self.end_char)
 
     @property
     def section_header(self) -> str:
