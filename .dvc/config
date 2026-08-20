@@ -1,0 +1,14 @@
+# Cấu hình DVC **dùng chung** — được commit, nên tuyệt đối không chứa đường dẫn
+# hay credential của một máy cụ thể. Remote thật khai ở `.dvc/config.local`
+# (đã nằm trong `.dvc/.gitignore`), mỗi máy tự đặt:
+#
+#     dvc remote add --local -d local /đường/dẫn/ngoài/repo
+#
+# Vì sao không ghim sẵn một remote ở đây: dự án chạy trên ít nhất hai máy
+# (laptop + pod RunPod thuê theo giờ) và repo sẽ public. Một URL tuyệt đối kiểu
+# `D:/...` commit vào đây thì clone nào cũng nhận remote trỏ vào ổ đĩa không tồn
+# tại, và lỗi chỉ lộ ra lúc `dvc pull` — cùng loại lỗi với đường dẫn tuyệt đối
+# trong `.venv/*.pth`.
+#
+# Xem `plans/reports/w1-09-dvc.md` để biết đường phục hồi corpus khi không có
+# remote nào.

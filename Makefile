@@ -76,6 +76,31 @@ ps:  ## Trạng thái các service
 logs:  ## Xem log hạ tầng
 	$(COMPOSE) logs -f --tail=100
 
+# ---------------------------------------------------------------- dữ liệu (DVC)
+# Remote khai ở `.dvc/config.local` (không commit). Chưa cấu hình thì các target
+# này sẽ báo lỗi của DVC — xem `plans/reports/w1-09-dvc.md`.
+.PHONY: data-pull
+data-pull:  ## Lấy corpus từ DVC remote về `data/corpus/`
+	$(PY) dvc pull
+
+.PHONY: data-push
+data-push:  ## Đẩy corpus hiện tại lên DVC remote
+	$(PY) dvc push
+
+.PHONY: data-status
+data-status:  ## So working tree với cache DVC và với remote
+	$(PY) dvc status
+	$(PY) dvc status -c
+
+.PHONY: data-verify
+data-verify:  ## Đối chiếu corpus DVC theo dõi với manifest (bắt lệch giữa 2 cơ chế)
+	$(PY) python -m pipeline.corpus.dvc_state
+
+.PHONY: data-track
+data-track:  ## Ghi lại hash sau khi corpus đổi, rồi kiểm chéo với manifest
+	$(PY) dvc add data/corpus
+	$(PY) python -m pipeline.corpus.dvc_state
+
 # ---------------------------------------------------------------- pipeline
 BUNDLE ?= baseline
 INDEX_CONFIG = configs/indexing/$(BUNDLE).yaml

@@ -27,6 +27,9 @@ uploads/
 # Cache & artifact của pipeline
 .cache/
 mlruns/
-data/corpus/
 data/raw/
 !data/**/.gitkeep
+
+# `data/corpus/` KHÔNG liệt kê ở đây: DVC tự sinh `data/.gitignore` khi
+# `dvc add`. Ignore ở hai chỗ thì `dvc checkout` vẫn chạy nhưng `dvc status`
+# không còn phản ánh đúng thứ git thấy — nguồn sự thật phải là một.
