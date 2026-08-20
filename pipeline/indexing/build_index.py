@@ -39,6 +39,7 @@ from rag_core.chunking import Chunker
 from rag_core.chunking.cache import CachedChunker
 from rag_core.embedding import EmbeddingProvider
 from rag_core.embedding.truncation import token_stats
+from rag_core.retrieval import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from rag_core.schemas import Chunk, Document
 from rag_core.settings import get_settings
 
@@ -116,6 +117,11 @@ class BuildReport:
     collection_count: int
     chars_in: int
     chars_out: int
+    vector_names: tuple[str, ...] = (DENSE_VECTOR_NAME,)
+    """Named vector thật sự đã được ghi. Ghi lại vì `W2-02` làm collection có
+    thể mang một hoặc hai loại vector, và một report chỉ nói "15.814 chunk" thì
+    không phân biệt được index dense-only với index hybrid — hai thứ cho ra hai
+    bảng eval khác nhau."""
     chunk_len: dict[str, float] = field(default_factory=dict)
     truncation: dict[str, float] = field(default_factory=dict)
     seconds: dict[str, float] = field(default_factory=dict)
@@ -159,6 +165,11 @@ class BuildReport:
             self.n_chunks_written,
             self.n_stale_points_deleted,
             self.collection_count,
+        )
+        logger.info(
+            "  named vector     %s%s",
+            ", ".join(self.vector_names),
+            "" if SPARSE_VECTOR_NAME in self.vector_names else "  (chưa có sparse — W2-02)",
         )
         if self.chunk_len:
             logger.info(
@@ -423,6 +434,11 @@ def build_index(
         n_stale_points_deleted=n_stale,
         collection_count=retriever.count(),
         chars_in=chars_in,
+        vector_names=(
+            (DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME)
+            if retriever.writes_sparse
+            else (DENSE_VECTOR_NAME,)
+        ),
         chars_out=chars_out,
         chunk_len=_chunk_length_stats(lengths),
         truncation=truncation,

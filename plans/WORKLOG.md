@@ -4,7 +4,7 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2: `TD-11` (kết quả âm) và `W2-01` BGE-M3 (nDCG@10 0,1621 → 0,4442) đều xong. Việc tiếp theo: `W2-02`.
+> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2 xong `TD-11` (kết quả âm), `W2-01` BGE-M3 (nDCG@10 0,1621 → 0,4442) và `W2-02` (Qdrant hybrid schema). Việc tiếp theo: `W2-03`.
 > Sắp xếp theo thứ tự thời gian, mục mới thêm vào **cuối**.
 
 ---
@@ -716,5 +716,175 @@ python -m pipeline.eval.retrieval_eval --index-config configs/indexing/bgem3.yam
    `SparseVector.as_qdrant()`. Build lại `rag_bgem3` bằng `--recreate`.
 4. Mọi so sánh vẫn phải qua `make eval-compare`. Đổi `chunk_size` thì **không**
    dùng recall@k/nDCG/MAP.
+
+---
+
+## Phiên 2026-08-20 (tiếp) · Tuần 2 — `W2-02` Qdrant hybrid schema
+
+**Mục tiêu phiên:** cho sparse của `W2-01` một chỗ chứa — một collection Qdrant
+mang cả `dense` và `sparse`, query được độc lập.
+
+**Kết quả:** xong, và sparse **gần như miễn phí** (+2,3% thời gian index, +19%
+dung lượng). Phần đáng nhất lại ngoài DoD: `ensure_collection` giờ **kiểm tra**
+schema thay vì tin, và trong 4 ca lệch có một ca hỏng im lặng.
+
+### Lệnh để kiểm tra trạng thái hiện tại
+
+```bash
+make test                                   # 666 unit (22 ca schema, thuần, ~3s)
+make up && make test-integration            # 59 integration (21 ca hybrid)
+python scripts/migrate_collection.py --config configs/indexing/bgem3.yaml
+```
+
+Build lại (~414 s trên RTX 4060, **bắt buộc** `--recreate`):
+
+```bash
+python -m pipeline.indexing.build_index --config configs/indexing/bgem3.yaml \
+  --recreate --report plans/reports/index-bgem3.json
+make eval-retrieval BUNDLE=bgem3            # phải khớp số cũ TỪNG CHỮ SỐ
+```
+
+### Bảng tiến độ phiên
+
+| Việc | Trạng thái | Ghi chú |
+|---|---|---|
+| `SPARSE_VECTOR_NAME` + schema có sparse | ✅ | Không `Modifier.IDF` — xem quyết định 80 |
+| `upsert` ghi cả hai từ một forward pass | ✅ | +8,8 s trên 389 s |
+| `retrieve_sparse()` — nhánh độc lập | ✅ | Tách khỏi `retrieve()` có chủ ý |
+| `ensure_collection` kiểm tra schema | ✅ | Ngoài DoD, 4 ca lệch có test |
+| `scripts/migrate_collection.py` | ✅ | Cố ý **không** migrate tại chỗ |
+| `HashingEmbeddingProvider` sinh sparse | ✅ | Mặc định **tắt** — `name` là cache key |
+| Xác nhận dense không đổi | ✅ | 0/209 câu đổi điểm |
+| `W2-02` | ✅ | `reports/w2-02-qdrant-hybrid.md` |
+| `W2-03` sparse retriever | ⬜ việc tiếp theo | Bọc thành `Retriever` + đo có `p`/CI |
+
+**Tổng kết:** 666 unit (+22) + 59 integration (+21) + 11 gpu test xanh · `ruff` +
+`mypy --strict` sạch trên 85 file.
+
+### Quyết định kỹ thuật phát sinh trong phiên
+
+*(tiếp số từ 77)*
+
+78. ⭐ **`ensure_collection` phải KIỂM TRA schema, không được thấy tồn tại là trả
+    về.** Đây là phần không có trong DoD và là phần đáng nhất của `W2-02`. Trước
+    đó, chạy config `bgem3` (provider sinh sparse) lên collection `rag_bgem3` cũ
+    (dense-only) sẽ chết ở lần upsert **đầu tiên** — sau khi đã nạp 2,2GB trọng
+    số và chunk xong tài liệu đầu — với một thông báo của Qdrant không nói phải
+    làm gì. Giờ chết ở giây đầu và in ra `--recreate`.
+
+79. **Trong 4 ca lệch schema có một ca HỎNG IM LẶNG, và nó không được bỏ qua:**
+    collection có `sparse` mà provider chỉ sinh dense. Nghĩa là đang eval bằng
+    provider dense-only trên index hybrid — con số ra trông bình thường trong khi
+    **nửa index không được dùng tới**. Đây là biến thể của đúng cái bẫy `TD-11`:
+    hệ thống chạy, số ra, không ai biết là sai. Ba ca kia đều gây lỗi rõ ràng.
+
+80. **KHÔNG dùng `SparseVectorParams(modifier=Modifier.IDF)` cho BGE-M3.** Trọng
+    số của model là **đã học** — phần "hạ bậc từ phổ biến" đã nằm trong đó. Chồng
+    IDF của Qdrant lên là nhân đôi phép ấy, và nó hỏng theo kiểu tệ nhất: điểm vẫn
+    ra số, chỉ là sai. `Modifier.IDF` dành cho nhánh **BM25 thô** ở `W2-03`, nơi
+    giá trị đầu vào là tần suất chứ không phải trọng số. Có test integration canh
+    `modifier` của `rag_bgem3` là `None`.
+
+81. **`schema_problems()` là hàm THUẦN, tách khỏi client Qdrant.** 12 ca lệch test
+    được trong `make test` (~3 giây) chứ không cần server. Hàng rào quan trọng nhất
+    của một tầng không nên chỉ test được khi Docker đang chạy.
+
+82. **`upsert` gọi provider MỘT lần, không hai.** Đo được: sparse thêm **8,8 giây
+    trên 389** (+2,3%). Gọi `embed_documents()` rồi gọi tiếp một hàm sparse riêng
+    sẽ là **+380 giây** — trả gấp đôi tiền forward pass cho đúng một kết quả. Đây
+    là chỗ quyết định "một forward pass" của `W2-01` (quyết định 66) trả nợ.
+
+83. **Xác nhận dense không đổi một chữ số sau khi đổi đường ghi.** `_embed_batch`
+    → `embed_documents_hybrid` là đường code khác với `embed_documents` của
+    `W2-01`. So lại trên 15.814 chunk thật: **15/15 metric không lệch, 0/209 câu
+    đổi điểm**. Chỉ so bảng metric tổng thể thì hai lần chạy khác nhau vẫn có thể
+    trùng số do bù trừ — nên phải so cả `*-per-query.jsonl`. Hạ tầng thêm ở
+    `TD-11` dùng lại được ở đây.
+
+84. **Bỏ `zip(strict=True)` thì phải thay bằng kiểm tra độ dài tường minh.**
+    `upsert` giờ index theo offset (`dense[offset]`) nên lệch hàng sẽ **gán
+    embedding cho sai chunk** thay vì báo lỗi. Có test integration chạy
+    `batch_size=2` trên 3 chunk để đi qua nhiều lô rồi kiểm từng chunk.
+
+85. **Sửa một bug tiềm ẩn: `rank` có lỗ khi bỏ point lỗi.** Bản cũ dùng
+    `enumerate(points, start=1)`, nên một point thiếu payload làm dãy rank thành
+    `1, 2, 4`. nDCG/MRR đọc `rank` như vị trí thật nên sẽ tính sai âm thầm. Giờ là
+    `len(results) + 1`, có test canh dãy liên tục cho **cả hai** nhánh.
+
+86. **`retrieve_sparse()` tách khỏi `retrieve()`, không gộp thành một hàm
+    "hybrid".** `W2-04` (RRF) cần hai danh sách xếp hạng *độc lập* để hợp nhất, và
+    một hàm trả sẵn hybrid thì không tách được đóng góp của mỗi nhánh — thứ mà
+    `RetrievedChunk.dense_score`/`sparse_score` tồn tại để giữ.
+
+87. **Thang điểm hai nhánh KHÔNG so được với nhau.** Dense là cosine (đã chuẩn
+    hoá, ∈ [−1, 1]); sparse là **dot product** của trọng số không âm nên không có
+    trần. Đo thật trên cùng một truy vấn: dense 0,6682 vs sparse 0,2938. Đây là lý
+    do `W2-04` phải hợp nhất theo **thứ hạng**, không theo điểm.
+
+88. **Script migrate cố ý KHÔNG migrate tại chỗ, vì không thể.** Qdrant không cho
+    thêm named vector vào collection đã tồn tại. Nên
+    `scripts/migrate_collection.py` làm thứ nó làm được: chẩn đoán lệch schema và
+    in đúng lệnh phải chạy (mã trả về 0/1/2/3). Đây là phiên bản cho **schema** của
+    câu hỏi mà `fingerprint` trả lời cho **nội dung**. Phương án "copy dense cũ rồi
+    chỉ tính thêm sparse" đã cân nhắc và bỏ: tính được sparse của BGE-M3 tức là đã
+    tính lại dense, nên chẳng tiết kiệm gì.
+
+89. **`HashingEmbeddingProvider` mặc định `sparse=False`, và đó là quyết định.**
+    Lần đầu tôi để `True` và hai test W1 đỏ ngay (`test_provider_name_is_
+    reproducible` + một test của `W2-01`) — đó là cách phát hiện `name` của provider
+    đi vào **cache key của semantic chunker** (`chunking/semantic.py`) và vào MLflow.
+    Bật sẵn sẽ vô hiệu cache chunk và làm mọi test W1 đổi nghĩa âm thầm. Có test
+    hồi quy canh `embed_documents()` cho kết quả y hệt khi bật/tắt sparse.
+
+90. **`as_qdrant()` trả `TypedDict`, không phải `dict[str, list[int] | list[float]]`.**
+    Kiểu union đúng về cấu trúc nhưng làm `models.SparseVector(**payload)` không
+    kiểm được kiểu — và chỗ đó là ranh giới giữa code của mình với client bên
+    ngoài, đúng chỗ đáng để kiểu chặt. mypy `--strict` bắt được.
+
+91. **Sparse của BGE-M3 là một phép CHỌN, không phải bag-of-words có trọng số.**
+    Đo trên 3.000 chunk: **95,9 entry/chunk** (p50 100 · p95 147 · max 195 ·
+    **min 3**), mật độ 0,0384% của vocab 250.002. Chunk có p50 **218 token** nên
+    ReLU loại khoảng **55%** token.
+
+92. **`min = 3 entry` là cảnh báo cho `W2-04`.** Có chunk chỉ còn 3 token dương,
+    tức nhánh sparse gần như không tìm ra được nó bằng bất kỳ truy vấn nào. Mặt bù
+    này khớp đặc tính đo được trong test: **không trùng token thì sparse trả rỗng**,
+    trong khi dense vẫn đoán được. Hai nhánh hỏng theo hai kiểu khác nhau — đó là
+    lý do RRF đáng làm chứ không phải chỉ để có thêm một dòng trong CV.
+
+93. **Filter metadata phải áp cho CẢ HAI nhánh ở tầng Qdrant.** Có test riêng cho
+    nhánh sparse: thiếu nó thì `W2-06` (cô lập tenant) có một lỗ đúng bằng nhánh
+    sparse, và lỗ đó không lộ ra ở bất kỳ test dense nào.
+
+94. **Thêm sparse index làm p50 truy hồi dense tăng 23,7 → 31,5 ms (+33%), tái
+    lập 3 lần — nhưng p95 gần như không đổi** (46,0 → 46,6 ms). Con số này cho biết
+    cấu trúc của độ trễ: p95 bị chi phối bởi forward pass embed truy vấn của BGE-M3
+    (biến động lớn), p50 phản ánh phép tìm trong Qdrant. ⚠️ **Chưa tách được** chi
+    phí của sparse index khỏi trạng thái segment sau khi vừa build lại (8 segment,
+    Qdrant tối ưu ở background). Với ngưỡng `G2` p95 < 3500 ms thì 46,6 ms còn rất
+    nhiều chỗ nên chưa đáng đào — nhưng phải đo lại ở `W2-04`.
+
+### Vấn đề đang mở
+
+- **`W2-03` là việc tiếp theo.** `retrieve_sparse()` chạy được nhưng **chưa** là
+  `Retriever`, nên eval harness chưa đo được nó. Đến `W2-03` mới có **số** cho câu
+  "sparse đóng góp gì", và phải kèm `p`/CI qua `make eval-compare`.
+- ⚠️ Nhánh BM25 **thô** của `W2-03` mới cần `Modifier.IDF`; nhánh BGE-M3 thì
+  không (quyết định 80). Hai nhánh sparse khác nhau về bản chất đầu vào.
+- ⚠️ `W2-04` hợp nhất theo **thứ hạng**, không theo điểm (quyết định 87).
+- Collection trong Qdrant: `rag_baseline` (768-d), `rag_chunk550`,
+  `rag_chunk550nb55`, `rag_bgem3` (1024-d + sparse). Chỉ `rag_bgem3` là hybrid.
+- `TD-13` (golden set review bằng model) vẫn mở và vẫn là nợ đáng nhất.
+- Các mục còn lại không đổi: `TD-05`, `TD-08`, `TD-10`, `TD-14`…`TD-17`, `W0-02`.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration`.
+2. Đọc `reports/w2-02-qdrant-hybrid.md` §3 (sparse trên dữ liệu thật, và vì sao
+   `min = 3` quan trọng) và §7 (thứ chưa làm).
+3. `W2-03`: bọc `retrieve_sparse()` thành một `Retriever` để eval harness chạy
+   được, rồi đo trên golden set. DoD là truy vấn từ khoá lạ mà dense miss thì
+   sparse hit — phải có ca exact-ID lookup.
+4. Dùng `HashingEmbeddingProvider(..., sparse=True)` cho test, không cần GPU.
 
 ---

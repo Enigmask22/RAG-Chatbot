@@ -24,8 +24,22 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TypedDict
 
-__all__ = ["SparseVector"]
+__all__ = ["QdrantSparse", "SparseVector"]
+
+
+class QdrantSparse(TypedDict):
+    """Dạng mà `qdrant_client.models.SparseVector` nhận vào.
+
+    TypedDict chứ không phải `dict[str, list[int] | list[float]]`: kiểu union kia
+    đúng về mặt cấu trúc nhưng làm `models.SparseVector(**payload)` không kiểm
+    được kiểu, và chỗ đó là ranh giới giữa code của mình với client bên ngoài —
+    đúng chỗ đáng để kiểu chặt.
+    """
+
+    indices: list[int]
+    values: list[float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +93,7 @@ class SparseVector:
     def as_dict(self) -> dict[int, float]:
         return dict(zip(self.indices, self.values, strict=True))
 
-    def as_qdrant(self) -> dict[str, list[int] | list[float]]:
+    def as_qdrant(self) -> QdrantSparse:
         """Dạng `qdrant_client.models.SparseVector` nhận vào."""
         return {"indices": list(self.indices), "values": list(self.values)}
 
