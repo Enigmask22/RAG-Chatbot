@@ -295,3 +295,70 @@ make goldenset-triage                    # ~25s, cần GPU cho embedding
 # đọc data/golden/review/queue_v1.md, điền data/golden/review/decisions_v1.csv
 make goldenset-freeze
 ```
+
+---
+
+## 9. Phát hiện thứ tư, tìm ra sau khi đã commit: `TD-12`
+
+`TD-11` kết luận rằng việc đầu tiên của `W2` nên là hạ `chunk_size`. Nên tôi kiểm
+xem điều đó làm gì với golden set sắp đóng băng.
+
+`chunk_id` được sinh ở `packages/rag_core/chunking/base.py:144`:
+
+```python
+chunk_id=f"{doc.doc_id}::{index:05d}"
+```
+
+Thuần **vị trí**. Không có offset ký tự nào được lưu — `Chunk` có `chunk_index`,
+`section_path`, `parent_chunk_id`, `token_count`, nhưng không có `start_char`/`end_char`.
+
+Chunk lại cùng một tài liệu ở hai `chunk_size`:
+
+```
+tài liệu: wb-099000007072236813 · 40.508 ký tự
+chunk_size=1000 → 46 chunk
+chunk_size=600  → 69 chunk
+
+chunk_id tồn tại ở CẢ HAI cấu hình: 46
+  trong đó nội dung GIỐNG nhau : 0
+  nội dung KHÁC nhau           : 46
+chunk_id chỉ có ở bản 1000 (biến mất): 0
+```
+
+`wb-099000007072236813::00023`:
+
+| | 110 ký tự đầu |
+|---|---|
+| `size=1000` | `'n. Significant investments\nwill be needed to upgrade and retrofit public assets…'` |
+| `size=600` | `' exported rice 65% of aquaculture production 60% of exported fish…'` |
+
+**Đây là dạng hỏng tệ nhất có thể.** Không phải con trỏ chết — con trỏ chết thì
+`fetch_chunks` phát hiện và `gold_chunk_missing` gắn cờ. Đây là con trỏ **sai**: id
+vẫn tồn tại, vẫn lấy ra được một chunk, chunk đó vẫn được chấm điểm recall. `0
+chunk_id biến mất` nghĩa là mọi phép kiểm hiện có đều báo sạch.
+
+Hệ quả cụ thể: `golden_v1` đóng băng hôm nay, `W2` hạ `chunk_size` theo `TD-11`, và
+từ đó recall được đo so với ground truth sai — trong khi `make goldenset-verify` vẫn
+xanh, vì checksum canh nội dung *file golden set*, không canh việc nội dung *index*
+mà nó trỏ tới có còn như cũ.
+
+Đây là lỗi thiết kế của tôi ở `W1-07`, không phải của bản POC: tôi chọn `chunk_id`
+thuần vị trí mà không nghĩ tới việc cả `W2` và `W3` đều là về việc đổi cách chunk.
+
+### Hai đường đi
+
+**(a) Review bằng `chunk_id` như hiện tại, ánh xạ lại ở `W2`.** Ánh xạ được vì draft
+giữ `supporting_quotes` đã đối chiếu với chunk — 250/266 câu có trích dẫn xác minh
+được, tìm chunk mới chứa trích dẫn đó là xong. 16 câu còn lại làm tay. Không phải
+sửa gì bây giờ, bắt đầu review ngay được.
+
+**(b) Thêm `start_char`/`end_char` vào `Chunk`, gán nhãn theo span ký tự.** Golden set
+trở thành *độc lập với cấu hình chunking*: eval nhận span rồi tự ánh xạ sang chunk
+của bất kỳ index nào đang được đo. Chi phí máy nhỏ (build lại index 202s + triage
+25s), nhưng phải sửa `rag_core.schemas.Chunk`, cả bốn chunker, và thêm bước ánh xạ
+span→chunk vào `retrieval_eval`. Bù lại thì `W2`, `W3` và mọi lần đổi chunking sau
+này không phải ánh xạ lại lần nào nữa.
+
+Khuyến nghị: **(b)**. Toàn bộ `W2` và `W3` là về việc đổi cách chunk; một golden set
+phải ánh xạ lại sau mỗi lần đổi đó là nợ phải trả nhiều lần, và mỗi lần đều là một
+cơ hội để ground truth lệch âm thầm.
