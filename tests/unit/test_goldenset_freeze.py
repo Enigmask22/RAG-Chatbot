@@ -30,7 +30,7 @@ from pipeline.goldenset.freeze import (
     verify_frozen,
 )
 from pipeline.goldenset.schema import DraftProvenance, GoldenDraft
-from rag_core.schemas import Language
+from rag_core.schemas import Language, TextSpan
 
 _ALL_CATEGORIES = list(QueryCategory)
 
@@ -427,3 +427,77 @@ class TestChecksumAndLock:
         )
         b = freeze_golden_set(drafts, decisions, tmp_path / "b.jsonl")
         assert a.sha256 != b.sha256
+
+
+class TestSpansSurviveFreeze:
+    """`relevant_spans` là thứ làm golden set độc lập với chunking (`TD-12`).
+
+    Làm rơi nó ở bước freeze thì toàn bộ công neo span mất sạch, mà không có
+    triệu chứng nào: file vẫn hợp lệ, eval vẫn chạy, chỉ là chấm bằng nhãn
+    `chunk_id` chỉ đúng với đúng một cấu hình chunking.
+    """
+
+    @staticmethod
+    def _with_spans(qid: str) -> GoldenDraft:
+        draft = _draft(qid)
+        return draft.model_copy(
+            update={
+                "query": draft.query.model_copy(
+                    update={"relevant_spans": [TextSpan(doc_id="doc-x", start=10, end=200)]}
+                )
+            }
+        )
+
+    def test_accept_carries_spans_through(self, tmp_path: Path) -> None:
+        drafts = _full_set()
+        target = drafts[0].query.query_id
+        drafts[0] = self._with_spans(target)
+        freeze_golden_set(drafts, _accept_all(drafts), tmp_path / "g.jsonl")
+        frozen = {q.query_id: q for q in load_golden_set(tmp_path / "g.jsonl")}
+        assert len(frozen[target].relevant_spans) == 1
+        assert frozen[target].relevant_spans[0].start == 10
+
+    def test_manual_chunk_ids_drop_the_spans(self, tmp_path: Path) -> None:
+        """Ánh xạ span ghi đè chunk_id, nên giữ span cũ sẽ bỏ sửa tay một cách âm thầm."""
+        drafts = _full_set()
+        target = drafts[0].query.query_id
+        drafts[0] = self._with_spans(target)
+        decisions = _accept_all(drafts)
+        decisions[target] = ReviewDecision(
+            query_id=target,
+            decision=Decision.EDIT,
+            new_relevant_chunk_ids=["doc-nguoi-chon::00007"],
+        )
+        freeze_golden_set(drafts, decisions, tmp_path / "g.jsonl")
+        frozen = {q.query_id: q for q in load_golden_set(tmp_path / "g.jsonl")}
+        assert frozen[target].relevant_chunk_ids == ["doc-nguoi-chon::00007"]
+        assert frozen[target].relevant_spans == []
+
+    def test_category_only_edit_keeps_spans(self, tmp_path: Path) -> None:
+        drafts = _full_set()
+        target = next(d.query.query_id for d in drafts if d.query.category is QueryCategory.FACTOID)
+        idx = next(i for i, d in enumerate(drafts) if d.query.query_id == target)
+        drafts[idx] = self._with_spans(target)
+        decisions = _accept_all(drafts)
+        decisions[target] = ReviewDecision(
+            query_id=target, decision=Decision.EDIT, new_category=QueryCategory.MULTI_HOP
+        )
+        freeze_golden_set(drafts, decisions, tmp_path / "g.jsonl")
+        frozen = {q.query_id: q for q in load_golden_set(tmp_path / "g.jsonl")}
+        assert frozen[target].category is QueryCategory.MULTI_HOP
+        assert len(frozen[target].relevant_spans) == 1
+
+    def test_relabel_to_unanswerable_drops_spans(self, tmp_path: Path) -> None:
+        drafts = _full_set()
+        target = next(d.query.query_id for d in drafts if d.query.category is QueryCategory.FACTOID)
+        idx = next(i for i, d in enumerate(drafts) if d.query.query_id == target)
+        drafts[idx] = self._with_spans(target)
+        decisions = _accept_all(drafts)
+        decisions[target] = ReviewDecision(
+            query_id=target,
+            decision=Decision.EDIT,
+            new_category=QueryCategory.UNANSWERABLE,
+        )
+        freeze_golden_set(drafts, decisions, tmp_path / "g.jsonl")
+        frozen = {q.query_id: q for q in load_golden_set(tmp_path / "g.jsonl")}
+        assert frozen[target].relevant_spans == []

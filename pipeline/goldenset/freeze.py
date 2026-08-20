@@ -47,6 +47,7 @@ from pipeline.eval.golden import GoldenQuery, QueryCategory, write_golden_set
 from pipeline.goldenset.schema import GoldenDraft
 
 __all__ = [
+    "HUMAN_REVIEWER",
     "MIN_FROZEN_QUESTIONS",
     "Decision",
     "FreezeError",
@@ -59,6 +60,13 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+HUMAN_REVIEWER = "human"
+"""Giá trị duy nhất khiến `reviewed_by_human` thành `True`.
+
+Là một hằng số chứ không phải chuỗi rải rác: chỗ này quyết định repo có nói thật
+về cách golden set được kiểm hay không.
+"""
 
 MIN_FROZEN_QUESTIONS = 150
 """Ngưỡng của `W1-11`. Dưới ngưỡng thì breakdown theo 7 nhóm mất ý nghĩa thống kê."""
@@ -105,6 +113,7 @@ class FreezeReport(BaseModel):
     by_lang: dict[str, int] = Field(default_factory=dict)
     sha256: str = ""
     path: str = ""
+    reviewer: str = HUMAN_REVIEWER
 
     def to_json(self) -> str:
         return json.dumps(self.model_dump(), ensure_ascii=False, indent=2)
@@ -123,6 +132,12 @@ class FreezeReport(BaseModel):
         for cat, n in sorted(self.by_category.items(), key=lambda kv: -kv[1]):
             log.info("  %-16s %d", cat, n)
         log.info("  sha256 %s", self.sha256)
+        if self.reviewer != HUMAN_REVIEWER:
+            log.warning(
+                "  reviewer = %s → `reviewed_by_human` là False. Golden set này "
+                "KHÔNG phải người xác nhận; đừng mô tả nó như vậy ở report hay CV.",
+                self.reviewer,
+            )
 
 
 def _split_ids(raw: str) -> list[str]:
@@ -194,7 +209,7 @@ def load_decisions(path: str | Path) -> dict[str, ReviewDecision]:
     return out
 
 
-def _apply(draft: GoldenDraft, decision: ReviewDecision) -> GoldenQuery:
+def _apply(draft: GoldenDraft, decision: ReviewDecision, reviewer: str) -> GoldenQuery:
     """Chiếu một nháp đã được chấp nhận thành `GoldenQuery`.
 
     Raises:
@@ -232,6 +247,17 @@ def _apply(draft: GoldenDraft, decision: ReviewDecision) -> GoldenQuery:
             "Điền chunk_id (copy từ `queue_v1.md`) hoặc `reject` câu này."
         )
 
+    # Span đi theo nhãn, TRỪ khi người review tự chỉ định `chunk_id`.
+    #
+    # Ánh xạ span ở `retrieval_eval` **ghi đè** `relevant_chunk_ids`. Nên nếu giữ
+    # span cũ khi người review đã sửa chunk_id bằng tay, chỉnh sửa đó sẽ bị bỏ
+    # một cách âm thầm — chính xác thứ tệ nhất có thể làm với công review tay.
+    # Đổi nhãn nhóm thôi thì span vẫn đúng, nên vẫn giữ.
+    if decision.new_relevant_chunk_ids or category is QueryCategory.UNANSWERABLE:
+        spans = []
+    else:
+        spans = list(q.relevant_spans)
+
     try:
         return GoldenQuery(
             query_id=q.query_id,
@@ -239,9 +265,11 @@ def _apply(draft: GoldenDraft, decision: ReviewDecision) -> GoldenQuery:
             category=category,
             lang=q.lang,
             relevant_chunk_ids=chunk_ids,
+            relevant_spans=spans,
             reference_answer=q.reference_answer,
             notes=decision.notes or q.notes,
-            reviewed_by_human=True,
+            reviewed_by_human=reviewer == HUMAN_REVIEWER,
+            reviewed_by=reviewer,
         )
     except Exception as exc:
         raise FreezeError(f"{q.query_id}: {exc}") from exc
@@ -264,6 +292,7 @@ def freeze_golden_set(
     min_questions: int = MIN_FROZEN_QUESTIONS,
     require_all_categories: bool = True,
     read_only: bool = True,
+    reviewer: str = HUMAN_REVIEWER,
 ) -> FreezeReport:
     """Ghi `golden_v1.jsonl` từ nháp + quyết định, kèm checksum.
 
@@ -301,7 +330,7 @@ def freeze_golden_set(
             rejected += 1
             continue
         try:
-            frozen.append(_apply(draft, decision))
+            frozen.append(_apply(draft, decision, reviewer))
         except FreezeError as exc:
             problems.append(str(exc))
             continue
@@ -357,6 +386,7 @@ def freeze_golden_set(
         by_lang=by_lang,
         sha256=digest,
         path=str(target),
+        reviewer=reviewer,
     )
 
 
@@ -428,6 +458,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--allow-missing-categories", action="store_true")
     parser.add_argument(
+        "--reviewer",
+        default=HUMAN_REVIEWER,
+        help="Ai đã review. Chỉ `human` mới đặt `reviewed_by_human=True`. "
+        "Review bằng model thì ghi định danh model, vd `model:claude-opus-5`.",
+    )
+    parser.add_argument(
         "--verify",
         action="store_true",
         help="Chỉ đối chiếu file đã đóng băng với checksum, không ghi gì.",
@@ -459,6 +495,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.out,
             min_questions=args.min_questions,
             require_all_categories=not args.allow_missing_categories,
+            reviewer=args.reviewer,
         )
     except FreezeError as exc:
         logger.error("%s", exc)

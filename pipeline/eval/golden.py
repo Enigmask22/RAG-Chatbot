@@ -59,6 +59,19 @@ class GoldenQuery(BaseModel):
     reference_answer: str | None = None
     notes: str | None = None
     reviewed_by_human: bool = False
+    """Chỉ `True` khi **người** đã xác nhận câu này.
+
+    Cố ý tách khỏi `reviewed_by`: một cờ boolean sai ở đây sẽ làm cả report,
+    cả CV, cả câu trả lời phỏng vấn nói sai về cách golden set được kiểm. Bước
+    freeze chỉ đặt `True` khi `--reviewer human`.
+    """
+    reviewed_by: str = ""
+    """Ai đã review: `"human"`, hoặc định danh model (vd `"model:claude-opus-5"`).
+
+    Có mặt vì review bằng model là một lựa chọn hợp lệ (DeepSeek sinh, model khác
+    review = cross-model, không phải tự khen) nhưng **không tương đương** người.
+    Ghi lại nguồn để sau này nâng cấp thì biết câu nào cần đọc lại.
+    """
 
     @model_validator(mode="after")
     def _check_relevance(self) -> GoldenQuery:
@@ -125,6 +138,7 @@ def json_summary(queries: Sequence[GoldenQuery]) -> str:
             "n_queries": len(queries),
             "categories": category_distribution(queries),
             "reviewed": sum(1 for q in queries if q.reviewed_by_human),
+            "reviewed_by": sorted({q.reviewed_by for q in queries if q.reviewed_by}),
         },
         ensure_ascii=False,
         indent=2,

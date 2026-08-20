@@ -1,0 +1,24 @@
+{
+  "drafts_total": 266,
+  "reviewed": 266,
+  "accepted": 242,
+  "edited": 0,
+  "rejected": 24,
+  "frozen": 242,
+  "by_category": {
+    "aggregation": 26,
+    "multi_hop": 34,
+    "adversarial": 34,
+    "factoid": 68,
+    "cross_lingual": 43,
+    "table_lookup": 4,
+    "unanswerable": 33
+  },
+  "by_lang": {
+    "vi": 150,
+    "en": 92
+  },
+  "sha256": "f53ad84abea32d3f9c14340eac65ff9c0cfaa783fe91697ee6feeb8b1393d83a",
+  "path": "data\\golden\\golden_v1.jsonl",
+  "reviewer": "model:claude-opus-5"
+}
