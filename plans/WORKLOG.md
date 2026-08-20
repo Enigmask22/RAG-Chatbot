@@ -4,7 +4,7 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2 xong `TD-11` (kết quả âm), `W2-01` BGE-M3 (nDCG@10 0,1621 → 0,4442), `W2-02` (Qdrant hybrid schema) và `W2-03` (sparse đo được: kém dense trên golden set nhưng thắng áp đảo ở tra mã tài liệu; **trần của RRF là `hit_rate@10` 0,7033**). Việc tiếp theo: `W2-04`.
+> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2 xong `TD-11` (âm), `W2-01` BGE-M3, `W2-02` hybrid schema, `W2-03` sparse retriever, `W2-04` RRF (**`k=60` của bài báo kém dense có ý nghĩa**; `k=1` thắng nhưng chỉ 3/15 metric đạt ý nghĩa; và một **bug 64 ms** làm sai hai con số đã công bố — sparse thật ra miễn phí hoàn toàn). Việc tiếp theo: `W2-05`.
 > Sắp xếp theo thứ tự thời gian, mục mới thêm vào **cuối**.
 
 ---
@@ -1077,5 +1077,232 @@ make known-item BUNDLE=bgem3                # ~2 phút, seed 20260820
 4. Đo bằng `make eval-retrieval BUNDLE=bgem3 MODE=hybrid RUN=bgem3-rrf` rồi
    `make eval-compare BASE=bgem3 CAND=bgem3-rrf`. `build_branch` đã có chỗ cho
    `hybrid` (hiện raise `NotImplementedError` chỉ đúng vào `W2-04`).
+
+---
+
+## Phiên 2026-08-20 (tiếp) · Tuần 2 — `W2-04` RRF fusion
+
+**Mục tiêu phiên:** hợp nhất hai nhánh bằng RRF và xem có tiến được tới trần
+`hit_rate@10 = 0,7033` mà `W2-03` để lại hay không.
+
+**Kết quả:** không tiến tới trần, và ở mặc định của bài báo gốc (`k=60`) nó còn
+**kém dense một mình có ý nghĩa thống kê**. Quét `k` ra cấu hình thắng `k=1`
+(`hit_rate@10` 0,6555) nhưng chỉ 3/15 metric đạt ý nghĩa. Phần đáng nhất của
+phiên lại không phải RRF: kiểm một con số không khớp đã tìm ra **bug hiệu năng
+64 ms/lần gọi** làm sai hai con số đã công bố ở `W2-02` và `W2-03`.
+
+### Lệnh để kiểm tra trạng thái hiện tại
+
+```bash
+make test                                   # 771 unit (40 ca RRF thuần + 34 hybrid)
+make up && make test-integration            # 102 integration (25 ca hybrid)
+make test-gpu                               # 17 gpu (có test hồi quy bug 64 ms)
+```
+
+Đo lại (index **không** cần build lại nữa — đã build ở phiên này sau khi sửa bug):
+
+```bash
+make eval-retrieval BUNDLE=bgem3 MODE=hybrid RUN=bgem3-rrf-k1-c20 \
+  RRF_ARGS="--rrf-k 1 --candidate-k 20"
+make eval-compare BASE=bgem3 CAND=bgem3-rrf-k1
+make known-item BUNDLE=bgem3                # thêm --rrf-k 1 cho cột hybrid k=1
+```
+
+### Bảng tiến độ phiên
+
+| Việc | Trạng thái | Ghi chú |
+|---|---|---|
+| `reciprocal_rank_fusion` hàm thuần | ✅ | Không nhận điểm — có test canh chữ ký |
+| `QdrantHybridRetriever` | ✅ | Một embed, một request HTTP |
+| `build_branch(..., "hybrid", **options)` | ✅ | Tham số sai nhánh là **lỗi**, không bị bỏ qua |
+| Quét `k` × `candidate_k` × weights | ✅ | 11 lần chạy — quyết định 112 |
+| Đối chiếu với `Fusion.RRF` của Qdrant | ✅ | Qdrant dùng `k=1`, ta trùng khít |
+| Tìm + sửa bug `len(tokenizer)` 64 ms | ✅ | Ngoài kế hoạch — quyết định 117 |
+| Đính chính `W2-02` + `W2-03` | ✅ | Ghi tại chỗ, không xoá số sai |
+| Known-item cho cả 3 nhánh | ✅ | Hybrid giữ phủ, mất thứ hạng |
+| `W2-04` | ✅ | `reports/w2-04-rrf.md` |
+| `W2-05` reranker | ⬜ việc tiếp theo | Biến `recall@20` 0,6754 thành thứ hạng |
+
+**Tổng kết:** 771 unit (+73) + 102 integration (+29) + 17 gpu (+2) test xanh ·
+`ruff` + `mypy --strict` sạch trên 94 file.
+
+### Quyết định kỹ thuật phát sinh trong phiên
+
+*(tiếp số từ 109)*
+
+110. ⭐ **Ghi dự đoán TRƯỚC khi đo, và giữ lại khi nó sai.** Trước khi cài RRF tôi
+     lập luận: RRF xen kẽ hai danh sách nên top-10 hợp nhất ≈ hợp của hai top-5 =
+     **0,6268** = đúng bằng dense@10, tức "ngang bằng"; và chỗ RRF thắng sẽ là
+     `hit_rate@1` (đồng thuận được cộng điểm). **Sai cả hai chiều**: `k=60` cho
+     0,5742 (tệ hơn dự đoán) và `hit_rate@1` không cải thiện ở *bất kỳ* cấu hình
+     nào. Lý do phần đầu sai: top-10 hợp nhất không phải hợp của hai top-5 mà bị
+     chiếm bởi chunk *cả hai nhánh đều xếp hạng trung bình* — và chúng thường
+     không liên quan.
+
+111. ⚠️ **`k=60` — mặc định của bài báo gốc — là lựa chọn TỆ NHẤT trong khoảng đã
+     quét**, và nó kém dense một mình *có ý nghĩa* (`hit_rate@5` `p = 0,014`,
+     nDCG@10 CI95 không chứa 0). Nếu cài RRF theo mặc định, không quét `k`, rồi
+     báo "đã làm hybrid search" thì đó là trình bày một **suy giảm** như một tính
+     năng. Đây là lý do `--rrf-k` phải là cờ chứ không phải hằng số.
+
+112. ⭐ **`k` là cần điều khiển chính và nó đơn điệu.** nDCG@10 theo `k` =
+     1→2→5→10→60 cho **0,4557 → 0,4530 → 0,4443 → 0,4305 → 0,4021**. Cơ chế tính
+     được: `k=60` cho chunk mà **cả hai** nhánh xếp hạng 3 (`2/63 = 0,0317`) đè
+     lên chunk mà dense xếp **hạng 1** (`1/61 = 0,0164`) — gấp 1,9×. Với `k=1` thì
+     hai bên bằng nhau. Tức `k` lớn cho **đồng thuận yếu lật đổ tín hiệu mạnh**,
+     và trên tập này đồng thuận yếu chủ yếu là nhiễu.
+
+113. **`candidate_k` chỉ là cần điều khiển khi `k` lớn.** Ở `k=60`: c20/c50/c100
+     cho `hit_rate@10` 0,6364/0,5742/0,5024 — chênh 13 điểm. Ở `k=1`:
+     0,6555/0,6555/0,6555 — không lệch một chữ số. `k` nhỏ làm ứng viên hạng sâu
+     gần vô giá trị nên độ sâu pool không còn ý nghĩa. Hệ quả: **với `k=1` chọn
+     `candidate_k` nhỏ nhất**, nó miễn phí về chất lượng và rẻ hơn về độ trễ.
+
+114. **Hai test đơn vị tôi viết để biện minh `candidate_k` sâu có số học ĐÚNG
+     nhưng tiên đề SAI.** `test_deep_agreement_beats_shallow_solo` chứng minh
+     chunk ở hạng 45 của dense + hạng 3 của sparse được đẩy lên trên chunk chỉ
+     dense tìm ra ở hạng 2 — điều đó đúng và vẫn đúng. Điều test không nói được:
+     những chunk ấy thường **không liên quan**. Giữ cả hai test (chúng đặc tả đúng
+     hành vi của hàm) và thêm ghi chú trỏ vào số đo — một test đúng về hành vi vẫn
+     có thể bị đọc thành một lời khuyên sai.
+
+115. **Weighted RRF không đáng quét ở `W2-08`, và biết được điều đó từ số học.**
+     Muốn lật một đồng thuận **cùng độ sâu** cần tỉ lệ trọng số **> 30,5:1**, vì
+     cân dense lên cũng cân luôn phần dense *của chunk đồng thuận*: `a = w₀/61` vs
+     `b = (w₀+w₁)/63`. Lần đầu tôi tính sai chỗ này và test đỏ — nên nó thành một
+     test (`test_same_depth_agreement_needs_an_absurd_weight_to_flip`). Đo thật
+     2:1 cho +0,0287, khớp.
+
+116. ⭐ **Đối chiếu với `Fusion.RRF` của Qdrant, và Qdrant dùng `k = 1`.** Suy `k`
+     của nó từ chính điểm nó trả về: cả 7 chunk khớp `1/(1+rank)` tới 6 chữ số.
+     Bản của ta ở `k=1` cho **cùng tập điểm** (`rel=1e-6` — trường `score` của
+     Qdrant là float32, nó trả 0,6666667 cho chỗ ta tính 0,6666666666666666). Tự
+     cài không có nghĩa là tự tin: trùng khít với một bản độc lập là bằng chứng
+     mạnh hơn mọi số tính tay tôi tự đặt ra. **Và vẫn phải tự cài** vì `k` của
+     Qdrant không cấu hình được, mà quyết định 112 cho thấy `k` là cần điều khiển
+     quan trọng nhất.
+
+117. ⭐⭐ **BUG 64 ms, tìm ra vì các con số KHÔNG CỘNG LẠI ĐÚNG.** `W2-03` §8 báo
+     "tìm sparse 97,8 ms vs dense 17,8 ms"; `W2-04` thấy hybrid — làm *nhiều việc
+     hơn* — có p50 31,3 ms. Hai số đó không thể cùng đúng. Phân rã đầy đủ trong
+     một tiến trình: dense lệch −7,8 ms, hybrid lệch −4,1 ms (đều trong nhiễu),
+     **sparse lệch +81,7 ms**. Khác biệt duy nhất: `retrieve_sparse` kiểm
+     `self.writes_sparse` ở **mỗi lần gọi**, còn hybrid kiểm một lần lúc dựng. Và
+     `writes_sparse` đọc `sparse_vocab_size` = `len(self.model.tokenizer)`, tức
+     **dựng lại dict 250.002 phần tử — 63,9 ms**. Sửa bằng cách **nhớ kết quả**,
+     không đổi sang `tokenizer.vocab_size` (nhanh nhưng khác nghĩa: không tính
+     token thêm vào, và chặn trên sai thì hỏng im lặng).
+
+118. **Cách phát hiện quyết định 117 khác ba lần trước.** `TD-11`, `W2-02`,
+     `W2-03` đều được phát hiện bằng cách **kiểm một bất biến**. Cái này được phát
+     hiện bằng cách **buộc các con số cộng lại đúng**. Ba harness khác cấu trúc
+     cho ba câu trả lời lệch nhau 2–6× cho cùng một việc — khi phương sai giữa các
+     cách đo lớn hơn hiệu ứng muốn quy kết thì phải đo lại, chứ không phải chọn
+     con số vừa mắt. Đã bỏ ba lần đo mới để tìm ra chỗ thiếu.
+
+119. ⚠️ **Hai con số đã công bố bị sai, và đã đính chính TẠI CHỖ chứ không xoá.**
+     (a) `W2-03` §8: tìm sparse thật ra **15,4 ms**, **rẻ hơn** tìm dense 28,7 ms;
+     gửi cả hai trong một request batch tốn **30,2 ms** = bằng dense một mình, vì
+     Qdrant chạy song song. Kết luận cũ "nhánh sparse sẽ là thành phần nặng nhất
+     của đường truy hồi" là sai, và dự đoán "~128 ms mỗi truy vấn hybrid" cũng
+     sai. (b) `W2-02` "+8,8 s (+2,3%)": 124 lô × 64 ms ≈ 7,9 s là bug. Build lại
+     sau khi sửa: **389,2 s → 379,1 s**, tức **nhanh hơn** cả dense-only 380,4 s
+     của `W2-01` — sparse phía ghi **miễn phí hoàn toàn**. Giữ số sai kèm đính
+     chính vì con số sai và lý do nó sai đều đáng đọc.
+
+120. **Index bit-identical sau khi build lại** (cùng config, chỉ khác đã sửa bug):
+     209/209 câu, **0 câu đổi điểm**, 0 câu đổi nhãn, fingerprint vẫn
+     `0eaaf9265487eabb`. Nên mọi con số của phiên đo trên cùng một index.
+
+121. **Hàm hợp nhất KHÔNG nhận điểm, và có test canh chính chữ ký đó.** Dense cho
+     cosine ∈ [−1,1], sparse cho dot product không trần; mọi phép chuẩn hoá đều
+     phải chọn một cửa sổ, tức đưa vào một tham số ẩn phụ thuộc kết quả. Cách chắc
+     nhất để giữ tính bất biến theo thang là không cho điểm đi vào hàm —
+     `test_only_rank_matters_not_score` khẳng định `"scores" not in params`.
+
+122. **Tie-break là bốn quy tắc, mỗi quy tắc một test.** Điểm bằng nhau xảy ra
+     *thường xuyên* (một chunk hạng 3 của dense và một chunk khác hạng 3 của sparse
+     có cùng điểm). Thứ tự: điểm → `best_rank` → danh sách nào tìm ra trước → khoá
+     theo chữ. Quy tắc thứ ba là chỗ **dense được đặt trước** vì `W2-03` đo được nó
+     mạnh hơn; quy tắc thứ tư hầu như không bao giờ tới nhưng nó biến "gần như xác
+     định" thành "xác định".
+
+123. **Trùng khoá trong CÙNG một danh sách là lỗi, không im lặng bỏ bớt.** Nó nghĩa
+     là hai point Qdrant mang cùng `chunk_id` — đúng thứ mà `W1-08` bỏ ba tầng công
+     sức ra để chống. Bỏ bớt sẽ làm điểm RRF trông hợp lý trong khi index có bản
+     trùng.
+
+124. **Tham số RRF truyền cho nhánh không nhận là LỖI.** `--rrf-k 10
+     --retrieval-mode dense` mà im lặng chạy tiếp sẽ vào bảng `W2-08` như một dòng
+     hợp lệ trong khi nó không đo cái nó nói. `build_branch` phân biệt "không đặt
+     cờ" (`None`, hợp lệ) với "đặt cờ cho nhánh sai" (raise).
+
+125. **Corpus test phải KHÔNG có điểm trùng cho phép đối chiếu.** Bản đầu của
+     `test_hybrid_retriever.py` đỏ *ngẫu nhiên*: corpus có điểm trùng thật (hai
+     chunk chia đúng cùng tập token thì điểm sparse bằng nhau; chunk không trùng
+     token nào thì điểm dense bằng 0), và thứ tự trong nhóm bằng điểm không thuộc
+     hợp đồng của Qdrant — đường `prefetch` và đường `query` thường không hứa cùng
+     thứ tự. Đã dựng lại corpus (6 doc chia sẻ số token giảm dần) cho một truy vấn
+     phân biệt hoàn toàn ở cả hai nhánh, và mã lạ `GSO-2024-XII` đặt vào doc **đã**
+     có token trùng để không tạo doc điểm-0 thứ hai.
+
+126. **Test "một forward pass" phải canh đúng tầng.** Bản đầu ở tầng integration
+     đếm cả `embed_query` và **đỏ** — vì `HashingEmbeddingProvider.
+     embed_query_hybrid` gọi lại nó *bên trong*. Nội bộ provider là hợp đồng của
+     provider, không phải việc của retriever. Chia làm hai: integration đếm số lần
+     gọi provider (= 1), và một test GPU đếm số `_forward` bên trong
+     `BgeM3EmbeddingProvider` (= 1). Không nới assertion cho nó xanh.
+
+127. **Known-item: hybrid giữ vùng phủ, làm hỏng thứ hạng.** hit@10 0,5098 = sparse
+     (3↔3, `p = 1` — phủ giống nhau về thống kê) nhưng hit@1 **0,3529 → 0,0980**,
+     hạng trung vị 1 → 4. RRF trọng số đều **không biết nhánh nào đáng tin cho
+     truy vấn nào**: trên truy vấn tra mã, dense đóng góp toàn nhiễu (hit@10 =
+     0,0784) mà vẫn ngang quyền. `k=1` giảm nhẹ thiệt hại (hạng trung vị 4 → 2)
+     nhưng không xoá được.
+
+128. ⭐ **Kết luận kiến trúc: hybrid là bộ SINH ứng viên tốt, bộ XẾP HẠNG cuối tệ.**
+     Mở rộng phủ có ý nghĩa (`recall@20` +0,0431, CI không chứa 0; known-item giữ
+     nguyên hit@10) nhưng không đưa câu trả lời lên đầu (`hit_rate@1` đứng im;
+     known-item MRR tụt một nửa). Đó đúng là hình dạng bài toán `W2-05` tồn tại để
+     giải — nên `W2-05` là việc tiếp theo, không phải tinh chỉnh thêm RRF.
+
+129. **Thứ reranker KHÔNG giải được: chọn nhánh theo truy vấn.** Tổn thất ở quyết
+     định 127 đến từ trọng số cố định trên một tập truy vấn không đồng nhất. Một bộ
+     định tuyến ("truy vấn này là tra mã → tin sparse") giữ được cả hai, nhưng nó
+     cần một bộ phân loại truy vấn, tức thêm một thứ phải eval — câu hỏi của W3+,
+     không phải một cờ thêm vào `W2-04`.
+
+130. **Tách `build_filter` và `points_to_chunks` thành hàm module.** `W2-04` dựng
+     hai truy vấn trong một request batch nên nó cần cả hai mà không đi qua
+     `retrieve()`/`retrieve_sparse()` — gọi hai method đó sẽ embed truy vấn hai
+     lần. Đây là cái seam đúng, và `W2-05` sẽ dùng lại nó.
+
+### Vấn đề đang mở
+
+- **`W2-05` là việc tiếp theo.** Hybrid `k=1` giao cho nó `recall@20` **0,6754**
+  (dense 0,6324) và `hit_rate@1` **0,3397** (không đổi). Khoảng cách giữa hai số
+  đó là phần việc của reranker.
+- **Chốt cho `W2-08`:** mặc định `k=1, candidate_k=20`; quét `k ∈ {0,1,2,5}`;
+  **không** quét `weights` (quyết định 115).
+- ⚠️ `TD-18` (khớp đúng cho mã tài liệu) nặng thêm: RRF **không** sửa được nó và
+  còn làm thứ hạng của nhánh duy nhất giải được nó tệ đi (quyết định 127).
+- ⚠️ Mọi con số vẫn đo trên `golden_v1` — **review bằng model** (`TD-13`). Và mức
+  cải thiện của cấu hình thắng (+2,9 điểm) **nhỏ hơn** ngưỡng phân giải (≥ 6
+  điểm), nên thứ tự giữa `k=1`, `k=2`, `k=5` **không** phân biệt được.
+- Collection trong Qdrant không đổi: `rag_baseline`, `rag_chunk550`,
+  `rag_chunk550nb55`, `rag_bgem3` (chỉ `rag_bgem3` là hybrid, đã build lại
+  2026-08-20 sau khi sửa bug — nội dung bit-identical).
+- Các mục còn lại không đổi: `TD-05`, `TD-08`, `TD-10`, `TD-13`…`TD-18`, `W0-02`.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration`.
+2. Đọc `reports/w2-04-rrf.md` §3 (bảng quét `k`), §6 (bug 64 ms và cách tìm ra) và
+   §8 (vì sao hybrid là bộ sinh ứng viên chứ không phải bộ xếp hạng).
+3. `W2-05`: `bge-reranker-v2-m3`, rerank 50 → 6 trong < 400 ms trên GPU. VRAM: đã
+   biết BGE-M3 chiếm ~3,3/8 GB, reranker thêm ~2,2 GB — còn vừa, nhưng `W0-06`
+   vẫn chưa đo chính thức.
+4. Đầu vào của reranker là nhánh hybrid `k=1, c=20`; `build_branch` đã có chỗ cho
+   `reranked` (hiện raise `NotImplementedError` chỉ đúng vào `W2-05`).
 
 ---

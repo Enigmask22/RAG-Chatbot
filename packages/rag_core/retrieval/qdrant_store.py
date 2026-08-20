@@ -42,7 +42,9 @@ __all__ = [
     "DENSE_VECTOR_NAME",
     "SPARSE_VECTOR_NAME",
     "QdrantDenseRetriever",
+    "build_filter",
     "chunk_point_id",
+    "points_to_chunks",
     "schema_problems",
 ]
 
@@ -105,6 +107,63 @@ def schema_problems(
             f"hiện tại chỉ sinh dense — nửa index sẽ không được dùng tới"
         )
     return problems
+
+
+def build_filter(filters: dict[str, Any] | None) -> Any:
+    """Đổi `{field: giá trị hoặc danh sách}` thành `models.Filter` của Qdrant.
+
+    Hàm module chứ không phải method: `W2-04` (RRF) dựng hai truy vấn trong **một**
+    request nên nó cần filter mà không đi qua một instance store nào.
+    """
+    from qdrant_client import models
+
+    if not filters:
+        return None
+    # Chú thích kiểu tường minh: `list` là invariant nên `list[FieldCondition]`
+    # không khớp `list[Condition]` mà `Filter.must` mong đợi.
+    conditions: list[models.Condition] = []
+    for key, value in filters.items():
+        if isinstance(value, list | tuple | set):
+            conditions.append(
+                models.FieldCondition(key=key, match=models.MatchAny(any=list(value)))
+            )
+        else:
+            conditions.append(models.FieldCondition(key=key, match=models.MatchValue(value=value)))
+    return models.Filter(must=conditions)
+
+
+def points_to_chunks(points: Sequence[Any], *, mode: RetrievalMode) -> list[RetrievedChunk]:
+    """Dựng `RetrievedChunk` từ point của Qdrant, gán điểm vào đúng nhánh.
+
+    `rank` liên tục từ 1 **sau khi** đã bỏ point lỗi — nếu đánh số trước rồi bỏ
+    thì dãy rank có lỗ, và nDCG/MRR đọc rank như vị trí thật nên sẽ tính sai một
+    cách âm thầm. `W2-04` phụ thuộc vào tính chất này chặt hơn nữa: RRF lấy
+    **chính** thứ hạng này làm đầu vào.
+
+    Hàm module vì `W2-04` đọc kết quả của hai nhánh từ một response batch, không
+    qua `retrieve()`/`retrieve_sparse()` — gọi hai method đó sẽ embed truy vấn
+    **hai lần** (12,6 ms mỗi lần, đo ở `W2-03`), tức trả gấp đôi tiền forward pass
+    cho đúng một kết quả. Đây là phiên bản phía truy vấn của quyết định "một
+    forward pass" ở `W2-01`.
+    """
+    results: list[RetrievedChunk] = []
+    for point in points:
+        raw_chunk = (point.payload or {}).get("chunk")
+        if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
+            logger.warning("Point %s thiếu payload `chunk`, bỏ qua", point.id)
+            continue
+        score = float(point.score)
+        results.append(
+            RetrievedChunk(
+                chunk=Chunk.model_validate(raw_chunk),
+                score=score,
+                rank=len(results) + 1,
+                mode=mode,
+                dense_score=score if mode is RetrievalMode.DENSE else None,
+                sparse_score=score if mode is RetrievalMode.SPARSE else None,
+            )
+        )
+    return results
 
 
 class QdrantDenseRetriever(Retriever):
@@ -408,25 +467,6 @@ class QdrantDenseRetriever(Retriever):
 
     # ------------------------------------------------------------ đọc
 
-    def _build_filter(self, filters: dict[str, Any] | None) -> Any:
-        from qdrant_client import models
-
-        if not filters:
-            return None
-        # Chú thích kiểu tường minh: `list` là invariant nên `list[FieldCondition]`
-        # không khớp `list[Condition]` mà `Filter.must` mong đợi.
-        conditions: list[models.Condition] = []
-        for key, value in filters.items():
-            if isinstance(value, list | tuple | set):
-                conditions.append(
-                    models.FieldCondition(key=key, match=models.MatchAny(any=list(value)))
-                )
-            else:
-                conditions.append(
-                    models.FieldCondition(key=key, match=models.MatchValue(value=value))
-                )
-        return models.Filter(must=conditions)
-
     def retrieve(
         self,
         query: str,
@@ -485,29 +525,8 @@ class QdrantDenseRetriever(Retriever):
         )
         return self._to_chunks(response.points, mode=RetrievalMode.SPARSE)
 
-    @staticmethod
-    def _to_chunks(points: Sequence[Any], *, mode: RetrievalMode) -> list[RetrievedChunk]:
-        """Dựng `RetrievedChunk` từ point của Qdrant, gán điểm vào đúng nhánh.
+    def _to_chunks(self, points: Sequence[Any], *, mode: RetrievalMode) -> list[RetrievedChunk]:
+        return points_to_chunks(points, mode=mode)
 
-        `rank` liên tục từ 1 **sau khi** đã bỏ point lỗi — nếu đánh số trước rồi
-        bỏ thì dãy rank có lỗ, và nDCG/MRR đọc rank như vị trí thật nên sẽ tính
-        sai một cách âm thầm.
-        """
-        results: list[RetrievedChunk] = []
-        for point in points:
-            raw_chunk = (point.payload or {}).get("chunk")
-            if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
-                logger.warning("Point %s thiếu payload `chunk`, bỏ qua", point.id)
-                continue
-            score = float(point.score)
-            results.append(
-                RetrievedChunk(
-                    chunk=Chunk.model_validate(raw_chunk),
-                    score=score,
-                    rank=len(results) + 1,
-                    mode=mode,
-                    dense_score=score if mode is RetrievalMode.DENSE else None,
-                    sparse_score=score if mode is RetrievalMode.SPARSE else None,
-                )
-            )
-        return results
+    def _build_filter(self, filters: dict[str, Any] | None) -> Any:
+        return build_filter(filters)

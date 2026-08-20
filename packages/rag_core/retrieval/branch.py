@@ -15,7 +15,7 @@ trận thí nghiệm ở `W2-07`.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..schemas import RetrievalMode
 from .base import Retriever
@@ -25,18 +25,31 @@ if TYPE_CHECKING:
 
 __all__ = ["SUPPORTED_MODES", "build_branch"]
 
-#: Nhánh dựng được ở thời điểm hiện tại. `HYBRID` vào đây ở `W2-04`, `RERANKED`
-#: ở `W2-05` — liệt kê tường minh để `--retrieval-mode hybrid` báo "chưa cài"
-#: thay vì báo "tên không hợp lệ", hai chuyện rất khác nhau khi đang gỡ lỗi.
-SUPPORTED_MODES: tuple[RetrievalMode, ...] = (RetrievalMode.DENSE, RetrievalMode.SPARSE)
+#: Nhánh dựng được ở thời điểm hiện tại. `RERANKED` vào đây ở `W2-05` — liệt kê
+#: tường minh để `--retrieval-mode reranked` báo "chưa cài" thay vì báo "tên
+#: không hợp lệ", hai chuyện rất khác nhau khi đang gỡ lỗi.
+SUPPORTED_MODES: tuple[RetrievalMode, ...] = (
+    RetrievalMode.DENSE,
+    RetrievalMode.SPARSE,
+    RetrievalMode.HYBRID,
+)
 
 
-def build_branch(store: QdrantDenseRetriever, mode: RetrievalMode | str) -> Retriever:
+def build_branch(
+    store: QdrantDenseRetriever,
+    mode: RetrievalMode | str,
+    **options: Any,
+) -> Retriever:
     """Bọc `store` thành retriever của nhánh được nêu.
 
     `RetrievalMode.DENSE` trả về chính `store` — nó *là* retriever dense, bọc
     thêm một lớp chỉ để đối xứng sẽ làm mọi log và mọi `retriever.name` đổi nghĩa
     so với các lần chạy W1/W2-01/W2-02, tức không so được số cũ nữa.
+
+    `options` chỉ dành cho nhánh có tham số (`hybrid`: `k`, `candidate_k`,
+    `weights`). Truyền cho nhánh không nhận là **lỗi**, không phải bị bỏ qua: một
+    lần chạy ablation gõ `--rrf-k 10 --retrieval-mode dense` mà im lặng chạy tiếp
+    sẽ vào bảng `W2-08` như một dòng hợp lệ trong khi nó không đo cái nó nói.
     """
     try:
         resolved = RetrievalMode(mode)
@@ -45,6 +58,18 @@ def build_branch(store: QdrantDenseRetriever, mode: RetrievalMode | str) -> Retr
             f"Nhánh truy hồi không hợp lệ: {mode!r}. Hợp lệ: {[m.value for m in RetrievalMode]}"
         ) from None
 
+    supplied = {name: value for name, value in options.items() if value is not None}
+
+    if resolved is RetrievalMode.HYBRID:
+        from .hybrid import QdrantHybridRetriever
+
+        return QdrantHybridRetriever(store, **supplied)
+
+    if supplied:
+        raise ValueError(
+            f"Nhánh {resolved.value!r} không nhận tham số {sorted(supplied)} — "
+            f"chúng chỉ có nghĩa với nhánh 'hybrid'."
+        )
     if resolved is RetrievalMode.DENSE:
         return store
     if resolved is RetrievalMode.SPARSE:
@@ -54,6 +79,5 @@ def build_branch(store: QdrantDenseRetriever, mode: RetrievalMode | str) -> Retr
 
     raise NotImplementedError(
         f"Nhánh {resolved.value!r} là tên hợp lệ nhưng chưa cài. "
-        f"Hiện có: {[m.value for m in SUPPORTED_MODES]} "
-        f"(hybrid ở `W2-04`, reranked ở `W2-05`)."
+        f"Hiện có: {[m.value for m in SUPPORTED_MODES]} (reranked ở `W2-05`)."
     )

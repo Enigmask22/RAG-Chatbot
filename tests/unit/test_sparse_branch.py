@@ -59,15 +59,19 @@ class TestBuildBranch:
         with pytest.raises(ValueError, match="không hợp lệ"):
             build_branch(_store(sparse=True), "bm25")
 
-    def test_hybrid_is_not_invalid_it_is_unimplemented(self) -> None:
+    def test_reranked_is_not_invalid_it_is_unimplemented(self) -> None:
         """Hai thông báo khác nhau cho hai chuyện khác nhau: "tên sai" gửi người
-        đọc đi tra chính tả, "chưa cài" gửi họ đi xem `W2-04`."""
-        with pytest.raises(NotImplementedError, match="W2-04"):
-            build_branch(_store(sparse=True), "hybrid")
+        đọc đi tra chính tả, "chưa cài" gửi họ đi xem `W2-05`.
 
-    def test_reranked_points_at_w2_05(self) -> None:
+        Test này trước đây trỏ vào `hybrid`; `W2-04` đã cài nó nên nó chuyển sang
+        `reranked` — và việc test cũ **đỏ** lúc đó chính là thứ nhắc rằng
+        `SUPPORTED_MODES` cần cập nhật.
+        """
         with pytest.raises(NotImplementedError, match="W2-05"):
             build_branch(_store(sparse=True), "reranked")
+
+    def test_hybrid_is_implemented_since_w2_04(self) -> None:
+        assert build_branch(_store(sparse=True), "hybrid") is not None
 
 
 class TestFailsEarly:

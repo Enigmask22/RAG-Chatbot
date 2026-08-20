@@ -2,7 +2,7 @@
 
 > **Đây là nguồn sự thật duy nhất về tiến độ.** Plan kỹ thuật: [`2026-08-14-rag-upgrade-proposal.md`](2026-08-14-rag-upgrade-proposal.md)
 > Cập nhật lần cuối: 2026-08-20 · Trạng thái tổng: **tuần 1: 13/13 task xong · `golden_v1` 242 câu (review bằng MODEL, không phải người) · baseline recall@5 = 0,1746 · gate `G1` 4/4 ⚠️ với một điều kiện · sẵn sàng vào `W2`**
-> **W2 đang chạy — `TD-11` + `W2-01`…`W2-03` xong (3/9).** `TD-11`: hạ `chunk_size` đưa truncation 56,9% → 0,4% mà **không cải thiện gì đo được** (`p = 0,711`) — giả định của nợ đó bị phản chứng. `W2-01`: BGE-M3 (giữ `chunk_size=1000`) đưa **nDCG@10 0,1621 → 0,4442** và `cross_lingual` recall@5 **0 → 0,3023**, cả 15 metric đều có ý nghĩa thống kê. ⚠️ Mức tăng đó là của **model**, KHÔNG phải của việc hết truncation — `TD-11` đã đo riêng phần đó và nó cho `p = 0,711`. `W2-02`: `rag_bgem3` giờ mang cả named vector `dense` và `sparse` trong một collection, và `ensure_collection` kiểm tra schema thay vì tin. `W2-03`: sparse đã đo được — **kém dense trên golden set** (nDCG@10 0,4442 → 0,3733) nhưng **thắng áp đảo ở tra mã tài liệu** (hit@10 0,0784 → 0,5098, `p = 4,8e-07`, 22↔**0**). Con số đáng nhất: **trần của RRF là `hit_rate@10` 0,7033** vs dense 0,6268. Việc tiếp theo: `W2-04`. Xem §4 và `reports/w2-td11-chunk-size.md`, `w2-01-bge-m3.md`, `w2-02-qdrant-hybrid.md`, `w2-03-sparse-retriever.md`
+> **W2 đang chạy — `TD-11` + `W2-01`…`W2-04` xong (4/9).** `TD-11`: hạ `chunk_size` đưa truncation 56,9% → 0,4% mà **không cải thiện gì đo được** (`p = 0,711`) — giả định của nợ đó bị phản chứng. `W2-01`: BGE-M3 (giữ `chunk_size=1000`) đưa **nDCG@10 0,1621 → 0,4442** và `cross_lingual` recall@5 **0 → 0,3023**, cả 15 metric đều có ý nghĩa thống kê. ⚠️ Mức tăng đó là của **model**, KHÔNG phải của việc hết truncation — `TD-11` đã đo riêng phần đó và nó cho `p = 0,711`. `W2-02`: `rag_bgem3` giờ mang cả named vector `dense` và `sparse` trong một collection, và `ensure_collection` kiểm tra schema thay vì tin. `W2-03`: sparse đã đo được — **kém dense trên golden set** (nDCG@10 0,4442 → 0,3733) nhưng **thắng áp đảo ở tra mã tài liệu** (hit@10 0,0784 → 0,5098, `p = 4,8e-07`, 22↔**0**). Con số đáng nhất: **trần của RRF là `hit_rate@10` 0,7033** vs dense 0,6268. `W2-04`: RRF — **`k=60` của bài báo là lựa chọn TỆ NHẤT** (kém dense có ý nghĩa); `k=1` thắng (`hit_rate@10` 0,6268 → 0,6555) nhưng chỉ 3/15 metric đạt ý nghĩa. Và phân rã độ trễ tìm ra **bug 64 ms/lần gọi** làm sai hai con số đã công bố ở `W2-02`/`W2-03` — sparse thật ra **miễn phí hoàn toàn**, cả phía ghi lẫn phía đọc. Việc tiếp theo: `W2-05`. Xem §4 và `reports/w2-td11-chunk-size.md`, `w2-01-bge-m3.md`, `w2-02-qdrant-hybrid.md`, `w2-03-sparse-retriever.md`, `w2-04-rrf.md`
 > Nhật ký phiên làm việc (để nối tiếp khi ngắt giữa chừng): [`WORKLOG.md`](WORKLOG.md)
 
 ---
@@ -52,14 +52,14 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 |---|---:|---:|---:|---:|---:|---:|:---:|
 | W0 · Chuẩn bị | 8 | 1 | 0 | 2 | 2 | 3 | — |
 | W1 · Nền móng + Eval baseline | 13 | 13 | 0 | 0 | 0 | 0 | `G1` 🟡 |
-| W2 · Retrieval upgrade | 9 | 3 | 0 | 0 | 0 | 6 | `G2` ⬜ |
+| W2 · Retrieval upgrade | 9 | 4 | 0 | 0 | 0 | 5 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng backlog gốc** | **71** | **17** | **0** | **2** | **2** | **50** | 0/6 |
+| **Tổng backlog gốc** | **71** | **18** | **0** | **2** | **2** | **49** | 0/6 |
 | §9 Task thêm mới (`NEW-xx`) | 6 | 6 | 0 | 0 | 0 | 0 | — |
-| **Tổng cộng** | **77** | **23** | **0** | **2** | **2** | **50** | 0/6 |
+| **Tổng cộng** | **77** | **24** | **0** | **2** | **2** | **49** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
@@ -79,6 +79,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | Citation accuracy | *chưa đo* | — | ≥ 0.85 | `W5-02` |
 | Refusal correctness | *chưa đo* | — | ≥ 0.85 | `W5-02` (33 câu `unanswerable`) |
 | p95 latency (truy hồi) | **32,8 ms** | **45,7 ms** | — | `reports/bgem3-retrieval.md` |
+| p50 latency · nhánh hybrid | — | **30,6 ms** (= dense) | — | `reports/w2-04-rrf.md` §6 |
 | p95 latency (end-to-end) | *chưa đo* | — | ≤ 3500 ms | `W4-13` / `W6-05` |
 | Cost / query | *chưa đo* | — | ≤ $0.005 | `W5-11` |
 | Judge–human kappa | *chưa đo* | — | ≥ 0.6 | `W5-04` |
@@ -312,10 +313,41 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 > 3. **Tìm trong index sparse tốn 97,8 ms vs dense 17,8 ms.** Từ `W2-04` trở đi, nhánh sparse
 >    là thành phần nặng nhất của đường truy hồi — không phải model embedding.
 >
-> ### Việc tiếp theo: `W2-04` — RRF, với trần đã biết trước
+> ### `W2-04` xong (2026-08-20) — mặc định của bài báo là lựa chọn tệ nhất
 >
-> Nếu RRF ra thấp hơn 0,6268 thì nó đang **làm hại** so với dense một mình, và đó là kết quả
-> phải báo cáo chứ không phải tinh chỉnh `k` cho tới khi số đẹp.
+> Tôi đã ghi trước: "nếu RRF ra thấp hơn 0,6268 thì nó đang làm hại, và đó là kết quả phải
+> báo cáo chứ không phải tinh chỉnh `k` cho tới khi số đẹp". **Ở `k=60` nó ra 0,5742** — làm
+> hại, có ý nghĩa thống kê. Nên đây là con số được báo cáo.
+>
+> Quét `k` rồi mới thấy nó là cần điều khiển chính: nDCG@10 theo `k` = 1→2→5→10→60 cho
+> **0,4557 → 0,4530 → 0,4443 → 0,4305 → 0,4021**, đơn điệu. Cấu hình thắng `k=1, c=20`:
+> `hit_rate@10` **0,6555** vs dense 0,6268 — nhưng chỉ 3/15 metric đạt ý nghĩa, tức cải
+> thiện nhỏ và phần lớn dưới ngưỡng phân giải của `golden_v1`.
+>
+> Bốn thứ đổi cách làm phần còn lại của W2:
+>
+> 1. **`W2-08` quét `k ∈ {0,1,2,5}`, KHÔNG quét `weights`.** Từ `k=10` trở lên đã thấy rõ là
+>    tệ hơn; còn weighted RRF cần tỉ lệ > 30,5:1 mới lật được gì (tính được, có test).
+> 2. **`candidate_k` chỉ là cần điều khiển khi `k` lớn.** Ở `k=1` thì c20/c50/c100 cho cùng
+>    một con số tới bốn chữ số thập phân — nên chọn cái nhỏ nhất, nó rẻ hơn và không mất gì.
+> 3. **Hybrid là bộ SINH ứng viên, không phải bộ XẾP HẠNG.** `recall@20` +0,0431 có ý nghĩa,
+>    `hit_rate@1` đứng im, và known-item mất một nửa MRR. Đó chính là hình dạng bài toán
+>    `W2-05` tồn tại để giải — nên `W2-05` là việc tiếp theo, không phải tinh chỉnh RRF.
+> 4. ⚠️ **Một bug 64 ms làm sai hai con số đã công bố.** `sparse_vocab_size` gọi
+>    `len(tokenizer)` (dựng lại dict 250.002 phần tử) ở đường nóng. Sau khi sửa: sparse phía
+>    **đọc** rẻ hơn dense (15,4 vs 28,7 ms) và phía **ghi** miễn phí hoàn toàn (389,2 → 379,1 s,
+>    so với 380,4 s của dense-only). Cả `w2-02` và `w2-03` đã được đính chính tại chỗ.
+>
+> 💡 Cách tìm ra bug đó đáng nhớ hơn bản thân bug: `TD-11`, `W2-02`, `W2-03` đều được phát
+> hiện bằng cách **kiểm một bất biến**; cái này được phát hiện bằng cách **buộc các con số
+> cộng lại đúng**. Ba harness khác cấu trúc cho ba câu trả lời lệch nhau 2–6× cho cùng một
+> việc — khi phương sai giữa các cách đo lớn hơn hiệu ứng muốn quy kết thì phải đo lại, không
+> phải chọn con số vừa mắt.
+
+> ### Việc tiếp theo: `W2-05` — reranker, để biến vùng phủ thành thứ hạng
+>
+> Hybrid `k=1` giao cho nó `recall@20` **0,6754** (dense 0,6324) và `hit_rate@1` **0,3397**
+> (không đổi so với dense). Khoảng cách giữa hai số đó là phần việc của reranker.
 >
 > ⚠️ Mọi số W2 đo trên `golden_v1` — vốn **review bằng model** (`TD-13`). So sánh *tương đối*
 > giữa các cấu hình vẫn hợp lệ (cùng một thước đo); con số *tuyệt đối* thì chưa được gọi là
@@ -355,14 +387,27 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · **Kết quả âm đã ghi lại, không xoá**: giả định "dense lẫn giữa các mã gần giống" **sai** — trên corpus 7 chunk cả hai đều tra đúng hạng 1. Có test canh chính kết quả âm đó, thay vì đổi assertion thành `rank_sparse <= rank_dense` (sẽ pass vì bằng nhau, và đọc như một chiến thắng)
   · Giả định "không trùng token thì sparse trả rỗng" cũng **sai** trên 15.814 chunk: sparse trả đủ 20 kết quả cho cả 209 câu. Giới hạn thật là **xếp hạng sai**, không phải **không trả gì**
   · Nhánh truy hồi **không** vào `IndexConfig` (không quyết định vector nào được ghi → không thuộc `fingerprint`). Là cờ `--retrieval-mode` / `MODE=`, và ở `W2-07` là một chiều của ma trận
-- [ ] `W2-04` **RRF fusion** (`k=60`, configurable) — **việc tiếp theo**
-  · DoD: deterministic, tie-break ổn định · Test: `tests/unit/test_rrf.py` — so với thứ hạng tính tay, case 1 list rỗng · Evidence: —
-  · **Trần đã biết trước khi bắt đầu: `hit_rate@10` tối đa 0,7033** (dense 0,6268). RRF chỉ tiến gần được, vì nó hợp nhất theo thứ hạng chứ không nhìn nội dung
-  · Hợp nhất theo **thứ hạng**, không theo điểm — thang hai nhánh không so được (`W2-02`)
-  · Đo lại độ trễ ở đây: ~128 ms/truy vấn theo `W2-03` §8. Đây là chỗ tách được chi phí sparse index khỏi trạng thái segment mà `W2-02` chưa tách được
-  · ⚠️ Có ca **cả hai nhánh cùng sai một kiểu** (có test): hợp nhất hai danh sách cùng sai thì vẫn sai. Chỗ đó là việc của `W2-05`
-- [ ] `W2-05` **Cross-encoder reranker** `bge-reranker-v2-m3` (batch, top_n configurable)
+- [x] `W2-04` **RRF fusion** (`k` configurable, mặc định 60) — 2026-08-20
+  · DoD: ✅ deterministic (test canh 20 lần gọi cho cùng kết quả) · ✅ tie-break ổn định (4 quy tắc, mỗi quy tắc có test) · Test: `tests/unit/test_rrf.py` (40, thuần, số tính tay) + `test_hybrid_branch.py` (34) + `tests/integration/test_hybrid_retriever.py` (25) · Evidence: `reports/w2-04-rrf.md`
+  · ⚠️ **`k=60` — mặc định của bài báo gốc — là lựa chọn TỆ NHẤT trong khoảng đã quét**, và nó kém dense một mình **có ý nghĩa** (`hit_rate@5` 0,5455 → 0,4689, `p = 0,014`; nDCG@10 CI95 không chứa 0). Cài RRF theo mặc định rồi báo "đã làm hybrid search" là trình bày một **suy giảm** như một tính năng
+  · **Cấu hình thắng `k=1, candidate_k=20`**: `hit_rate@10` 0,6268 → **0,6555**, `hit_rate@20` 0,6746 → **0,7177**, `recall@20` 0,6324 → **0,6754**. Cả 15 metric tốt hơn dense nhưng **chỉ 3 đạt ý nghĩa** — cải thiện nhỏ và phần lớn dưới ngưỡng phân giải của `golden_v1` (+2,9 điểm vs ngưỡng ≥ 6). ⚠️ "15/15 đều dương" **không** là kiểm định: 15 metric này tương quan mạnh, không phải 15 phép thử độc lập
+  · **`k` là cần điều khiển chính, đơn điệu, nhỏ thì tốt**: nDCG@10 theo `k` = 1→2→5→10→60 cho 0,4557→0,4530→0,4443→0,4305→0,4021. Cơ chế tính được: `k=60` cho chunk mà **cả hai** nhánh xếp hạng 3 (`2/63`) đè lên chunk dense xếp **hạng 1** (`1/61`) — gấp 1,9×, tức **đồng thuận yếu lật đổ tín hiệu mạnh**
+  · **`candidate_k` chỉ có tác dụng khi `k` lớn**: ở `k=60` thì c20/c50/c100 cho 0,6364/0,5742/0,5024 (chênh 13 điểm); ở `k=1` thì 0,6555/0,6555/0,6555 (không lệch). Ngược hẳn dự đoán của tôi và ngược cả hai test đơn vị tôi viết để biện minh cho pool sâu — số học của chúng đúng, tiên đề sai (chunk sâu-đồng-thuận thật sự được đẩy lên, nhưng chúng thường **không liên quan**)
+  · **Weighted RRF không đáng quét ở `W2-08`**: cần tỉ lệ **> 30,5:1** mới lật được một đồng thuận cùng độ sâu, vì cân dense lên cũng cân luôn phần dense của chunk đồng thuận (tính được, có test). Đo thật 2:1 cho +0,0287 — không đủ
+  · ⭐ **Phát hiện đáng nhất không phải RRF: bug hiệu năng 64 ms/lần gọi**, tìm ra vì **các con số không cộng lại đúng**. `sparse_vocab_size` gọi `len(tokenizer)` → dựng lại dict 250.002 phần tử; `retrieve_sparse` đọc nó ở **mỗi** truy vấn và `upsert` ở **mỗi lô**. Nó làm **sai hai con số đã công bố** — xem hai dòng dưới
+  · ⚠️ **`W2-03` §8 SAI về quy kết** (đã đính chính trong file đó): tìm sparse **15,4 ms**, RẺ HƠN tìm dense 28,7 ms; gửi cả hai trong một request batch tốn **30,2 ms** = bằng dense một mình vì Qdrant chạy song song. `retrieve()` sparse 109,3 → **30,4 ms**. Kết luận cũ "nhánh sparse sẽ là thành phần nặng nhất" là sai
+  · ⚠️ **`W2-02` "+8,8 s (+2,3%)" đúng kết luận, sai cơ chế**: 124 lô × 64 ms ≈ 7,9 s là bug. Build lại sau khi sửa: **389,2 s → 379,1 s**, tức **nhanh hơn** cả dense-only của `W2-01` (380,4 s) — sparse phía ghi **miễn phí hoàn toàn**. Index bit-identical (0/209 câu đổi điểm)
+  · ⭐ **Đối chiếu với `Fusion.RRF` của Qdrant** (bản tham chiếu độc lập): suy ra Qdrant dùng **`k = 1`**, không phải 60 của bài báo, và bản của ta trùng khít điểm của nó ở `k=1` (`rel=1e-6` — `score` của Qdrant là float32). Tự cài vẫn cần: `k` của Qdrant **không cấu hình được**, mà §3 cho thấy `k` là cần điều khiển quan trọng nhất
+  · **Dự đoán ghi TRƯỚC khi đo, và sai cả hai chiều**: tôi dự `hybrid@10 ≈ 0,6268` (ngang dense, vì RRF xen kẽ nên top-10 ≈ hợp của hai top-5) và dự `hit_rate@1` sẽ cải thiện. Thực tế `k=60` cho 0,5742 (tệ hơn dự đoán) và `hit_rate@1` **không đổi ở mọi cấu hình**
+  · **Known-item: hybrid giữ vùng phủ, làm hỏng thứ hạng.** hit@10 0,5098 = sparse (3↔3, `p = 1`) nhưng hit@1 0,3529 → **0,0980**, hạng trung vị 1 → 4. RRF trọng số đều **không biết nhánh nào đáng tin cho truy vấn nào**; trên truy vấn tra mã, dense đóng góp toàn nhiễu mà vẫn ngang quyền
+  · ⭐ **Kết luận kiến trúc**: hybrid là **bộ sinh ứng viên** tốt (`recall@20` +0,0431 có ý nghĩa) và **bộ xếp hạng cuối** tệ (`hit_rate@1` đứng im). Đó đúng là hình dạng bài toán `W2-05` tồn tại để giải
+  · Nhánh dense đặt **trước** trong danh sách hợp nhất — tie-break ưu tiên danh sách đầu, và `W2-03` đo được dense mạnh hơn (0,6268 vs 0,5120) nên đó là tiên nghiệm đúng, không phải lựa chọn tuỳ tiện
+  · Embed truy vấn **một** lần cho cả hai nhánh (12,7 ms), và **một** request HTTP cho cả hai truy vấn — phiên bản phía truy vấn của quyết định "một forward pass" ở `W2-01`
+- [ ] `W2-05` **Cross-encoder reranker** `bge-reranker-v2-m3` (batch, top_n configurable) — **việc tiếp theo**
   · DoD: rerank 50 → 6 trong < 400ms trên GPU; có CPU fallback · Test: `tests/unit/test_reranker.py` (thứ tự score giảm dần, batch == single) · Evidence: bench latency
+  · **`W2-04` đã dọn sẵn bài toán**: hybrid `k=1` cho `recall@20` **0,6754** (dense 0,6324) để reranker làm việc trên đó, nhưng `hit_rate@1` đứng im ở 0,3397. Việc của reranker là biến vùng phủ ấy thành thứ hạng
+  · Có ca **cả hai nhánh cùng sai một kiểu** (có test ở `W2-04`): hợp nhất hai danh sách cùng sai thì vẫn sai — chỗ đó chỉ reranker giải được
+  · Và có ca reranker **không** giải được: known-item (`W2-04` §8) mất thứ hạng vì RRF trọng số đều, cần **định tuyến theo truy vấn** chứ không phải xếp lại
 - [ ] `W2-06` **Metadata filter** (tenant_id, doc_type, date range, lang)
   · DoD: filter áp ở tầng Qdrant (không post-filter), không rò dữ liệu chéo tenant · Test: `tests/integration/test_metadata_filter.py` — case tenant isolation · Evidence: —
 - [ ] `W2-07` **Experiment Runner** — YAML config matrix → chạy tuần tự → MLflow tracking
@@ -383,6 +428,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · Đo được ở `TD-11`: với 209 câu và `hit_rate@5` ≈ 0,20, phải chênh **≥ 6 điểm tuyệt đối (≈28% tương đối)** mới phát hiện được. Xếp hạng 12 tổ hợp bằng mức chênh vài phần trăm là tung đồng xu
 - [ ] Có bảng ablation ≥ 12 dòng, tái lập được bằng `make eval EXP=exp_001`
 - [ ] Không tổ hợp nào làm p95 latency vượt 3500 ms
+  · Số hiện có (chỉ **truy hồi**, chưa end-to-end): dense p95 45,7 ms · hybrid p95 ~49 ms · sparse 46,2 ms. Còn rất nhiều chỗ, nhưng ngưỡng 3500 ms là end-to-end nên chỉ đối chiếu được sau `W4-13`
+  · ⚠️ Đừng dùng số p95 của `W2-03` §8 — nó sai vì bug 64 ms, đã đính chính ở `W2-04` §6
 
 ---
 
@@ -569,6 +616,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-08-20 | **`W2-04` xong — mặc định của bài báo gốc là lựa chọn tệ nhất, và một bug 64 ms.** RRF tự cài (`rag_core/retrieval/rrf.py`, hàm **thuần** không nhận điểm — có test canh chính chữ ký đó, vì dense là cosine ∈ [−1,1] còn sparse là dot product không trần) + `QdrantHybridRetriever` (embed truy vấn **một** lần, **một** request HTTP cho cả hai nhánh) + `--rrf-k`/`--candidate-k`/`--rrf-weights`. ⚠️ **`k=60` của bài báo kém dense một mình CÓ Ý NGHĨA** (`hit_rate@5` 0,5455 → 0,4689, `p = 0,014`; nDCG@10 CI95 không chứa 0). Quét ra `k` là cần điều khiển chính và **đơn điệu**: nDCG@10 theo `k` = 1→2→5→10→60 cho 0,4557→0,4530→0,4443→0,4305→0,4021. Cấu hình thắng **`k=1, c=20`**: `hit_rate@10` 0,6268 → **0,6555**, `recall@20` 0,6324 → **0,6754** — cả 15 metric tốt hơn dense nhưng **chỉ 3 đạt ý nghĩa**, tức cải thiện nhỏ và phần lớn dưới ngưỡng phân giải (+2,9 điểm vs ngưỡng ≥ 6). **`candidate_k` chỉ có tác dụng khi `k` lớn**: ở `k=60` thì c20/c50/c100 chênh 13 điểm, ở `k=1` thì không lệch một chữ số — ngược hẳn dự đoán của tôi và ngược cả hai test đơn vị tôi viết để biện minh cho pool sâu (số học đúng, tiên đề sai: chunk sâu-đồng-thuận được đẩy lên thật, nhưng chúng thường **không liên quan**). ⭐ **Đối chiếu với `Fusion.RRF` của Qdrant**: suy ra Qdrant dùng **`k = 1`** không phải 60, và bản của ta trùng khít điểm của nó (`rel=1e-6`, `score` của Qdrant là float32) — nhưng vẫn phải tự cài vì `k` của Qdrant không cấu hình được. ⭐⭐ **Phát hiện đáng nhất không phải RRF: bug hiệu năng 64 ms/lần gọi**, tìm ra vì **các con số không cộng lại đúng** — phân rã `retrieve_sparse` để lại 81,7 ms không thuộc thành phần nào trong khi hybrid cộng đúng. `sparse_vocab_size` gọi `len(tokenizer)` → dựng lại dict 250.002 phần tử, và nó bị đọc ở **mỗi** truy vấn sparse + **mỗi lô** upsert. Nó làm sai **hai con số đã công bố**: `W2-03` §8 (tìm sparse thật ra **15,4 ms**, RẺ HƠN dense 28,7 ms; cả hai trong một batch tốn 30,2 ms = bằng dense một mình vì Qdrant chạy song song) và `W2-02` (+8,8 s → build lại sau khi sửa cho **379,1 s**, **nhanh hơn** cả dense-only 380,4 s của `W2-01` — sparse phía ghi miễn phí hoàn toàn). Cả hai report đã đính chính tại chỗ; index bit-identical sau khi build lại (0/209 câu đổi điểm). **Known-item: hybrid giữ vùng phủ (hit@10 0,5098 = sparse, 3↔3 `p = 1`) nhưng làm hỏng thứ hạng** (hit@1 0,3529 → 0,0980, hạng trung vị 1 → 4) — RRF trọng số đều không biết nhánh nào đáng tin cho truy vấn nào. ⭐ **Kết luận kiến trúc: hybrid là bộ SINH ứng viên tốt, bộ XẾP HẠNG cuối tệ** — đúng hình dạng bài toán `W2-05` tồn tại để giải. Dự đoán ghi trước khi đo (`hybrid@10 ≈ 0,6268`, `hit_rate@1` sẽ cải thiện) **sai cả hai chiều**. +73 unit (771) + 29 integration (102) + 2 gpu (17). Evidence: `reports/w2-04-rrf.md` |
 | 2026-08-20 | **`W2-03` xong — sparse có số, và hai câu trả lời ngược nhau.** `retrieve_sparse()` giờ là `Retriever` (`QdrantSparseRetriever` bọc chính store đang mở kết nối; `build_branch()` chọn nhánh, `--retrieval-mode`/`MODE=`). **Trên golden set sparse KÉM hơn dense có ý nghĩa**: nDCG@10 0,4442 → 0,3733 (CI95 [−0,1190, −0,0225]), `hit_rate@10` 0,6268 → 0,5120 (`p = 0,002`), 12/15 metric cùng chiều — kết quả **phải chờ đợi** vì `golden_v1` toàn câu hỏi tự nhiên. **Nhưng DoD thì đạt áp đảo**: `golden_v1` không đo được DoD nên dựng phép đo riêng `scripts/known_item_probe.py` (known-item search trên 51 mã tài liệu, tiêu chí kiểm bằng **so chuỗi** nên không cần nhãn người) — sparse hit@10 **0,0784 → 0,5098**, hit@1 0,0196 → 0,3529, McNemar `p = 4,8e-07`, và **0 mã nào dense tìm ra mà sparse không**. ⭐ **Con số đáng nhất: trần của `W2-04` là `hit_rate@10` 0,7033** vs dense 0,6268 — ghi lại trước khi làm RRF để lúc đó không tự diễn giải theo hướng có lợi. Chỗ sparse bù được: `en` 9↔4 (**sparse thắng** trên truy vấn tiếng Anh), `factoid` 10↔7; chỗ sparse chết hẳn: `cross_lingual` 1↔19 và **0 câu cả hai**. ⚠️ **Sparse học được KHÔNG phải index khớp đúng**: 25/51 mã không nhánh nào tìm ra, tokenizer giải thích hết (`VIE-01` → `['▁','VIE','-01']` có neo từ vựng và tìm được; `P171645` → `['▁P','171','645']` toàn chữ số chung và miss) → `TD-18`, giờ có bằng chứng chứ không phải phỏng đoán. ⚠️ Chi phí: tìm trong index sparse **97,8 ms vs dense 17,8 ms (5,5×)**, p50 toàn phần 30,2 → 113,4 ms; embed truy vấn 12,6 ms **dùng chung** cả hai nhánh. ⭐ **Ngoài DoD: đóng một hố im lặng trong `compare.py`** — harness lấy `fetch_doc_chunks` bằng `getattr`, nên retriever thiếu method đó thì nhãn rơi về nhãn cũ và hai lần chạy **cùng số nhãn nhưng khác nhãn** vẫn so được. Thêm `QueryScore.relevant_digest`; `compare.py` từ chối **toàn bộ** khi băm lệch (không lọc bỏ câu lệch rồi so phần còn lại — đó là tự chọn mẫu). Chạy thật: 209/209 có băm, **0 lệch**. **Hai giả định của tôi bị phản chứng và được giữ lại trong test**: "dense lẫn giữa các mã gần giống" (sai — trên 7 chunk cả hai đều đúng hạng 1; có test canh chính kết quả âm đó thay vì đổi assertion thành `rank_sparse <= rank_dense` để xanh) và "không trùng token thì sparse trả rỗng" (sai trên 15.814 chunk — sparse trả đủ 20 cho cả 209 câu; giới hạn thật là **xếp hạng sai**). +31 unit (697) + 14 integration (73) + 4 gpu (15). Evidence: `reports/w2-03-sparse-retriever.md`, `w2-03-known-item.json` |
 | 2026-08-20 | **`W2-02` xong — một collection, hai loại vector.** `rag_bgem3` build lại với cả named vector `dense` (1024-d) và `sparse`, query độc lập qua `retrieve()` / `retrieve_sparse()`. **Sparse gần như miễn phí: +8,8 s trên 389 s (+2,3%)**, dung lượng +19% — hệ quả trực tiếp của việc `W2-01` cho hai loại vector ra từ **một** forward pass; gọi provider hai lần thì đây là +380 s. **Dense bit-identical sau khi build lại**: 15/15 metric không lệch một chữ số, 0/209 câu đổi điểm — kiểm tra tuyên bố "một đường code" của `W2-01` trên 15.814 chunk thật thay vì trên 4 câu test. Sparse thật: 95,9 entry/chunk (p50 100 · p95 147 · min **3**), mật độ 0,0384% của vocab 250.002, ReLU loại ~55% token. ⭐ **Ngoài DoD: `ensure_collection` giờ KIỂM TRA schema** thay vì thấy tồn tại là trả về — trước đó chạy provider sinh sparse lên collection dense-only sẽ chết ở *giữa* job 15.000 chunk. 4 ca lệch đều có test, trong đó ca "collection có sparse mà provider chỉ dense" là **hỏng im lặng**: eval ra số trông bình thường trong khi nửa index bị bỏ. `schema_problems()` thuần nên 12 ca test trong `make test`. Thêm `scripts/migrate_collection.py` — cố ý **không** migrate tại chỗ (Qdrant không cho thêm named vector), mà chẩn đoán lệch schema + in đúng lệnh phải chạy; mã trả về 0/1/2/3. `HashingEmbeddingProvider` nay sinh được sparse (mặc định **tắt** vì `name` là cache key của semantic chunker — để mặc định bật làm 2 test W1 đỏ ngay, đó là cách phát hiện). ⚠️ **Không dùng `Modifier.IDF`** cho BGE-M3: trọng số đã học, chồng IDF là nhân đôi phép hạ bậc và hỏng im lặng. ⚠️ Thang điểm hai nhánh không so được (cosine vs dot không trần) nên `W2-04` phải hợp nhất theo **thứ hạng**. +22 unit (666) + 21 integration (59). Evidence: `reports/w2-02-qdrant-hybrid.md` |
 | 2026-08-20 | **`W2-01` xong — BGE-M3, và mức tăng lớn nhất của dự án tới giờ.** Đổi model embedding `vietnamese-bi-encoder` → `BAAI/bge-m3`, **giữ nguyên toàn bộ chunking của baseline**: nDCG@10 **0,1621 → 0,4442** (+174%), `hit_rate@5` 0,2153 → 0,5455, MRR 0,1660 → 0,4394, recall@10 0,2257 → 0,5813. **Cả 15 metric có ý nghĩa thống kê** (`p < 0,001` hoặc CI95 không chứa 0); ở `hit_rate@5` là 74 câu thắng vs 5 câu thua. `cross_lingual` recall@5 **0,0000 → 0,3023** — 43 câu (18% golden set) đi từ *không hoạt động* sang hoạt động. 5/6 nhóm truy vấn cải thiện có ý nghĩa. Truncation **56,9% → 0,0%**. Vì giữ `chunk_size=1000` nên nhãn **bit-identical** với baseline (`n_relevant_mean` 1,3828 cả hai bên) → recall@k/nDCG/MAP so được trực tiếp, `compare.py` không từ chối metric nào. ⚠️ **Mức tăng này là của model, KHÔNG phải của việc hết truncation**: `TD-11` đã tách riêng phần đó (`chunk550` cũng hết cắt) và nó cho `p = 0,711`; vai trò thật của cửa sổ 8192 là *cho phép giữ `chunk_size=1000`*, tức làm phép đo sạch. Hạ tầng thêm: `SparseVector` (bất biến cưỡng chế), `HybridVectors`, năng lực sparse tuỳ chọn trên `EmbeddingProvider` (mặc định `None` — `None` ≠ rỗng, bài học `TD-11` lần thứ hai), `BgeM3EmbeddingProvider` (dense + sparse **một** forward pass, có test canh dense khớp `SentenceTransformer.encode()` tới 1,5e-8), `embedding_max_batch_tokens` (knob VRAM, ngoài `fingerprint`), `make test-gpu`. ⚠️ **Sparse chưa đi vào Qdrant** — eval là dense-only, chờ `W2-02`. `G2` 2/4 điều kiện. +44 unit test (644 tổng) + 11 gpu test. Sửa lỗi sổ sách: p95 baseline là **32,8 ms** không phải 39,9 ms. Evidence: `reports/w2-01-bge-m3.md` |

@@ -14,9 +14,18 @@
 
 ## 1. Sparse gần như miễn phí, và đó là hệ quả của một quyết định ở `W2-01`
 
+> ### ⚠️ ĐÍNH CHÍNH một phần (2026-08-20, phát hiện ở `W2-04`)
+>
+> Kết luận "gần như miễn phí" **đúng**, nhưng cơ chế thì sai — và chi phí thật còn
+> **thấp hơn** con số dưới đây. Phần lớn +8,8 s không phải chi phí của sparse mà
+> là một **bug hiệu năng**: `sparse_vocab_size` gọi `len(tokenizer)` (dựng lại
+> dict 250.002 phần tử, **64 ms mỗi lần**), và `upsert` đọc nó một lần **mỗi lô**.
+> 15.814 chunk / `batch_size` 128 = **124 lô** × 64 ms ≈ **7,9 s** — gần trọn mức
+> tăng đo được. Xem `w2-04-rrf.md` §6 và §9 cho số đo lại sau khi sửa.
+
 | | dense-only (`W2-01`) | dense + sparse (`W2-02`) | |
 |---|---:|---:|---|
-| embed + ghi | 380,4 s | **389,2 s** | +8,8 s (+2,3%) |
+| embed + ghi | 380,4 s | **389,2 s** | +8,8 s (+2,3%) — ~7,9 s là bug, xem trên |
 | thông lượng | 39,0 chunk/s | 38,2 chunk/s | −2,1% |
 | chunk | 15.814 | 15.814 | — |
 

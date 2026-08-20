@@ -233,7 +233,36 @@ ra, không ai biết là sai".
 
 ---
 
-## 8. Chi phí độ trễ: sparse chậm hơn dense 5,5× ở phép tìm
+## 8. Chi phí độ trễ ~~sparse chậm hơn dense 5,5× ở phép tìm~~ — **MỤC NÀY SAI**
+
+> ### ⛔ ĐÍNH CHÍNH (2026-08-20, phát hiện ở `W2-04`)
+>
+> **Toàn bộ mục này quy kết sai.** 97,8 ms không phải chi phí tìm trong index
+> sparse — nó là một **bug hiệu năng** trong `sparse_vocab_size`:
+> `len(tokenizer)` dựng lại dict 250.002 phần tử, tốn **64 ms mỗi lần**, và
+> `retrieve_sparse` đọc nó ở mỗi truy vấn qua `writes_sparse`.
+>
+> Số đúng sau khi sửa (`W2-04` §6, đo phân rã trong một tiến trình):
+>
+> | | số sai ở đây | **số đúng** |
+> |---|---:|---:|
+> | tìm dense | 17,8 ms | 28,7 ms |
+> | tìm sparse | 97,8 ms | **15,4 ms** |
+> | tìm cả hai (batch) | — | **30,2 ms** |
+> | `retrieve()` sparse | 113,4 ms | **30,4 ms** |
+>
+> **Sự thật ngược lại kết luận của mục này: tìm sparse RẺ HƠN tìm dense**, và gửi
+> cả hai trong một request batch tốn bằng dense một mình (Qdrant chạy song song).
+> Câu "nhánh sparse sẽ là thành phần nặng nhất của đường truy hồi" là **sai**, và
+> dự đoán "~128 ms cho mỗi truy vấn hybrid" cũng sai — thực tế hybrid ≈ dense.
+>
+> Cách phát hiện đáng ghi lại: các con số **không cộng lại đúng**. Phân rã
+> `retrieve_sparse` để lại **81,7 ms không thuộc thành phần nào**, trong khi
+> hybrid cộng đúng. Xem `w2-04-rrf.md` §6.
+>
+> Giữ nguyên mục dưới đây thay vì xoá: con số sai và lý do nó sai đều đáng đọc.
+
+### Nội dung gốc (SAI — xem đính chính trên)
 
 Từ chính hai lần chạy eval ở §3 (209 truy vấn, sau warm-up):
 

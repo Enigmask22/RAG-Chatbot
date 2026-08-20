@@ -336,6 +336,7 @@ def _eval_against_index(
     run_name: str,
     top_k: int,
     mode: str = "dense",
+    branch_options: dict[str, Any] | None = None,
     min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
 ) -> EvalReport:
     """Dựng retriever từ chính config đã build index rồi chạy eval.
@@ -367,7 +368,7 @@ def _eval_against_index(
     # lệch nhau (đổi model → đổi số chiều), và không có bước này thì lỗi hiện ra
     # sau vài giây quét vô ích — hoặc tệ hơn là không hiện ra.
     store.verify_schema()
-    retriever = build_branch(store, mode)
+    retriever = build_branch(store, mode, **(branch_options or {}))
 
     config: dict[str, Any] = {
         "index_config": str(index_config_path),
@@ -375,6 +376,7 @@ def _eval_against_index(
         "collection": index_config.collection_name,
         "embedding_model": index_config.embedding_model,
         "retrieval_mode": mode,
+        "branch_options": {k: v for k, v in (branch_options or {}).items() if v is not None},
         "chunking": json.loads(index_config.chunking.model_dump_json()),
     }
 
@@ -449,6 +451,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument(
+        "--rrf-k",
+        type=int,
+        help="`k` của RRF (mặc định 60, giá trị bài báo gốc). Chỉ dùng với `hybrid`. "
+        "`k` lớn làm chênh lệch giữa các hạng đầu phẳng hơn — xem `rag_core/retrieval/rrf.py`.",
+    )
+    parser.add_argument(
+        "--candidate-k",
+        type=int,
+        help="Số ứng viên lấy từ MỖI nhánh trước khi hợp nhất (mặc định 50). Chỉ dùng "
+        "với `hybrid`. Lấy nông thì RRF không thấy được sự đồng thuận ở hạng sâu.",
+    )
+    parser.add_argument(
+        "--rrf-weights",
+        type=float,
+        nargs=2,
+        metavar=("DENSE", "SPARSE"),
+        help="Trọng số cho từng nhánh (weighted RRF). Mặc định đều nhau. Chỉ dùng với `hybrid`.",
+    )
+    parser.add_argument(
         "--retrieval-mode",
         default="dense",
         choices=[m.value for m in RetrievalMode],
@@ -481,6 +502,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_name=args.run_name,
             top_k=args.top_k,
             mode=args.retrieval_mode,
+            branch_options={
+                "k": args.rrf_k,
+                "candidate_k": args.candidate_k,
+                "weights": tuple(args.rrf_weights) if args.rrf_weights else None,
+            },
             min_overlap_ratio=args.min_overlap_ratio,
         )
     elif args.retrieved is not None:

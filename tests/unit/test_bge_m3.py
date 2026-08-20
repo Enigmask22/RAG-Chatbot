@@ -210,6 +210,54 @@ class TestRealModel:
         hạ `chunk_size` (`TD-11` đã đo hạ `chunk_size` là đánh đổi)."""
         assert gpu_provider.max_sequence_tokens == 8192
 
+    def test_sparse_vocab_size_is_memoised(self, gpu_provider: BgeM3EmbeddingProvider) -> None:
+        """Hồi quy cho một bug hiệu năng tìm ra ở `W2-04`, và cách tìm ra nó đáng
+        ghi lại: phân rã độ trễ của `retrieve_sparse` thì **81,7 ms không thuộc
+        thành phần nào** — không phải embed, không phải Qdrant, không phải dựng
+        `Chunk`. Chỗ thiếu đó là đây.
+
+        `len(tokenizer)` gọi `get_vocab()`, tức dựng lại dict 250.002 phần tử, mất
+        **64 ms**. Thuộc tính này bị đọc qua `QdrantDenseRetriever.writes_sparse` ở
+        **mỗi** truy vấn sparse và **mỗi lô** upsert (124 lô × 64 ms ≈ 8 giây cho
+        một lần build index).
+
+        Canh bằng thời gian chứ không bằng số lần gọi: cái phải giữ là "đọc thuộc
+        tính này rẻ", và một bản cài khác vẫn có thể vi phạm nó theo cách khác.
+        """
+        import time
+
+        assert gpu_provider.sparse_vocab_size == 250_002  # lần đầu được phép đắt
+        started = time.perf_counter()
+        for _ in range(50):
+            assert gpu_provider.sparse_vocab_size == 250_002
+        per_call_ms = (time.perf_counter() - started) * 1000.0 / 50
+        assert per_call_ms < 1.0, f"{per_call_ms:.1f} ms mỗi lần đọc — chưa nhớ kết quả"
+
+    def test_query_hybrid_runs_exactly_one_forward_pass(
+        self, gpu_provider: BgeM3EmbeddingProvider, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Tuyên bố mà `W2-04` dựa vào, canh ở đúng tầng nó thuộc về.
+
+        `QdrantHybridRetriever` gọi `embed_query_hybrid` một lần thay vì gọi
+        `retrieve()` + `retrieve_sparse()`, và cả lý lẽ đó chỉ đúng nếu **provider**
+        cũng chỉ chạy một forward pass. Đo được ở `W2-03` §8: embed một truy vấn
+        tốn 12,6 ms, tức chạy hai lần là +12,6 ms cho đúng một kết quả.
+
+        Bản đầu của test tương ứng ở tầng integration đếm cả `embed_query` và đỏ —
+        vì `HashingEmbeddingProvider` gọi lại nó bên trong. Nội bộ provider là hợp
+        đồng của provider, và đây là chỗ kiểm nó.
+        """
+        batches: list[int] = []
+        original = gpu_provider._forward
+
+        def counted(texts: object) -> object:
+            batches.append(len(texts))  # type: ignore[arg-type]
+            return original(texts)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(gpu_provider, "_forward", counted)
+        gpu_provider.embed_query_hybrid("Tăng trưởng GDP của Việt Nam năm 2023")
+        assert batches == [1], f"chạy {len(batches)} forward pass: {batches}"
+
     def test_dimensions(self, gpu_provider: BgeM3EmbeddingProvider) -> None:
         assert gpu_provider.dimension == 1024
         assert gpu_provider.sparse_vocab_size == 250_002

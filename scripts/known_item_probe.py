@@ -67,8 +67,10 @@ class ProbeRow:
     doc_frequency: int
     dense_rank: int | None
     sparse_rank: int | None
+    hybrid_rank: int | None
     dense_returned: int
     sparse_returned: int
+    hybrid_returned: int
 
 
 def scan_contents(store: QdrantDenseRetriever, *, batch: int = 2048) -> dict[str, str]:
@@ -140,6 +142,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
     parser.add_argument("--max-queries", type=int, default=DEFAULT_MAX_QUERIES)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--rrf-k", type=int, help="`k` của RRF cho nhánh hybrid (mặc định 60)")
+    parser.add_argument(
+        "--candidate-k", type=int, help="Số ứng viên mỗi nhánh cho hybrid (mặc định 50)"
+    )
     parser.add_argument("--report", type=Path, help="Ghi JSON kết quả đầy đủ")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
@@ -148,7 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # bảng kết quả trôi mất khỏi màn hình.
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    from rag_core.retrieval import QdrantSparseRetriever, build_branch
+    from rag_core.retrieval import QdrantHybridRetriever, QdrantSparseRetriever, build_branch
     from rag_core.settings import get_settings
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -165,6 +171,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     store.verify_schema()
     sparse = build_branch(store, "sparse")
     assert isinstance(sparse, QdrantSparseRetriever)
+    # `W2-04`: RRF có **giữ** được chỗ sparse thắng hay pha loãng nó? Câu hỏi này
+    # đo được ở đây và không đo được trên `golden_v1` (209 câu không có câu tra mã).
+    hybrid = build_branch(store, "hybrid", k=args.rrf_k, candidate_k=args.candidate_k)
+    assert isinstance(hybrid, QdrantHybridRetriever)
 
     logger.info("Đang quét %s...", store.collection)
     contents = scan_contents(store)
@@ -185,14 +195,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     for i, code in enumerate(queries, 1):
         dense_hits = store.retrieve(code, args.top_k)
         sparse_hits = sparse.retrieve(code, args.top_k)
+        hybrid_hits = hybrid.retrieve(code, args.top_k)
         rows.append(
             ProbeRow(
                 code=code,
                 doc_frequency=frequency[code],
                 dense_rank=_rank_of(code, dense_hits),
                 sparse_rank=_rank_of(code, sparse_hits),
+                hybrid_rank=_rank_of(code, hybrid_hits),
                 dense_returned=len(dense_hits),
                 sparse_returned=len(sparse_hits),
+                hybrid_returned=len(hybrid_hits),
             )
         )
         if i % 20 == 0:
@@ -205,10 +218,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         "n_queries": n,
         "top_k": args.top_k,
         "seed": args.seed,
+        "rrf_k": args.rrf_k,
+        "candidate_k": args.candidate_k,
         "collection": store.collection,
         "index_fingerprint": config.fingerprint,
         "dense": summarise([r.dense_rank for r in rows], n=n),
         "sparse": summarise([r.sparse_rank for r in rows], n=n),
+        "hybrid": summarise([r.hybrid_rank for r in rows], n=n),
+        "retriever_names": {"dense": store.name, "sparse": sparse.name, "hybrid": hybrid.name},
+        "hybrid_vs_sparse": {
+            # Câu hỏi của `W2-04`: hợp nhất có làm mất chỗ sparse thắng không?
+            "sparse_only": sum(1 for r in rows if r.sparse_rank and not r.hybrid_rank),
+            "hybrid_only": sum(1 for r in rows if r.hybrid_rank and not r.sparse_rank),
+            "mcnemar_p": mcnemar_exact(
+                sum(1 for r in rows if r.sparse_rank and not r.hybrid_rank),
+                sum(1 for r in rows if r.hybrid_rank and not r.sparse_rank),
+            ),
+        },
         "discordant": {
             "dense_only": dense_only,
             "sparse_only": sparse_only,
@@ -221,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     logger.info("─" * 62)
     logger.info("Known-item search · %d truy vấn · top-%d", n, args.top_k)
-    for branch in ("dense", "sparse"):
+    for branch in ("dense", "sparse", "hybrid"):
         stats = payload[branch]
         assert isinstance(stats, dict)
         logger.info(
@@ -242,6 +268,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         disc["both"],
         disc["neither"],
         disc["mcnemar_p"],
+    )
+    hvs = payload["hybrid_vs_sparse"]
+    assert isinstance(hvs, dict)
+    logger.info(
+        "  hybrid vs sparse: chỉ sparse %d · chỉ hybrid %d · McNemar p=%.3g",
+        hvs["sparse_only"],
+        hvs["hybrid_only"],
+        hvs["mcnemar_p"],
     )
     logger.info("─" * 62)
 

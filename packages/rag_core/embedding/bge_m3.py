@@ -94,6 +94,9 @@ class BgeM3EmbeddingProvider(HuggingFaceEmbeddingProvider):
         # Trọng số sparse mặc định lấy từ chính repo model. Tách ra được để
         # `W2-08` thử checkpoint fine-tune mà không phải fork provider.
         self.sparse_head_name = sparse_head_name or model_name
+        # Nhớ kết quả `len(tokenizer)` — xem `sparse_vocab_size`. Không tính ở đây
+        # để việc dựng provider không kéo theo 64 ms cho một thứ có thể không dùng.
+        self._sparse_vocab_size: int | None = None
 
     @property
     def sparse_head(self) -> torch.nn.Linear:
@@ -111,8 +114,21 @@ class BgeM3EmbeddingProvider(HuggingFaceEmbeddingProvider):
 
     @property
     def sparse_vocab_size(self) -> int | None:
-        """Số chiều của không gian sparse = vocab của tokenizer (250.002)."""
-        return len(self.model.tokenizer)
+        """Số chiều của không gian sparse = vocab của tokenizer (250.002).
+
+        ⚠️ **Phải nhớ kết quả.** `len(tokenizer)` gọi `get_vocab()`, và với XLM-R
+        thì đó là dựng lại một dict 250.002 phần tử — đo được **64 ms mỗi lần**.
+        Thuộc tính này bị đọc ở đường nóng: `QdrantDenseRetriever.writes_sparse`
+        đọc nó ở **mỗi** truy vấn sparse và ở **mỗi lô** upsert.
+
+        Không dùng `tokenizer.vocab_size` (nhanh nhưng khác nghĩa): nó là kích cỡ
+        vocab gốc, không tính token thêm vào. Token id do tokenizer sinh ra có thể
+        vượt quá nó, và một chặn trên sai ở đây thì hỏng im lặng — `SparseVector`
+        vẫn nhận index lớn hơn.
+        """
+        if self._sparse_vocab_size is None:
+            self._sparse_vocab_size = len(self.model.tokenizer)
+        return self._sparse_vocab_size
 
     # ---------------------------------------------------------------- forward
 
