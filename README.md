@@ -1,5 +1,10 @@
 # 🧠 RAG Chatbot - Advanced Document Intelligence System
 
+> ⚠️ **Repo đang được xây lại thành nền tảng RAG production.** Bản POC Streamlit
+> mô tả dưới đây đã dời vào [`legacy/`](legacy/README.md) và vẫn chạy được; nó là
+> mốc so sánh cho hệ thống mới. Tiến độ và quyết định kỹ thuật:
+> [`plans/CHECKLIST.md`](plans/CHECKLIST.md).
+
 <div align="center">
 
 ![RAG System](https://img.shields.io/badge/RAG_System-v2.0.0-blue?style=for-the-badge)
@@ -160,7 +165,7 @@ Given a PDF document, create an intelligent question-answering system that can u
 ```bash
 # 1. Clone repository
 git clone <repository-url>
-cd project_1.2_chatbot_rag
+cd RAG-Chatbot
 
 # 2. Create a virtual environment
 python -m venv venv
@@ -171,7 +176,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # 3. Install dependencies
-pip install -r requirements.txt
+pip install -r legacy/requirements.txt
 ```
 
 ### 🔧 Configuration
@@ -190,7 +195,7 @@ pip install -r requirements.txt
 
 ```python
 # Custom chunking configuration
-from enhanced_chunking import ChunkingConfig
+from enhanced_chunking import ChunkingConfig  # legacy/
 
 config = ChunkingConfig()
 config.strategy = "hybrid"  # hybrid, semantic, fixed
@@ -204,7 +209,7 @@ config.show_progress = True
 
 ```bash
 # Run the RAG system
-streamlit run app.py
+streamlit run legacy/app.py
 ```
 
 **What it does:**
@@ -218,26 +223,31 @@ streamlit run app.py
 
 ```bash
 # Test individual components
-python -c "import app; print('All imports successful')"
+python -c "import sys; sys.path.insert(0, 'legacy'); import app"
 
 # Test model loading
 python -c "from transformers import AutoModelForCausalLM; print('Model loading OK')"
 
 # Test chunking system
-python -c "from enhanced_chunking import EnhancedChunker; print('Chunking system OK')"
+python -c "import sys; sys.path.insert(0, 'legacy'); from enhanced_chunking import EnhancedChunker"
 ```
 
 ## 📦 Project Structure
 
 ```
-project_1.2_chatbot_rag/
-├── 📄 app.py                    # Main Streamlit application
-├── 🔧 enhanced_chunking.py      # Advanced chunking system
-├── 📋 requirements.txt           # Python dependencies
-├── 📊 state_chat_presentation.md # State management docs
-├── 📈 enhanced_chunking_presentation.md # Chunking documentation
-├── 📁 .chunking_cache/          # Cache directory
-└── 📖 README.md                 # Project documentation
+RAG-Chatbot/
+├── 📦 packages/rag_core/        # Shared library: schemas, chunking, embedding, retrieval, llm
+├── 🔬 pipeline/                 # Pipeline plane: corpus, indexing, goldenset, eval
+├── 🌐 serving/                  # Serving plane (W4)
+├── ⚙️  configs/                  # YAML configs for corpus, indexing, eval
+├── 🐳 infra/                    # docker-compose: Qdrant + Postgres + Redis
+├── 🧪 tests/                    # unit/ (no Docker) + integration/
+├── 📋 plans/                    # CHECKLIST, WORKLOG, reports
+├── 🗄️  legacy/                   # The original POC — see legacy/README.md
+│   ├── 📄 app.py                # Streamlit application
+│   ├── 🔧 enhanced_chunking.py  # Chunking system
+│   └── 📋 requirements.txt      # pip dependencies
+└── 📖 README.md
 ```
 
 ## 🚀 Performance Benchmarks
@@ -344,7 +354,7 @@ We welcome contributions!
 
 ```python
 # Enhanced Chunking API
-from enhanced_chunking import EnhancedChunker, ChunkingConfig
+from enhanced_chunking import EnhancedChunker, ChunkingConfig  # legacy/
 
 # Create configuration
 config = ChunkingConfig()

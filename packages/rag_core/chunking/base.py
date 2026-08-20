@@ -1,6 +1,6 @@
 """Interface chung và hậu xử lý dùng chung cho mọi chiến lược chunking.
 
-Port từ `enhanced_chunking.py` của bản POC, với ba thay đổi có chủ ý — ghi lại ở
+Port từ `legacy/enhanced_chunking.py` của bản POC, với ba thay đổi có chủ ý — ghi lại ở
 đây vì chúng ảnh hưởng tới con số baseline:
 
 1. **`config_hash` không làm tròn tham số nữa.** Bản cũ làm tròn `chunk_size` về

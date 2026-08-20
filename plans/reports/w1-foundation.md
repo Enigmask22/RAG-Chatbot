@@ -69,7 +69,7 @@ mọi thứ khác trông vẫn đúng.
 Ngoài ra `qdrant-client` được ghim `>=1.15,<1.16` cho khớp major/minor với image server;
 client 1.19 nói chuyện với server 1.12 vẫn chạy nhưng cảnh báo không tương thích.
 
-## Sai lệch có chủ ý so với `enhanced_chunking.py`
+## Sai lệch có chủ ý so với `legacy/enhanced_chunking.py`
 
 Ghi ở đây vì chúng **ảnh hưởng tới con số baseline `W1-13`**. Chi tiết lý do nằm ở
 docstring `packages/rag_core/chunking/base.py`.

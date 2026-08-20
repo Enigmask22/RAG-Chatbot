@@ -72,8 +72,9 @@ packages = ["packages/rag_core", "pipeline", "serving"]
 line-length = 100
 target-version = "py312"
 extend-exclude = [
-    "app.py",                 # POC cũ, sẽ xóa ở W6
-    "enhanced_chunking.py",   # đã port sang packages/rag_core/chunking
+    # Bản POC gốc. Cố ý không lint/format: nó là mốc so sánh cho `W1-13`, và sửa
+    # format trên thứ sắp bị xoá ở `W6-05` chỉ tạo diff nhiễu. Xem legacy/README.md
+    "legacy/",
     # Ruff format cũng định dạng lại code block Python bên trong Markdown. Với
     # tài liệu viết tay (README, các bản trình bày) đó là sửa ngoài ý muốn.
     "*.md",
@@ -109,7 +110,7 @@ known-first-party = ["rag_core", "pipeline", "serving"]
 python_version = "3.12"
 mypy_path = "packages"
 files = ["packages", "pipeline", "serving", "tests"]
-exclude = ["^app\\.py$", "^enhanced_chunking\\.py$"]
+exclude = ["^legacy/"]
 strict = true
 warn_unreachable = true
 # Thư viện bên thứ ba chưa có type stub — không để chúng làm hỏng strict mode của code mình

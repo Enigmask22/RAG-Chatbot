@@ -13,7 +13,7 @@
 ### Lệnh để kiểm tra trạng thái hiện tại
 
 ```bash
-cd D:/studioproj/project_1.2_chatbot_rag
+cd D:/studioproj/RAG-Chatbot   # đổi tên 2026-08-20, xem reports/rename-workspace.md
 uv sync --extra dev --extra qdrant   # cài môi trường
 make lint                            # ruff check + ruff format --check + mypy strict
 make test                            # 144 unit test, không cần Docker, ~3s
