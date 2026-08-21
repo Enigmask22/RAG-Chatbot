@@ -1386,7 +1386,9 @@ Trần vùng phủ (đo **trước** khi làm): `hit_rate@50` của nhánh nền
      pool**. Nợ thu hẹp thành **35% mã không vào được pool 50**.
 
 140. **DoD 400 ms không đạt, và tôi không sửa DoD cho khớp số đo.** 50 cặp tốn
-     **524 ms**; 400 ms mua được pool **38**. Ba cần điều khiển tối ưu đều cạn và
+     **524 ms**; 400 ms mua được pool **38** ⚠️ *(đúng là **37** — sửa 2026-08-21 khi
+     chạy lại probe; "38" là kết quả của việc mang hằng số đã làm tròn đi tính tiếp)*.
+     Ba cần điều khiển tối ưu đều cạn và
      mỗi cái có số: `max_length` chỉ cắt **1/12.100 cặp** (p50 287 token vs trần
      512) nên hạ trần không giảm tính toán thật; fp16 lấy **3,52×** (1794,7 →
      510,1 ms) và đổi top-1 ở đúng 1/60 câu; `batch_size` **không mua được gì** —
@@ -1564,6 +1566,64 @@ trước**: `reports/baseline.md` (file chưa bao giờ tồn tại; đúng là
 
 - `compare.py` cần `--category`/`--lang`, rồi **xoá** `scripts/category_compare.py`.
 - Quyết định có chạy lại `make rerank-probe` để có file bằng chứng cho trần 0,7799.
+- `W2-06`: filter ở tầng Qdrant, ca isolation hai tenant.
+
+## 2026-08-21 · Chạy lại `make rerank-probe` — vá lỗ bằng chứng của `W2-05`
+
+`probes/w2-05-rerank-probe.json` giờ tồn tại. Điều kiện chạy: Qdrant 200, GPU
+trống hẳn (0/8188 MiB), tham số mặc định của probe trùng đúng cấu hình `W2-05`
+đã đo (`--base hybrid --rrf-k 1 --candidate-k 20 --pool 50 --batch-size 16
+--max-length 512`).
+
+**Chia trước ba nhóm phải khớp và một nhóm được phép khác.** Trần vùng phủ,
+truncation và bão hoà là **hàm thuần** của (index, golden set, tham số) — lệch một
+chữ số ở đó nghĩa là có gì đã đổi mà tôi chưa biết, không phải nhiễu. Chỉ độ trễ là
+đại lượng vật lý. Phân loại trước khi đo là cách duy nhất để phép đo lại có giá
+trị: nếu coi tất cả là "chắc sẽ hơi khác" thì nó không phát hiện được gì.
+
+| | kết quả |
+|---|---|
+| Trần `hit_rate` @1…@50 | ✅ khớp **tới chữ số cuối**: `@50 = 0.7799043062200957` |
+| Truncation | ✅ khớp tuyệt đối: 12.100 cặp, p50 287, p95 352, max 542, **1** cặp vượt 512 |
+| Bão hoà sigmoid | ⚠️ **lệch chữ số thấp** — xem dưới |
+| Độ trễ | pool 50 = **529,3 ms** (n=90) vs 524,4 ms cũ, +0,9% |
+
+### Chỗ lệch, và nó là một thiếu sót thật của cách trình bày
+
+Logit ra −10,875 / −1,650 / +8,672 thay vì −10,873 / −1,652 / +8,668. Không phải
+nhiễu: −10,875 và +8,671875 là **giá trị fp16 biểu diễn được đúng**, còn −10,873
+thì không (khoảng cách fp16 ở độ lớn ~10 là 2⁻⁷ = 0,0078). Nên bảng §4 gốc đo ở
+**fp32**, còn mặc định phục vụ là **fp16**. Kiểm chứ không đoán: chạy lại với
+`--dtype float32` cho `−10.873137474060059` / `−1.6518374681472778` /
+`8.668050765991211` — tái lập cả ba số cũ.
+
+Cái đáng rút ra: chính hạng mục này đã kết luận "fp16 và fp32 là **hai** model khác
+nhau về số" và đã đưa `dtype` vào `CrossEncoderReranker.name` vì thế. Cơ chế đó
+**làm việc** — file JSON ghi `reranker = ...@cuda:L512:float16`, đọc file là biết.
+Chỗ hỏng là **bảng viết tay** không mang nhãn ấy. Đã thêm cột dtype cho cả hai độ
+chính xác thay vì thay số. Kết luận (0,0% bão hoà) không đổi ở cả hai — nhưng nếu
+nó *có* phụ thuộc dtype thì cách trình bày cũ không cho ai phát hiện ra.
+
+### Một con số phải sửa: pool 37, không phải 38
+
+`(400 − 5) / 10,4 = 38,0` là mang hằng số đã làm tròn đi tính tiếp. Từ ba điểm đo
+được (pool 6/20/50 → 68,0/212,3/529,3 ms) thì khớp là `10,48 × pool + 5,1`, cho
+37,7 → làm tròn **xuống** 37, vì 38 sẽ vượt ngân sách. Đã sửa ở 5 chỗ
+(`CHECKLIST` §4 + Changelog, report §5.4 + §11, `WORKLOG` phiên trước).
+
+Ba phép đo độc lập cùng đại lượng: 510,1 (§5.2) · 524,4 (§5.3) · 529,3 (hôm nay) —
+dải ~4%. "524 ms" nên đọc là **520–530 ms**.
+
+### Điểm đo mới: pool 6
+
+68,0 ms. Nó trả lời cách đọc DoD ("rerank 50 → 6"): chi phí đi theo **pool đầu
+vào**, không theo `top_n`. 68,0 ms ở pool 6 so với 529,3 ms ở pool 50 — `top_n`
+cắt danh sách *sau* khi đã chấm xong nên nó không rẻ đi được đồng nào. Cùng lý do
+`top_n` mặc định là `None` và có test ghim cái bẫy đó.
+
+### Còn lại
+
+- `compare.py` cần `--category`/`--lang`, rồi xoá `scripts/category_compare.py`.
 - `W2-06`: filter ở tầng Qdrant, ca isolation hai tenant.
 
 ---

@@ -57,6 +57,20 @@ Nhánh nền `qdrant-hybrid:rag_bgem3:rrf1-c20` (cấu hình thắng của `W2-0
 |---|---:|---:|---:|---:|---:|
 | `hit_rate` | 0,3397 | 0,5742 | 0,6555 | 0,7129 | **0,7799** |
 
+✅ **Có file bằng chứng từ 2026-08-21**: `probes/w2-05-rerank-probe.json`, khoá
+`ceiling_hit_rate`. Bảng trên ban đầu **không** có file đỡ — tôi chạy
+`scripts/rerank_probe.py` không truyền `--report` nên output máy sinh không được
+commit, và con số chặn trên của cả hạng mục chỉ tồn tại ở dạng chữ tôi gõ vào đây.
+Chạy lại cho **`@50 = 0.7799043062200957`**, khớp tới chữ số cuối, và cả bốn cột
+còn lại cũng khớp tuyệt đối. Đó là điều *phải* xảy ra: trần là hàm thuần của
+(index, golden set, `--pool 50 --base hybrid --rrf-k 1 --candidate-k 20`), không có
+thành phần ngẫu nhiên nào. Một chữ số lệch ở đây sẽ có nghĩa là index hoặc nhãn đã
+đổi mà không ai biết — nên phép đo lại này đáng giá chính vì nó *có thể* đã lệch.
+
+File cũng ghi kèm `span_resolution`: 209 câu phân giải được, 33 câu giữ
+`chunk_id`, **0** câu không khớp, `label_changed: 9` — tức provenance nhãn của
+`TD-12` đi cùng con số, không phải nằm rời một chỗ khác.
+
 ⚠️ Các cột ≤ 20 ở đây **không** trùng khít số của `bgem3-rrf-k1-c20` trong
 `W2-04` (`hit_rate@20` 0,7177 vs 0,7129 ở đây), và chênh lệch đó không phải
 nhiễu. Bảng này lấy pool **50** rồi cắt xuống N, còn `W2-04` gọi nhánh nền với
@@ -95,6 +109,11 @@ bẫy đã ghi ở `HuggingFaceEmbeddingProvider.count_tokens`.)
 |---|---:|---:|---:|---:|
 | token mỗi cặp | 287 | 352 | 542 | **1 cặp** (0,008%) |
 
+✅ Khớp tuyệt đối khi chạy lại 2026-08-21 (`probes/w2-05-rerank-probe.json`, khoá
+`truncation`: `p50_tokens` 287, `p95_tokens` 352, `max_tokens` 542,
+`truncated_ratio` 8,264e-05 = đúng 1/12.100). Cũng là hàm thuần — tokenizer không
+có gì ngẫu nhiên.
+
 Cửa sổ của model là 8192 nhưng `max_length=512` **không phải một đánh đổi** ở
 corpus này — nó là dư. Và vì chi phí attention là bậc hai theo độ dài, hạ trần
 xuống là cách rẻ nhất để mua tốc độ *nếu* nó cắt gì; ở đây nó không cắt gì, nên
@@ -118,9 +137,30 @@ trọng nhất, top của danh sách."
 
 Đo 2000 logit thật (40 câu × pool 50):
 
-| min | p50 | max | vượt ngưỡng bão hoà trên (+16,64) | dưới (−103) |
-|---:|---:|---:|---:|---:|
-| −10,873 | −1,652 | +8,668 | **0,0%** | **0,0%** |
+| dtype | min | p50 | max | vượt ngưỡng trên (+16,64) | dưới (−103) |
+|---|---:|---:|---:|---:|---:|
+| **fp32** | −10,873 | −1,652 | +8,668 | **0,0%** | **0,0%** |
+| **fp16** *(mặc định khi phục vụ)* | −10,875 | −1,650 | +8,672 | **0,0%** | **0,0%** |
+
+⚠️ **Bảng này ban đầu không ghi dtype, và đó là một thiếu sót có hậu quả cụ thể.**
+Khi chạy lại `make rerank-probe` (2026-08-21) thì ba con số ra khác ở chữ số thấp:
+−10,875 / −1,650 / +8,672. Chúng là **giá trị fp16 biểu diễn được đúng** — khoảng
+cách fp16 ở độ lớn ~10 là 2⁻⁷ = 0,0078, nên chỉ có 10,8672 / 10,875 / 10,8828 và
+−10,873 **không nằm trong đó**. Tức bảng gốc đo ở fp32. Kiểm chứ không đoán: chạy
+`python scripts/rerank_probe.py --config configs/indexing/bgem3.yaml --dtype float32`
+cho `min = −10.873137474060059`, `p50 = −1.6518374681472778`,
+`max = 8.668050765991211` — tái lập **cả ba** con số của bảng gốc.
+
+Đây đúng là cái mà chính hạng mục này đã kết luận ở §9: fp16 và fp32 là **hai
+model khác nhau về số**, nên `dtype` nằm trong `CrossEncoderReranker.name`. Cơ chế
+đó đã làm việc — file bằng chứng ghi `reranker`
+= `BAAI/bge-reranker-v2-m3@cuda:L512:float16`, nên đọc file là biết ngay nó ở độ
+chính xác nào. Chỗ hỏng là **bảng viết tay** thì không có nhãn ấy. Đã sửa bằng cách
+thêm cột dtype thay vì thay số.
+
+Kết luận **không** đổi ở cả hai độ chính xác: 0,0% bão hoà, phân bố nằm gọn trong
+vùng sigmoid còn phân biệt được. Nhưng nếu kết luận có phụ thuộc dtype thì cách
+trình bày cũ sẽ không cho ai phát hiện ra.
 
 Toàn bộ phân bố nằm gọn trong vùng sigmoid còn phân biệt tốt. **Lý lẽ của tôi
 không đúng với model này trên corpus này.** Nó không phải sai về nguyên lý —
@@ -210,8 +250,36 @@ không đổi kết quả (có test canh), và giờ biết là nó gần như k
 
 | ngân sách | pool vừa | |
 |---|---:|---|
-| 400 ms (DoD) | **38** | 50 cặp tốn 524 ms — **vượt 31%** |
+| 400 ms (DoD) | **37** | 50 cặp tốn 524–529 ms — **vượt 31–32%** |
 | 220 ms | 20 | |
+
+**Đo lại 2026-08-21** (`probes/w2-05-rerank-probe.json`, khoá `latency`, fp16,
+`batch_size=16`, n = 30 câu × 3 lượt = **90** mỗi điểm):
+
+| pool | p50 | p95 | max |
+|---:|---:|---:|---:|
+| 6 | **68,0 ms** | 72,3 | 79,8 |
+| 20 | **212,3 ms** | 240,7 | 268,8 |
+| 50 | **529,3 ms** | 588,8 | 609,3 |
+
+Khớp tuyến tính từ ba điểm này: **`≈ 10,48 ms × pool + 5,1`** — gần như trùng
+`10,4 × pool + 5` suy từ lần đo cũ. Pool 50 ra 529,3 ms vs 524,4 ms đã công bố ở
+§5.3 (+0,9%); pool 20 ra 212,3 vs 213,7 (−0,7%). Ba phép đo độc lập của cùng một
+đại lượng nằm trong dải ~4% (510,1 ở §5.2 · 524,4 ở §5.3 · 529,3 ở đây), nên
+"524 ms" nên đọc là **520–530 ms**, không phải một hằng số.
+
+⚠️ **Một con số phải sửa: ngân sách 400 ms mua được pool 37, không phải 38.** Bản
+cũ tính bằng hằng số đã làm tròn (`(400 − 5) / 10,4 = 38,0`); tính từ chính ba
+điểm đo được thì `(400 − 5,1) / 10,48 = 37,7`, và làm tròn **xuống** vì 38 sẽ
+vượt ngân sách. Không đổi kết luận nào — DoD vẫn không đạt và chênh lệch là một
+ứng viên — nhưng "38" là kết quả của việc mang một hằng số làm tròn đi tính tiếp.
+
+Điểm **pool 6** là mới và nó nói thẳng một điều về cách đọc DoD. DoD viết "rerank
+50 → 6". Nếu hiểu 6 là *số kết quả xuất ra* thì vẫn phải trả tiền cho 50 lượt
+forward pass — 68,0 ms ở pool 6 so với 529,3 ms ở pool 50 cho thấy chi phí đi theo
+**kích thước pool đầu vào**, không theo `top_n`. `top_n` chỉ cắt danh sách *sau*
+khi đã chấm xong; nó không rẻ đi được đồng nào. Đó cũng là lý do `top_n` mặc định
+là `None` và có test ghim cái bẫy đó (§9).
 
 **DoD như đã viết không đạt trên RTX 4060 Laptop.** Tôi không sửa lại DoD cho
 khớp số đo; tôi ghi rằng nó không đạt và ghi cái gì thì đạt. Ba cần điều khiển đã
@@ -654,6 +722,7 @@ Bài học cho `W0-06`, và nó nâng nợ đó từ "nên làm" lên "cần thi
 4. **Trần 0,7799 là câu hỏi của `W3`.** 22% golden set không có bằng chứng trong
    50 ứng viên đầu của nhánh nền. Không tầng xếp hạng nào chạm được phần đó — nó
    thuộc chất lượng parse (`W3-01` Docling, `TD-17`) và `TD-18`.
-5. **DoD 400 ms** (§5.4): không đạt trên RTX 4060 Laptop; 400 ms mua được pool 38.
+5. **DoD 400 ms** (§5.4): không đạt trên RTX 4060 Laptop; 400 ms mua được pool 37
+   (con số cũ "38" tính bằng hằng số đã làm tròn — xem §5.4).
    Khuyến nghị §8 là pool 20 ở 233 ms, vốn *vừa* ngân sách — nhưng đó là đổi bài
    toán, không phải đạt DoD, và hai chuyện đó không được lẫn.

@@ -1,0 +1,62 @@
+{
+  "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+  "device": "cuda",
+  "seed": 20260820,
+  "base_branch": "qdrant-hybrid:rag_bgem3:rrf1-c20",
+  "span_resolution": {
+    "resolved": 209,
+    "kept_chunk_ids": 33,
+    "unmatched_queries": [],
+    "min_overlap_ratio": 0.5,
+    "label_changed": 9
+  },
+  "ceiling_hit_rate": {
+    "@1": 0.3397129186602871,
+    "@5": 0.5741626794258373,
+    "@10": 0.6555023923444976,
+    "@20": 0.7129186602870813,
+    "@50": 0.7799043062200957
+  },
+  "truncation": {
+    "pairs": 12100.0,
+    "max_length": 512.0,
+    "p50_tokens": 287.0,
+    "p95_tokens": 352.0,
+    "max_tokens": 542.0,
+    "truncated_ratio": 8.264462809917356e-05
+  },
+  "saturation": {
+    "logits": 2000.0,
+    "min": -10.875,
+    "max": 8.671875,
+    "p50": -1.64990234375,
+    "would_saturate_high_ratio": 0.0,
+    "would_saturate_low_ratio": 0.0
+  },
+  "latency": {
+    "6": {
+      "pool_size": 6.0,
+      "batch_size": 16.0,
+      "n": 90.0,
+      "p50_ms": 68.0382999998983,
+      "p95_ms": 72.34930000049644,
+      "max_ms": 79.81289999952423
+    },
+    "20": {
+      "pool_size": 20.0,
+      "batch_size": 16.0,
+      "n": 90.0,
+      "p50_ms": 212.2653000005812,
+      "p95_ms": 240.655900001002,
+      "max_ms": 268.76180000181193
+    },
+    "50": {
+      "pool_size": 50.0,
+      "batch_size": 16.0,
+      "n": 90.0,
+      "p50_ms": 529.2823500003578,
+      "p95_ms": 588.8358999982302,
+      "max_ms": 609.3371999995725
+    }
+  }
+}

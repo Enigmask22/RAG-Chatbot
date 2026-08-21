@@ -37,7 +37,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-02` named vectors | [`tasks/w2-02-qdrant-hybrid.md`](tasks/w2-02-qdrant-hybrid.md) | — | — | `index-bgem3.json` | Một collection, hai loại vector; `ensure_collection` **kiểm** schema |
 | `W2-03` sparse | [`tasks/w2-03-sparse-retriever.md`](tasks/w2-03-sparse-retriever.md) | `bgem3-sparse` | `cmp-bgem3-vs-bgem3-sparse` | `w2-03-known-item.json` | Kém dense trên golden set, **thắng áp đảo** ở tra mã |
 | `W2-04` RRF | [`tasks/w2-04-rrf.md`](tasks/w2-04-rrf.md) | `bgem3-rrf` (k=60), `-k1`, `-k2`, `-k5`, `-k10`, `-c20`, `-c100`, `-k1-c20`, `-k1-c100`, `-w2` | `cmp-bgem3-vs-bgem3-rrf`, `cmp-bgem3-vs-bgem3-rrf-k1` | `w2-04-known-item.json`, `-k1.json` | **`k=60` của bài báo là lựa chọn tệ nhất**; `k=1` thắng nhưng chỉ 3/15 có ý nghĩa |
-| `W2-05` reranker | [`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) | `bgem3-rr-c20`, `-c50`, `-c100`, `-dense-c50` | `cmp-bgem3-vs-bgem3-rr-c50`, `cmp-bgem3-rr-c20-vs-...c50`, `...c50-vs-...c100`, `cmp-bgem3-rr-dense-c50-vs-bgem3-rr-c50`, `cmp-bgem3-rrf-k1-c20-vs-bgem3-rr-c50` | `w2-05-known-item.json` ⚠️ thiếu `w2-05-rerank-probe.json` | `hit_rate@1` **+22,0 điểm**, 15/15 có ý nghĩa; **DoD 400 ms không đạt** |
+| `W2-05` reranker | [`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) | `bgem3-rr-c20`, `-c50`, `-c100`, `-dense-c50` | `cmp-bgem3-vs-bgem3-rr-c50`, `cmp-bgem3-rr-c20-vs-...c50`, `...c50-vs-...c100`, `cmp-bgem3-rr-dense-c50-vs-bgem3-rr-c50`, `cmp-bgem3-rrf-k1-c20-vs-bgem3-rr-c50` | `w2-05-known-item.json`, `w2-05-rerank-probe.json` | `hit_rate@1` **+22,0 điểm**, 15/15 có ý nghĩa; **DoD 400 ms không đạt** |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -73,15 +73,25 @@ Mặc định trong code cũng trỏ vào đây: `retrieval_eval.py --out-dir` v
 
 ## Chỗ còn hổng — đọc trước khi tin một con số
 
-**⚠️ `probes/w2-05-rerank-probe.json` không tồn tại.** `make rerank-probe` ghi ra
-đường dẫn đó, nhưng ở `W2-05` tôi chạy `scripts/rerank_probe.py` không truyền
-`--report`, nên output máy sinh không bao giờ được commit. Hệ quả cụ thể: **trần
-vùng phủ `hit_rate@50` = 0,7799** — con số chặn trên mọi phát biểu khác của
-`W2-05` và của cả tầng xếp hạng — hiện chỉ có trong bảng viết tay ở
-[`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) §2, không có file để đối
-chiếu. Đó là vi phạm điều 3 của Định nghĩa Done (`CHECKLIST.md` §0). Chạy lại
-được (`make rerank-probe`, cần Qdrant + GPU) nhưng phần độ trễ sẽ ra số khác lần
-đo cũ, nên đây là quyết định có đánh đổi chứ không phải việc dọn dẹp.
+**✅ `probes/w2-05-rerank-probe.json` — chạy lại 2026-08-21, khớp.** File này từng
+không tồn tại: `make rerank-probe` ghi ra đường dẫn đó, nhưng ở `W2-05` tôi chạy
+script không truyền `--report`, nên **trần vùng phủ `hit_rate@50` = 0,7799** — con
+số chặn trên mọi phát biểu khác của hạng mục — chỉ có ở dạng bảng viết tay. Đã chạy
+lại: trần khớp **tới chữ số cuối** (`0.7799043062200957`), cả 5 cột; truncation
+khớp tuyệt đối. Ba nhóm đó là hàm thuần của (index, golden set, tham số) nên phải
+khớp — và phép đo lại đáng giá chính vì nó *có thể* đã lệch.
+
+Hai thứ **đổi** khi chạy lại, cả hai đã ghi vào
+[`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md):
+
+* **§4 thiếu nhãn dtype.** Logit ra khác ở chữ số thấp (−10,875 vs −10,873) vì bản
+  cũ đo ở **fp32** còn mặc định phục vụ là **fp16**. Kiểm bằng
+  `--dtype float32`: tái lập đúng cả ba số cũ. Kết luận (0,0% bão hoà) không đổi ở
+  cả hai độ chính xác. Bản thân file JSON *có* ghi dtype (`reranker` =
+  `...@cuda:L512:float16`) — chỗ hỏng là bảng viết tay.
+* **Ngân sách 400 ms mua pool 37, không phải 38.** Bản cũ tính bằng hằng số đã làm
+  tròn; tính từ ba điểm đo được thì 37,7 → làm tròn xuống. Độ trễ pool 50 đo lại
+  529,3 ms (n=90) vs 524,4 ms cũ, tức "524 ms" nên đọc là **520–530 ms**.
 
 **⚠️ `compare/cmp-baseline-vs-bgem3.md` sinh lại ngày 2026-08-21, không phải khi
 làm `W2-01`.** Lệnh so sánh *đã* chạy ở `W2-01` (số nằm trong report) nhưng file
