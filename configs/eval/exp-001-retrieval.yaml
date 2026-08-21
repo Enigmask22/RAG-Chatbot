@@ -1,0 +1,83 @@
+# Ablation #1 — `W2-08`. Runner: `pipeline/experiments/runner.py` (`W2-07`).
+#
+# DoD `W2-08` đòi ≥ 12 tổ hợp có kết quả đầy đủ. Grid này có 14 ô trên bốn chiều
+# THẬT, và mỗi chiều đều đã có lý do bằng số:
+#
+#   1. `embedding`      — `W2-01`: nDCG@10 0,1621 → 0,4442 khi đổi model.
+#   2. `chunk_size`     — `TD-11`: hạ 1000 → 550 cho `p = 0,711`, tức KHÔNG đo
+#                          được gì. Chiều này ở đây để bảng chứng minh lại điều
+#                          đó **cạnh** chiều embedding, vì `W2-01` đổi cả hai
+#                          cùng lúc và toàn bộ mức tăng đã bị gán cho model.
+#   3. nhánh truy hồi   — `W2-03`/`W2-04`/`W2-05`.
+#   4. `rerank_candidates` — `W2-05`: trần vùng phủ `hit_rate@50` = 0,7799, nên
+#                          chiều này mua vùng phủ bằng độ trễ, không mua không.
+#
+# ⚠️ `doc_type` KHÔNG có ở đây: `W2-06` đo được `doc_type=dev_report` khớp
+# 15.814/15.814 point — toàn corpus một loại, nên hai dòng theo nó sẽ trùng nhau.
+# `lang` là chiều thật (59,4%/40,6%) nhưng nó là chiều **phân tích** (cột
+# `by_language` của mỗi báo cáo), không phải chiều cấu hình.
+#
+# ⚠️ Ô `baseline` và ô `bgem3` KHÔNG so recall/nDCG/MAP được với nhau: nhãn neo
+# theo span nên `chunk_size` khác nhau cho số nhãn mỗi câu khác nhau, và mẫu số
+# của recall@k chính là con số đó (`G2`, `TD-11`). `compare.py` tự từ chối. Cột
+# `n_relevant_mean` trên MLflow là chỗ thấy được hai nhóm đó tách nhau.
+
+name: exp-001-retrieval
+# Mọi ô mang tiền tố này. Không có nó thì `bgem3-sparse` của grid ghi đè báo cáo
+# `W2-03` đã công bố — preflight bắt đúng chuyện đó ở lần `--dry-run` đầu tiên.
+run_prefix: e1
+golden: data/golden/golden_v1.jsonl
+top_k: 20
+
+# ⚠️ `file:./mlruns` KHÔNG dùng được nữa: mlflow >= 3 đưa file store vào
+# maintenance mode và từ chối mở. Lượt chạy grid đầu tiên của W2-07 dùng nó,
+# rơi về NullTracker, và chạy trọn 14 ô mà không ghi gì lên MLflow. Giờ URI
+# không mở được là lỗi preflight, không còn là một dòng cảnh báo.
+tracking_uri: sqlite:///mlflow.db
+experiment: exp-001-retrieval
+tags:
+  week: W2
+  item: W2-08
+
+matrix:
+  # --- Chiều 1+2: embedding × chunk_size, trên nhánh dense (4 ô) --------------
+  # `chunk550` dùng cùng model baseline nên cặp (baseline, chunk550) tách riêng
+  # phần đóng góp của cửa sổ chunk — đúng phép đo `TD-11` đã làm, đặt vào bảng.
+  - index_config:
+      - configs/indexing/baseline.yaml
+      - configs/indexing/chunk550.yaml
+      - configs/indexing/bgem3.yaml
+    retrieval_mode: [dense]
+
+  # Sparse chỉ dựng được trên index có sparse vector, tức `bgem3` (`W2-02`).
+  # `baseline` sẽ nổ ở `QdrantSparseRetriever` — đúng, và preflight KHÔNG bắt
+  # được chuyện đó vì nó là tính chất của collection, không của file config.
+  - index_config: [configs/indexing/bgem3.yaml]
+    retrieval_mode: [sparse]
+
+  # --- Chiều 3: nhánh hybrid, quét `k` của RRF (4 ô) -------------------------
+  # `W2-04` đo `k=60` (giá trị bài báo) là TỆ NHẤT và `k=1` thắng. Quét
+  # {0, 1, 2, 60} thay vì quét `weights`: cần tỉ lệ > 30,5:1 mới lật được một
+  # đồng thuận cùng độ sâu, nên `weights` không đáng một ô.
+  - label: rrf
+    index_config: [configs/indexing/bgem3.yaml]
+    retrieval_mode: [hybrid]
+    options:
+      k: [0, 1, 2, 60]
+      candidate_k: [20]
+
+  # --- Chiều 4: reranked, quét pool × nhánh nền (6 ô) ------------------------
+  # `W2-05` đo nền dense vs nền hybrid cho 13/15 metric trong ngưỡng nhiễu —
+  # nhưng đó là ở pool 50. Ở pool nhỏ hơn, chất lượng bộ SINH ứng viên đáng giá
+  # hơn, nên cặp (base × candidates) là chiều thật chứ không phải hai chiều rời.
+  - label: rr
+    index_config: [configs/indexing/bgem3.yaml]
+    retrieval_mode: [reranked]
+    options:
+      base: [dense, hybrid]
+      rerank_candidates: [20, 50, 100]
+      # Ghim fp16 + cuda tường minh. `rerank_dtype: auto` mặc định cho fp16 trên
+      # CUDA và fp32 ở nơi khác, nên để `auto` thì cùng file config cho hai kết
+      # quả khác nhau trên hai máy — và `W2-05` đo được fp16 đổi top-1 ở 1/60 câu.
+      rerank_dtype: [float16]
+      rerank_device: [cuda]

@@ -23,7 +23,14 @@ from .base import Retriever
 if TYPE_CHECKING:
     from .qdrant_store import QdrantDenseRetriever
 
-__all__ = ["DEFAULT_RERANK_BASE", "RERANK_OPTIONS", "SUPPORTED_MODES", "build_branch"]
+__all__ = [
+    "DEFAULT_RERANK_BASE",
+    "HYBRID_OPTIONS",
+    "RERANK_OPTIONS",
+    "SUPPORTED_MODES",
+    "build_branch",
+    "check_branch_options",
+]
 
 #: Nhánh dựng được ở thời điểm hiện tại — liệt kê tường minh để một tên hợp lệ
 #: nhưng chưa cài báo "chưa cài" thay vì báo "tên không hợp lệ", hai chuyện rất
@@ -53,6 +60,12 @@ RERANK_OPTIONS = frozenset(
     }
 )
 
+#: Tham số chỉ nhánh `hybrid` nhận — đúng chữ ký `QdrantHybridRetriever.__init__`.
+#: Tồn tại vì `check_branch_options` phải trả lời "tham số này hợp lệ không" mà
+#: **không** được dựng retriever (xem docstring của nó). Có test đối chiếu tập này
+#: với chữ ký thật, nên thêm tham số cho hybrid mà quên ở đây sẽ đỏ.
+HYBRID_OPTIONS = frozenset({"k", "candidate_k", "weights"})
+
 #: Nhánh nền mặc định của `reranked`. `W2-04` đo được hybrid là bộ sinh ứng viên
 #: tốt nhất (`recall@20` 0,6754 vs dense 0,6324) — nhưng ⚠️ **`k` của nó vẫn lấy
 #: mặc định `RRF_K = 60` của bài báo**, mà `W2-04` đo được đó là giá trị tệ nhất.
@@ -61,6 +74,74 @@ RERANK_OPTIONS = frozenset(
 #: `retriever.name` mang `rrf60` nên chuyện đó không im lặng. Muốn cấu hình
 #: thắng thì truyền `--rrf-k 1 --candidate-k 20`.
 DEFAULT_RERANK_BASE = RetrievalMode.HYBRID
+
+
+def check_branch_options(mode: RetrievalMode | str, options: dict[str, Any]) -> RetrievalMode:
+    """Kiểm tên nhánh + tham số **mà không dựng gì**. Trả về mode đã phân giải.
+
+    Tồn tại vì `W2-07`. `build_branch` là chỗ duy nhất biết luật "nhánh nào nhận
+    tham số nào", nhưng nó chỉ nói được câu trả lời bằng cách **dựng retriever** —
+    và với `reranked` việc dựng nạp một cross-encoder 2,2 GB. Một grid 12 ô muốn
+    kiểm cả 12 ô *trước khi* chạy ô đầu (xem `pipeline/experiments/runner.py`
+    §preflight) thì không thể trả giá đó 12 lần.
+
+    Cách sai là chép luật sang chỗ khác. Luật ở đây gồm cả phần đệ quy của
+    `reranked`, nên bản chép sẽ lệch dần và preflight sẽ **cho qua** những ô mà
+    `build_branch` từ chối — tức grid chạy 40 phút rồi chết ở ô cuối, đúng cái
+    hạng mục này tồn tại để chặn. Nên `build_branch` **gọi chính hàm này**, và có
+    test khẳng định hai bên nổ ở cùng những đầu vào.
+    """
+    try:
+        resolved = RetrievalMode(mode)
+    except ValueError:
+        raise ValueError(
+            f"Nhánh truy hồi không hợp lệ: {mode!r}. Hợp lệ: {[m.value for m in RetrievalMode]}"
+        ) from None
+
+    supplied = {name: value for name, value in options.items() if value is not None}
+
+    if resolved is RetrievalMode.RERANKED:
+        base_mode = supplied.get("base", DEFAULT_RERANK_BASE)
+        if str(base_mode) == RetrievalMode.RERANKED.value:
+            raise ValueError("`--rerank-base reranked` không có nghĩa: xếp lại hai lần cùng model")
+        # Đệ quy đúng như `_build_reranked`: tham số ngoài `RERANK_OPTIONS` đi
+        # xuống nhánh nền và bị từ chối ở đó.
+        base_options = {k: v for k, v in supplied.items() if k not in RERANK_OPTIONS}
+        check_branch_options(base_mode, base_options)
+        return resolved
+
+    unknown = RERANK_OPTIONS & supplied.keys()
+    if unknown:
+        raise ValueError(
+            f"Nhánh {resolved.value!r} không nhận tham số {sorted(unknown)} — "
+            f"chúng chỉ có nghĩa với nhánh 'reranked'."
+        )
+
+    if resolved is RetrievalMode.HYBRID:
+        # Trước `W2-07`, `build_branch(store, "hybrid", candidat_k=100)` đi thẳng
+        # vào constructor và nhận một `TypeError` trần của Python. Đúng là nổ,
+        # nhưng nó không liệt kê tham số hợp lệ — cùng loại thiếu sót với khoá
+        # filter gõ sai ở `W2-06`.
+        stray = supplied.keys() - HYBRID_OPTIONS
+        if stray:
+            raise ValueError(
+                f"Nhánh 'hybrid' không nhận tham số {sorted(stray)}. "
+                f"Hợp lệ: {sorted(HYBRID_OPTIONS)}."
+            )
+        return resolved
+
+    if supplied:
+        raise ValueError(
+            f"Nhánh {resolved.value!r} không nhận tham số {sorted(supplied)} — "
+            f"chúng chỉ có nghĩa với nhánh 'hybrid'."
+        )
+    if resolved in SUPPORTED_MODES:
+        return resolved
+
+    raise NotImplementedError(  # pragma: no cover - nhánh chết, xem SUPPORTED_MODES
+        f"Nhánh {resolved.value!r} là tên hợp lệ nhưng chưa cài. "
+        f"Hiện có: {[m.value for m in SUPPORTED_MODES]}."
+    )
 
 
 def build_branch(
@@ -82,36 +163,19 @@ def build_branch(
 
     `reranked` **gọi lại chính hàm này** cho nhánh nền, nên phép kiểm trên áp
     dụng nguyên vẹn ở tầng dưới: `--rerank-base dense --rrf-k 1` vẫn nổ.
-    """
-    try:
-        resolved = RetrievalMode(mode)
-    except ValueError:
-        raise ValueError(
-            f"Nhánh truy hồi không hợp lệ: {mode!r}. Hợp lệ: {[m.value for m in RetrievalMode]}"
-        ) from None
 
+    Toàn bộ phần *kiểm* nằm ở `check_branch_options`, để `W2-07` kiểm được một
+    grid mà không nạp model — xem docstring của nó.
+    """
+    resolved = check_branch_options(mode, options)
     supplied = {name: value for name, value in options.items() if value is not None}
 
     if resolved is RetrievalMode.RERANKED:
         return _build_reranked(store, supplied)
-
-    unknown = RERANK_OPTIONS & supplied.keys()
-    if unknown:
-        raise ValueError(
-            f"Nhánh {resolved.value!r} không nhận tham số {sorted(unknown)} — "
-            f"chúng chỉ có nghĩa với nhánh 'reranked'."
-        )
-
     if resolved is RetrievalMode.HYBRID:
         from .hybrid import QdrantHybridRetriever
 
         return QdrantHybridRetriever(store, **supplied)
-
-    if supplied:
-        raise ValueError(
-            f"Nhánh {resolved.value!r} không nhận tham số {sorted(supplied)} — "
-            f"chúng chỉ có nghĩa với nhánh 'hybrid'."
-        )
     if resolved is RetrievalMode.DENSE:
         return store
     if resolved is RetrievalMode.SPARSE:

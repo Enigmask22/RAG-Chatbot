@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-20 (cuối file)** — tuần 1 xong 13/13; W2 xong `TD-11` (âm), `W2-01` BGE-M3, `W2-02` hybrid schema, `W2-03` sparse retriever, `W2-04` RRF (**`k=60` của bài báo kém dense có ý nghĩa**; `k=1` thắng nhưng chỉ 3/15 metric đạt ý nghĩa; và một **bug 64 ms** làm sai hai con số đã công bố — sparse thật ra miễn phí hoàn toàn). Việc tiếp theo: `W2-05`.
+> **Phiên mới nhất: 2026-08-21 (cuối file)** — `W2-07` xong: experiment runner (YAML matrix → 14 ô → MLflow), resume theo `fingerprint` của ô, preflight bắt ngay một ô sắp ghi đè bằng chứng `W2-03`. Grid tái lập **5** con số đã công bố đúng từng chữ số. ⚠️ Lượt chạy đầu chạy trọn 14 ô mà **không ghi gì lên MLflow** (mlflow 3 bỏ file store) → URI không mở được giờ là lỗi preflight, và có `make exp-backfill` dựng lại view từ file báo cáo. Việc tiếp theo: `--category` cho `compare.py`, rồi `W2-08`.
+>
+> Phiên trước: 2026-08-20 — tuần 1 xong 13/13; W2 xong `TD-11` (âm), `W2-01` BGE-M3, `W2-02` hybrid schema, `W2-03` sparse retriever, `W2-04` RRF (**`k=60` của bài báo kém dense có ý nghĩa**; `k=1` thắng nhưng chỉ 3/15 metric đạt ý nghĩa; và một **bug 64 ms** làm sai hai con số đã công bố — sparse thật ra miễn phí hoàn toàn). Việc tiếp theo: `W2-05`.
 > Sắp xếp theo thứ tự thời gian, mục mới thêm vào **cuối**.
 
 ---
@@ -1721,3 +1723,160 @@ sạch trên 104 file · `W2` 6/9 · tổng 26/77.
    khi ghi Makefile. Dùng Edit cho recipe có continuation.
 
 ---
+
+## Phiên 2026-08-21 (tiếp) · `W2-07` — experiment runner + MLflow
+
+**Mục tiêu phiên:** `W2-07`. Một lệnh chạy hết ma trận thí nghiệm, resume được khi
+crash, theo dõi trên MLflow.
+
+```bash
+make exp-dry        # in bảng grid + preflight, KHÔNG nạp model
+make exp            # chạy hết grid (14 ô, ~13 phút), resume được
+make exp-backfill   # dựng lại view MLflow từ báo cáo đã có
+make mlflow-ui      # http://127.0.0.1:5000
+```
+
+### Phần khó không phải expand grid
+
+`itertools.product` là một dòng. Ba thứ còn lại mất thời gian, và mỗi thứ ứng với
+một cách grid "chạy xong" với số sai mà không có gì báo lỗi:
+
+1. **Resume theo `fingerprint` của ô**, không theo tên file báo cáo. "Ô này đã
+   chạy" và "ô này đã chạy *với đúng tham số hiện tại*" là hai câu khác nhau.
+   `fingerprint` nhận `index_fingerprint` và `golden_digest` **từ ngoài**: build
+   lại `bgem3.yaml` với `chunk_size` khác, hoặc `TD-13` ghi lại golden set ở cùng
+   đường dẫn — cả hai đổi kết quả mà không đổi một ký tự nào trong YAML của ô.
+2. **Preflight kiểm cả grid trước khi chạy ô đầu.** Gom mọi vấn đề rồi nổ một lần.
+3. **Ghi báo cáo trước, state sau**, mỗi file qua `tmp` + `os.replace`.
+
+### Preflight bắt lỗi thật ở lần `--dry-run` ĐẦU TIÊN
+
+Grid sinh ô tên `bgem3-sparse`, **trùng đúng báo cáo tiêu đề của `W2-03`** đang
+nằm trong `plans/reports/runs/`. Không có kiểm quyền sở hữu thì `make exp` ghi đè
+bằng chứng của một hạng mục đã xong. Sửa bằng `run_prefix: e1` ở cấp config.
+
+Đường **không** chọn: để grid *dùng lại* những lần chạy cũ trùng tên. State không
+sở hữu chúng nên không biết chúng sinh bằng tham số nào — đúng câu `fingerprint`
+tồn tại để trả lời.
+
+### `check_branch_options` — refactor mà dự đoán `D3` nói là không làm được
+
+`D3` đoán preflight không kiểm được tham số nhánh mà không nạp model, vì
+`build_branch` dựng cross-encoder trong lúc kiểm. Sai: **tách phần kiểm ra khỏi
+phần dựng**. `build_branch` giờ gọi `check_branch_options` nên không có bản chép
+luật nào để lệch, và có test chạy **15 cặp đầu vào** qua cả hai đường khẳng định
+chúng nổ ở cùng những chỗ. Phụ phẩm: `HYBRID_OPTIONS` + thông báo liệt kê tham số
+hợp lệ cho hybrid (trước đó `candidat_k=100` nhận một `TypeError` trần).
+
+### `D2` sai: model đã được chia sẻ sẵn từ `W1`
+
+Đo: mở `baseline.yaml` **27,8 s**, mở `chunk550.yaml` (cùng model) **0,4 s**, mở
+`bgem3.yaml` **11,1 s**. Con số 0,4 s dẫn tới `@lru_cache` đã có sẵn trên cả ba
+loại model (`_load_model` 4, `_load_sparse_head` 4, cross-encoder 2). Nên gom ô
+theo index **không** mua lần nạp model — nó mua **quét nhãn span 14 → 3**, và một
+tính chất: mỗi model nạp đúng một lần bất kể `maxsize`.
+
+⚠️ Và nó làm docstring đầu của `_release()` thành **sai**: `lru_cache` giữ tham
+chiếu mạnh nên `del` + `gc.collect()` không chạm được trọng số. Đo 4517/8188 MiB
+trong lúc grid chạy `reranked`. Hệ quả quan trọng hơn: **trần VRAM của grid do ba
+con số `maxsize` ở `rag_core` quyết định, không do runner** — đầu vào cho `W0-06`.
+
+### MLflow: chạy trọn 14 ô mà không ghi được gì
+
+mlflow 3.15 **từ chối** `file:./mlruns` (file store vào maintenance mode, đòi
+`sqlite:///`). `build_tracker` bắt exception, rơi về `NullTracker`, ghi một cảnh
+báo — **dòng 19 trong một log 2320 dòng** — rồi grid chạy đủ 14 ô, đúng số, đủ
+file, và Evidence của DoD không tồn tại.
+
+Ba việc sửa, và cái thứ ba là cái đáng nhất:
+
+1. **URI không mở được là lỗi config, nên nó thuộc preflight.** `open_tracker` nổ
+   `TrackingUnavailable`; chỉ *thiếu mlflow* còn được rơi về `NullTracker` (extra
+   `tracking` là tuỳ chọn có chủ đích). Lỗi **giữa** grid thì `SafeTracker` lo —
+   một ô đã chạy 131 giây không được mất vì tracking server chết.
+2. `sqlite:///mlflow.db`, và `.gitignore` thêm `mlflow.db`/`mlartifacts/`.
+3. **`pipeline/experiments/backfill.py`** — dựng lại view MLflow **từ file báo
+   cáo**, không chạy lại eval. `tracking.py` tuyên bố "MLflow là view, không phải
+   nguồn sự thật"; module này *kiểm* câu đó thay vì để nó là một khẳng định. Và
+   nó cứu 14 ô vừa chạy khỏi việc phải chạy lại 25 phút.
+
+Để hai đường không thể lệch nhau: cả `_run_one` và `backfill` gọi
+`report_params(json.loads(...))` trên **cùng byte** — có test ghim
+`_write_report` ghi đúng `report.to_json()`.
+
+### Lỗ hổng phát hiện khi viết backfill → `TD-19`
+
+Một file `runs/*-retrieval.json` **không nói được nó đo trên golden set nào** (và
+với `min_overlap_ratio` bao nhiêu). Hôm nay vô hại vì chỉ có một golden set;
+`TD-13` sẽ tạo cái thứ hai với **cùng đường dẫn**. Cùng họ với `TD-12`. Phía grid
+đã an toàn (`fingerprint` băm `golden_digest` từ `W2-07`), phía báo cáo lẻ chưa.
+
+### Log: 97% là nhiễu
+
+2320 dòng, **2270 dòng (97%) là `HTTP Request: HEAD huggingface.co/...`**. DoD "1
+lệnh chạy hết grid" đạt về chức năng mà không đạt về việc đọc được nó đã chạy gì —
+với một lệnh 13 phút thì đó là cùng một yêu cầu. Hạ từng logger tường minh,
+**không** hạ root (cảnh báo span của `_resolve_span_labels` phải thấy được).
+
+### Grid thật: 14 ô, và 5 con số tái lập đúng từng chữ số
+
+| Ô | nDCG@10 | Số đã công bố |
+|---|---|---|
+| `e1-baseline-dense` | 0,1621 | `W2-01` baseline ✅ |
+| `e1-bgem3-dense` | 0,4442 | `W2-01` BGE-M3 ✅ |
+| `e1-bgem3-sparse` | 0,3733 | `W2-03` ✅ |
+| `e1-rrf-bgem3-hybrid-k1` | 0,4563 | `W2-04` `k=1` ✅ |
+| `e1-rr-…-onhybrid-rc50` | 0,6481 (hit@1 0,5598) | `W2-05` ✅ |
+
+Đợt này refactor `_eval_against_index` → `IndexSession`, đổi
+`_resolve_span_labels(retriever)` → `(store)`, và ghi file qua `os.replace`. Năm
+dòng trên là cách duy nhất biết những thay đổi đó **không đổi một con số nào**.
+
+Về chỗ đổi `retriever` → `store`: đã kiểm cả bốn nhánh đều forward
+`fetch_doc_chunks` và mọi báo cáo `reranked` đã công bố **đều có**
+`config.span_resolution` — nếu không thì số `W2-05` đã được chấm bằng nhãn cũ và
+không so được với dense. Refactor biến tính chất đó thành **cấu trúc**.
+
+### Ghi chú từ log: `chunk550` đổi TOÀN BỘ 209 nhãn
+
+```
+[1] baseline : 209 tính lại · 33 giữ nhãn cũ ·   9 đổi nhãn
+[2] chunk550 : 209 tính lại · 33 giữ nhãn cũ · 209 đổi nhãn
+[3] bgem3    : 209 tính lại · 33 giữ nhãn cũ ·   9 đổi nhãn
+```
+
+`G2`/`TD-11` hiện ra trực tiếp: recall@k/nDCG/MAP của `chunk550` không so được với
+hai ô kia. `compare.py` tự từ chối; `n_relevant_mean` trên MLflow là chỗ nhìn thấy.
+
+### Dự đoán: 2/6 đúng, 3 sai, 1 nửa
+
+Ba lần sai đều là **đánh giá quá cao độ khó** — hai lần tưởng một thứ không tách
+được (`D3`) hoặc không cùng tồn tại được (`D6`: mlflow + torch CUDA chạy êm,
+`uv sync --all-extras` **3,9 s** nhờ hardlink từ `D:\uv-cache`), một lần tưởng
+phải tự tối ưu thứ thư viện đã tối ưu (`D2`). Hướng lệch **ngược** với `W2-05`, ở
+đó tôi đánh giá quá thấp chi phí cross-encoder ba lần liền.
+
+### Trạng thái
+
+**1096 test xanh** (1020 → 1096: +76 unit) · ruff + `mypy --strict` sạch trên 110
+file · `W2` 7/9 · tổng 27/77.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration` · `make test-gpu`.
+2. **Trước `W2-08`: `--category`/`--lang` cho `compare.py`**, rồi **xoá**
+   `scripts/category_compare.py`. DoD `W2-09` đòi nhận xét theo category, và thiếu
+   chiều đó đã để một mức tụt có ý nghĩa của `W2-04` đi qua không ai thấy.
+3. **`W2-08`** đã có dữ liệu 14 ô từ `make exp`, nhưng DoD của nó đòi **`p`/CI cho
+   từng dòng** — đó là `compare.py`, chưa chạy. Grid **không** phải `W2-08`.
+4. ⚠️ **`TD-19` làm TRƯỚC `TD-13`**, không phải sau: thêm `golden`/`golden_digest`/
+   `min_overlap_ratio` vào `config` của `EvalReport`.
+5. ⚠️ Bẫy tooling lặp **lần thứ ba**: heredoc `<<'PY'` chứa docstring Python với
+   `'''` làm bash báo `unexpected EOF`. Cách chạy được: ghi script ra scratchpad
+   bằng Write rồi `uv run python <path>`.
+6. ⚠️ Cột `p95` của grid dùng để **sàng**, không để kết luận: 13 phút chạy liên
+   tục trên GPU laptop, không có đối chứng thứ tự. Số độ trễ đáng tin đến từ probe
+   riêng (`W2-04` §6, `W2-06` §5).
+
+---
+

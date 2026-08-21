@@ -48,7 +48,14 @@ from .spans import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["EvalReport", "QueryScore", "evaluate_run", "run_retrieval_eval"]
+__all__ = [
+    "EvalReport",
+    "IndexSession",
+    "QueryScore",
+    "evaluate_run",
+    "open_index",
+    "run_retrieval_eval",
+]
 
 DEFAULT_K_VALUES = (1, 5, 10, 20)
 
@@ -330,6 +337,117 @@ def run_retrieval_eval(
     )
 
 
+class IndexSession:
+    """Một index đã mở: config + model embedding + store + nhãn span đã phân giải.
+
+    Tách ra ở `W2-07`. Trước đó `_eval_against_index` làm cả bốn việc trong một
+    hàm — đúng cho một lần chạy, sai cho một grid: `W2-08` đo **bốn nhánh trên
+    cùng một index**, và làm theo hàm cũ thì BGE-M3 (2,2 GB) được nạp lại bốn
+    lần và nhãn span được quét lại bốn lần.
+
+    Hai thứ được chia sẻ ở đây có tính chất **khác nhau**, và đó là điểm đáng ghi:
+
+    * **Model + store** chia sẻ để tiết kiệm thời gian. Thuần tối ưu, không đổi
+      con số nào.
+    * **Nhãn span** chia sẻ vì chúng là hàm của `(index, min_overlap_ratio)` **chứ
+      không của nhánh** — `_resolve_span_labels` chỉ gọi `fetch_doc_chunks`, và
+      mọi nhánh đều uỷ nhiệm việc đó xuống cùng một store. Tính lại mỗi nhánh cho
+      **đúng cùng một kết quả**, nên chia sẻ không chỉ nhanh hơn mà còn *nói ra*
+      được điều `compare.py` cần: các ô cùng index dùng cùng nhãn nên so theo cặp
+      được; ô khác index thì không (xem `G2`).
+    """
+
+    def __init__(self, index_config_path: Path) -> None:
+        # Import cục bộ: eval chấm điểm từ file `--retrieved` không cần qdrant-client.
+        from rag_core.settings import get_settings
+
+        from ..indexing.config import load_index_config
+
+        self.path = Path(index_config_path)
+        self.config = load_index_config(self.path)
+        settings = get_settings()
+        self.embeddings = self.config.build_embeddings()
+        self.store = self.config.build_retriever(
+            self.embeddings,
+            url=settings.qdrant_url,
+            api_key=(
+                settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None
+            ),
+        )
+        # Kiểm schema **trước** khi quét span và trước khi truy vấn. Config eval và
+        # collection thật có thể lệch nhau (đổi model → đổi số chiều), và không có
+        # bước này thì lỗi hiện ra sau vài giây quét vô ích — hoặc không hiện ra.
+        self.store.verify_schema()
+        self._labels: dict[float, tuple[Sequence[GoldenQuery], QueryResolution | None]] = {}
+
+    def resolve_labels(
+        self, queries: Sequence[GoldenQuery], min_overlap_ratio: float
+    ) -> tuple[Sequence[GoldenQuery], QueryResolution | None]:
+        """Nhãn span tính theo ĐÚNG index này, nhớ lại theo `min_overlap_ratio`.
+
+        Đây là chỗ golden set thoát khỏi việc phụ thuộc cấu hình chunking
+        (`TD-12`): `relevant_chunk_ids` ghi trong file chỉ đúng với cấu hình lúc
+        gán nhãn, còn span thì luôn đúng.
+        """
+        cached = self._labels.get(min_overlap_ratio)
+        if cached is None:
+            cached = _resolve_span_labels(self.store, queries, min_overlap_ratio)
+            self._labels[min_overlap_ratio] = cached
+        return cached
+
+    def eval_branch(
+        self,
+        queries: Sequence[GoldenQuery],
+        *,
+        run_name: str,
+        top_k: int,
+        mode: str = "dense",
+        branch_options: dict[str, Any] | None = None,
+        min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
+    ) -> EvalReport:
+        """Đo một nhánh trên index đang mở.
+
+        `mode` chọn **nhánh** truy hồi trên cùng index đó (`W2-03`). Nó không phải
+        một trường của `IndexConfig` vì nó không quyết định vector nào được ghi —
+        xem `rag_core/retrieval/branch.py`.
+        """
+        from rag_core.retrieval import build_branch
+
+        retriever = build_branch(self.store, mode, **(branch_options or {}))
+
+        config: dict[str, Any] = {
+            "index_config": str(self.path),
+            "index_fingerprint": self.config.fingerprint,
+            "collection": self.config.collection_name,
+            "embedding_model": self.config.embedding_model,
+            "retrieval_mode": mode,
+            "branch_options": {k: v for k, v in (branch_options or {}).items() if v is not None},
+            "chunking": json.loads(self.config.chunking.model_dump_json()),
+        }
+
+        resolved, resolution = self.resolve_labels(queries, min_overlap_ratio)
+        if resolution is not None:
+            config["span_resolution"] = json.loads(resolution.model_dump_json())
+
+        return run_retrieval_eval(
+            retriever,
+            resolved,
+            run_name=run_name,
+            top_k=top_k,
+            config=config,
+        )
+
+
+def open_index(index_config_path: Path) -> IndexSession:
+    """Mở index từ chính config đã build nó.
+
+    Dùng lại **cùng một file config** thay vì khai báo model/collection lần nữa ở
+    phía eval. Nếu hai bên khai báo riêng thì sớm muộn cũng lệch — eval sẽ đo một
+    index được build bằng model khác, và không có gì báo lỗi cả.
+    """
+    return IndexSession(index_config_path)
+
+
 def _eval_against_index(
     index_config_path: Path,
     queries: Sequence[GoldenQuery],
@@ -340,60 +458,14 @@ def _eval_against_index(
     branch_options: dict[str, Any] | None = None,
     min_overlap_ratio: float = DEFAULT_MIN_OVERLAP_RATIO,
 ) -> EvalReport:
-    """Dựng retriever từ chính config đã build index rồi chạy eval.
-
-    Dùng lại **cùng một file config** thay vì khai báo model/collection lần nữa
-    ở phía eval. Nếu hai bên khai báo riêng thì sớm muộn cũng lệch — eval sẽ đo
-    một index được build bằng model khác, và không có gì báo lỗi cả.
-
-    `mode` chọn **nhánh** truy hồi trên cùng index đó (`W2-03`). Nó không phải
-    một trường của `IndexConfig` vì nó không quyết định vector nào được ghi —
-    xem `rag_core/retrieval/branch.py`.
-    """
-    # Import cục bộ: eval chấm điểm từ file `--retrieved` không cần qdrant-client.
-    from rag_core.retrieval import build_branch
-    from rag_core.settings import get_settings
-
-    from ..indexing.config import load_index_config
-
-    index_config = load_index_config(index_config_path)
-    settings = get_settings()
-    embeddings = index_config.build_embeddings()
-    store = index_config.build_retriever(
-        embeddings,
-        url=settings.qdrant_url,
-        api_key=(settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None),
-    )
-    # Kiểm schema **trước** khi quét span và trước khi truy vấn. Đây là chỗ trả
-    # lời chính cái lo của docstring trên: config eval và collection thật có thể
-    # lệch nhau (đổi model → đổi số chiều), và không có bước này thì lỗi hiện ra
-    # sau vài giây quét vô ích — hoặc tệ hơn là không hiện ra.
-    store.verify_schema()
-    retriever = build_branch(store, mode, **(branch_options or {}))
-
-    config: dict[str, Any] = {
-        "index_config": str(index_config_path),
-        "index_fingerprint": index_config.fingerprint,
-        "collection": index_config.collection_name,
-        "embedding_model": index_config.embedding_model,
-        "retrieval_mode": mode,
-        "branch_options": {k: v for k, v in (branch_options or {}).items() if v is not None},
-        "chunking": json.loads(index_config.chunking.model_dump_json()),
-    }
-
-    # Nhãn theo span được tính lại theo ĐÚNG index đang đo. Đây là chỗ golden set
-    # thoát khỏi việc phụ thuộc cấu hình chunking (`TD-12`): `relevant_chunk_ids`
-    # ghi trong file chỉ đúng với cấu hình lúc gán nhãn, còn span thì luôn đúng.
-    queries, resolution = _resolve_span_labels(retriever, queries, min_overlap_ratio)
-    if resolution is not None:
-        config["span_resolution"] = json.loads(resolution.model_dump_json())
-
-    return run_retrieval_eval(
-        retriever,
+    """Một index, một nhánh — đường của CLI. Grid đi qua `IndexSession` trực tiếp."""
+    return open_index(index_config_path).eval_branch(
         queries,
         run_name=run_name,
         top_k=top_k,
-        config=config,
+        mode=mode,
+        branch_options=branch_options,
+        min_overlap_ratio=min_overlap_ratio,
     )
 
 

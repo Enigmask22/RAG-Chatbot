@@ -26,7 +26,13 @@ uploads/
 
 # Cache & artifact của pipeline
 .cache/
+# Store MLflow. `mlruns/` là file store cũ (mlflow < 3); `mlflow.db` +
+# `mlartifacts/` là backend hiện dùng. Không commit: nó là một *view* dựng lại
+# được từ `plans/reports/runs/` bằng `make exp-backfill` — đó là toàn bộ điểm
+# của `pipeline/experiments/backfill.py`.
 mlruns/
+mlflow.db
+mlartifacts/
 data/raw/
 !data/**/.gitkeep
 

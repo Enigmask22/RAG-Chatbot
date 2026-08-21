@@ -45,6 +45,13 @@ dev = [
 data = [
     "dvc>=3.55",
 ]
+# MLflow chỉ dùng ở **pipeline plane** (theo dõi thí nghiệm offline). Để nó ngoài
+# `pipeline` extra vì nó kéo theo cả một web stack (flask, alembic, sqlalchemy,
+# gunicorn/waitress) chỉ để phục vụ UI — CI chạy unit test không cần thứ đó, và
+# `pipeline/experiments/tracking.py` chạy đúng khi thiếu nó.
+tracking = [
+    "mlflow>=2.14",
+]
 
 [build-system]
 requires = ["hatchling"]

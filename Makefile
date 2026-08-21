@@ -202,6 +202,30 @@ filter-probe:  ## Đo giá của metadata filter theo độ chọn lọc (W2-06)
 	$(PY) python scripts/filter_probe.py --config $(INDEX_CONFIG) --mode $(MODE) \
 		--report plans/reports/probes/w2-06-filter-probe.json
 
+# ---------------------------------------------------------------- thí nghiệm
+EXP ?= exp-001-retrieval
+EXP_CONFIG = configs/eval/$(EXP).yaml
+
+.PHONY: exp-dry
+exp-dry:  ## In bảng grid + preflight, KHÔNG nạp model và không chạy ô nào (W2-07)
+	$(PY) python -m pipeline.experiments.runner --config $(EXP_CONFIG) --dry-run
+
+.PHONY: exp
+exp:  ## Chạy hết grid thí nghiệm, resume được (EXP=exp-001-retrieval)
+	$(PY) python -m pipeline.experiments.runner --config $(EXP_CONFIG) --keep-going
+
+.PHONY: exp-rerun
+exp-rerun:  ## Chạy lại CẢ những ô state ghi là đã xong
+	$(PY) python -m pipeline.experiments.runner --config $(EXP_CONFIG) --no-resume --keep-going
+
+.PHONY: exp-backfill
+exp-backfill:  ## Dựng lại view MLflow từ báo cáo đã có, KHÔNG chạy lại eval (W2-07)
+	$(PY) python -m pipeline.experiments.backfill --config $(EXP_CONFIG)
+
+.PHONY: mlflow-ui
+mlflow-ui:  ## Mở MLflow UI trên store cục bộ (http://127.0.0.1:5000)
+	$(PY) mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5000
+
 .PHONY: rerank-probe
 rerank-probe:  ## Trần vùng phủ + truncation + bão hoà sigmoid + độ trễ rerank (W2-05)
 	$(PY) python scripts/rerank_probe.py --config $(INDEX_CONFIG) \

@@ -1,7 +1,14 @@
 """Tầng truy hồi."""
 
 from .base import Retriever
-from .branch import DEFAULT_RERANK_BASE, RERANK_OPTIONS, SUPPORTED_MODES, build_branch
+from .branch import (
+    DEFAULT_RERANK_BASE,
+    HYBRID_OPTIONS,
+    RERANK_OPTIONS,
+    SUPPORTED_MODES,
+    build_branch,
+    check_branch_options,
+)
 from .filters import FILTER_FIELDS, FilterSpec, MetadataFilter, build_filter
 from .hybrid import DEFAULT_CANDIDATE_K, QdrantHybridRetriever
 from .qdrant_store import (
@@ -23,6 +30,7 @@ __all__ = [
     "DEFAULT_RERANK_CANDIDATES",
     "DENSE_VECTOR_NAME",
     "FILTER_FIELDS",
+    "HYBRID_OPTIONS",
     "PAYLOAD_INDEXES",
     "RERANK_OPTIONS",
     "RRF_K",
@@ -38,6 +46,7 @@ __all__ = [
     "Retriever",
     "build_branch",
     "build_filter",
+    "check_branch_options",
     "chunk_point_id",
     "points_to_chunks",
     "reciprocal_rank_fusion",
