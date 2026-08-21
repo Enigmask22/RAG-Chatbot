@@ -1626,4 +1626,98 @@ cắt danh sách *sau* khi đã chấm xong nên nó không rẻ đi được đ
 - `compare.py` cần `--category`/`--lang`, rồi xoá `scripts/category_compare.py`.
 - `W2-06`: filter ở tầng Qdrant, ca isolation hai tenant.
 
+## 2026-08-21 · `W2-06` — metadata filter, và phần thiếu không phải phần tôi đi tìm
+
+Vào hạng mục để thêm `date range` + ca isolation hai tenant. Làm cả hai. Nhưng cái
+đáng nhất đến từ việc đổi câu hỏi: thay vì "làm sao lọc theo metadata" (đã có từ
+`W1-07`) thì hỏi **"còn đường nào vào dữ liệu mà không qua filter?"**
+
+### ⭐ Đường `fetch` không hề đi qua filter
+
+| method | dùng ở đâu | filter trước `W2-06` |
+|---|---|---|
+| `retrieve()` | truy vấn vector | ✅ từ `W1-07` |
+| `fetch_chunks(chunk_ids)` | nhãn golden set; **`W4-09` giải citation** | ❌ không có tham số |
+| `fetch_doc_chunks(doc_ids)` | ánh xạ span; **`W4-06` mở rộng ngữ cảnh** | ❌ không có tham số |
+
+Một `chunk_id` lấy từ log hoặc từ câu trả lời cũ trả về **nội dung đầy đủ của
+tenant khác**, dù mọi truy vấn vector đều lọc đúng. Khó thấy vì hai đường trông
+giống nhau ở tầng gọi, nhưng `client.retrieve(ids=...)` của Qdrant **không nhận
+filter** — vá nó là chuyển sang `scroll`, không phải thêm một tham số. Giữ hai
+đường code có chủ ý: đường không filter dùng `retrieve` (nóng, dùng cho phân giải
+nhãn, lấy đúng point theo id, không phân trang).
+
+**Bài học phương pháp, không phải bài học Qdrant.** DoD viết "filter áp ở tầng
+Qdrant" và đường search đã thoả mãn nó từ trước. Đọc DoD như checklist thì hạng
+mục này chỉ còn là viết test; đọc nó như **câu hỏi về bề mặt tấn công** thì nó tìm
+ra hai lỗ.
+
+### Hướng của chế độ hỏng quyết định mọi mặc định
+
+Với `tenant_id`, hai hướng hỏng **không đối xứng**: quá chặt → thiếu kết quả,
+người dùng thấy và báo lại; quá lỏng → **rò dữ liệu**, không ai thấy, kể cả người
+bị rò. `MetadataFilter` (`extra="forbid"`, `frozen`) đóng bốn cách viết filter cho
+0 kết quả mà không báo lỗi — khoá gõ sai, `[]`, khoảng ngược, và chunk thiếu
+`tenant_id`. Ba cái đầu giờ nổ; cái thứ tư là hành vi Qdrant nên nó có test **ghim**
+thay vì được tin. `frozen` là quyết định bảo mật: `W4` kiểm rồi truyền tiếp thì
+filter đổi được cho phép nới ra *sau* khi đã kiểm.
+
+⚠️ **`W2-06` không đóng được chuyện quan trọng nhất**: nó không ép người gọi *phải*
+truyền `tenant_id`. `rag_core` không biết được "không filter" là đúng (eval chạy
+toàn corpus) hay là lỗ rò (serving quên). Chỗ ép là `W4-04`. Có test ghim hành vi
+**hiện tại** chứ không ghim hành vi mong muốn.
+
+### ⚠️ Suýt báo cáo nhiễu như một kết quả
+
+Hai lượt đo đầu (chỉ cột đầu-cuối) cho một bảng **đơn điệu theo độ chọn lọc** rất
+thuyết phục, và tôi đã suýt viết "lọc làm truy vấn nhanh hơn, càng chặt càng
+nhanh". Ba thứ chặn lại:
+
+1. **Đối chứng thứ tự** — lặp lại đúng ca đầu ở cuối bảng: 45,2 vs 46,1, lệch 2%.
+2. **Cùng một ca, hai lượt, lệch ±11 ms.** Thứ tự trong bảng là hoán vị, không
+   phải xu hướng.
+3. **p50 lệch 30% trong khi p95 lệch 3%** → phần biến động không nằm ở thứ đang đo.
+
+Cách sửa **không** phải tăng mẫu (n=200 vẫn cho cùng ca hai giá trị 32,5 và 43,9)
+mà là **phân rã**: embed truy vấn một lần ngoài vòng bấm giờ. Xong thì trải từ 30%
+tụt xuống **1,8%**. Bài học `W2-04` §6 lần thứ hai: số không cộng lại đúng thì tách
+ra, đừng lấy thêm mẫu.
+
+Kết quả sau khi phân rã: **lọc không tốn gì** — tám ca từ 20,5% tới 100% độ chọn
+lọc nằm trong **29,98–30,54 ms**. Ca 0 point khớp **nhanh gấp đôi** (15,39 ms):
+Qdrant cắt sớm khi cardinality bằng 0, tức "tenant mới chưa có tài liệu" là đường
+*nhanh*. Dự đoán `D4`/`D5` sai cả hai.
+
+### Migrate không cần build lại index
+
+Dự đoán `D3` sai theo hướng có lợi: tôi mặc định "đổi payload = build lại index",
+trong khi payload và vector là **hai** thứ Qdrant cập nhật độc lập.
+`make backfill-payload BUNDLE=bgem3` cập nhật **15.814/15.814** point, tạo index
+`published_at`, chạm **0** vector — nên mọi con số eval từ `W2-01` đến `W2-05` vẫn
+đúng nguyên vẹn. Build lại thì chúng *có thể* đúng và tôi sẽ phải chứng minh.
+
+### mypy bắt một chỗ nới nửa vời
+
+`build_filter`/`fetch_*` nhận `MetadataFilter` nhưng `Retriever.retrieve` vẫn khai
+`dict` → API mới chỉ dùng được ở một nửa điểm vào, và nửa còn lại chỉ hỏng khi có
+người chạy `mypy`. 25 lỗi, gồm 4 chỗ vi phạm Liskov ở `Retriever` giả trong test.
+Sửa bằng alias dùng chung `type FilterSpec = MetadataFilter | dict[str, Any] | None`.
+
+### Trạng thái
+
+**1020 test xanh** (974 → 1020: +24 unit, +22 integration) · ruff + mypy --strict
+sạch trên 104 file · `W2` 6/9 · tổng 26/77.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration` · `make test-gpu`.
+2. **`W2-07`** (experiment runner + MLflow) là việc tiếp theo — `W2-08` cần nó.
+3. Trước `W2-08`: `--category`/`--lang` cho `compare.py`, rồi **xoá**
+   `scripts/category_compare.py`. DoD `W2-09` đòi nhận xét theo category, và thiếu
+   chiều đó đã để một mức tụt có ý nghĩa của `W2-04` đi qua không ai thấy.
+4. ⚠️ `doc_type` **không** dùng được làm chiều `W2-08`: khớp 15.814/15.814 point.
+   `lang` thì thật (59,4%/40,6%).
+5. ⚠️ Bẫy tooling lặp lần thứ hai: `\` + newline trong heredoc `<<'PY'` bị ăn mất
+   khi ghi Makefile. Dùng Edit cho recipe có continuation.
+
 ---

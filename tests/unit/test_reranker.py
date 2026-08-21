@@ -27,6 +27,7 @@ from rag_core.reranking import (
 )
 from rag_core.retrieval import (
     DEFAULT_RERANK_CANDIDATES,
+    FilterSpec,
     QdrantDenseRetriever,
     RerankedRetriever,
     Retriever,
@@ -68,14 +69,14 @@ class FakeBase(Retriever):
         self.name = name
         self.keys = list(keys)
         self.requested: list[int] = []
-        self.filters_seen: list[dict[str, Any] | None] = []
+        self.filters_seen: list[FilterSpec] = []
 
     def retrieve(
         self,
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         self.requested.append(top_k)
         self.filters_seen.append(filters)
@@ -374,7 +375,7 @@ class TestForwarding:
                 query: str,
                 top_k: int = 10,
                 *,
-                filters: dict[str, Any] | None = None,
+                filters: FilterSpec = None,
             ) -> list[RetrievedChunk]:
                 return []
 

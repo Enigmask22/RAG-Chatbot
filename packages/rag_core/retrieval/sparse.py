@@ -26,10 +26,11 @@ chấm bằng **bộ nhãn khác** với lần chạy dense. Hai con số vẫn 
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..schemas import Chunk, RetrievedChunk
 from .base import Retriever
+from .filters import FilterSpec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -62,7 +63,7 @@ class QdrantSparseRetriever(Retriever):
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         return self.store.retrieve_sparse(query, top_k, filters=filters)
 

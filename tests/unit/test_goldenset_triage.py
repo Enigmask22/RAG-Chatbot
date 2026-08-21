@@ -16,7 +16,6 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -31,6 +30,7 @@ from pipeline.goldenset.triage import (
     write_triage,
 )
 from rag_core.retrieval.base import Retriever
+from rag_core.retrieval.filters import FilterSpec
 from rag_core.schemas import Chunk, Language, RetrievedChunk
 
 
@@ -94,7 +94,7 @@ class FakeRetriever(Retriever):
         self.name = "fake"
 
     def retrieve(
-        self, query: str, top_k: int = 10, *, filters: dict[str, Any] | None = None
+        self, query: str, top_k: int = 10, *, filters: FilterSpec = None
     ) -> list[RetrievedChunk]:
         self.calls.append((query, top_k))
         hits = self.plan.get(query, [])[:top_k]
@@ -117,7 +117,7 @@ class RetrieverWithoutFetch(Retriever):
     """Retriever không có `fetch_chunks` — triage phải chạy được, chỉ bỏ 1 phép kiểm."""
 
     def retrieve(
-        self, query: str, top_k: int = 10, *, filters: dict[str, Any] | None = None
+        self, query: str, top_k: int = 10, *, filters: FilterSpec = None
     ) -> list[RetrievedChunk]:
         return [RetrievedChunk(chunk=_chunk("doc-a::00001"), score=0.5, rank=1)]
 

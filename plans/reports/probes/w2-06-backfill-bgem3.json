@@ -1,0 +1,9 @@
+{
+  "collection": "rag_bgem3",
+  "points": 15814,
+  "created_indexes": [
+    "published_at"
+  ],
+  "updated_points": 15814,
+  "dry_run": false
+}

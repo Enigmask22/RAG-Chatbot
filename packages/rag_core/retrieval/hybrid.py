@@ -27,12 +27,13 @@ nông thì mất đúng cái lợi mà hợp nhất mang lại.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ..schemas import Chunk, RetrievalMode, RetrievedChunk
 from .base import Retriever
+from .filters import FilterSpec
 from .qdrant_store import (
     DENSE_VECTOR_NAME,
     SPARSE_VECTOR_NAME,
@@ -94,7 +95,7 @@ class QdrantHybridRetriever(Retriever):
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         from qdrant_client import models
 

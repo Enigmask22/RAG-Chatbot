@@ -1,6 +1,6 @@
 # `plans/reports/` — bản đồ
 
-> Cập nhật 2026-08-21 · 98 file, chia 5 folder theo **ai sinh ra nó**, không theo chủ đề.
+> Cập nhật 2026-08-21 · 102 file, chia 5 folder theo **ai sinh ra nó**, không theo chủ đề.
 
 Trước đây 97 file nằm phẳng trong một thư mục, và ba loại rất khác nhau bị trộn
 lẫn: tường thuật viết tay, output máy sinh, và artifact dữ liệu. Ranh giới dùng để
@@ -38,6 +38,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-03` sparse | [`tasks/w2-03-sparse-retriever.md`](tasks/w2-03-sparse-retriever.md) | `bgem3-sparse` | `cmp-bgem3-vs-bgem3-sparse` | `w2-03-known-item.json` | Kém dense trên golden set, **thắng áp đảo** ở tra mã |
 | `W2-04` RRF | [`tasks/w2-04-rrf.md`](tasks/w2-04-rrf.md) | `bgem3-rrf` (k=60), `-k1`, `-k2`, `-k5`, `-k10`, `-c20`, `-c100`, `-k1-c20`, `-k1-c100`, `-w2` | `cmp-bgem3-vs-bgem3-rrf`, `cmp-bgem3-vs-bgem3-rrf-k1` | `w2-04-known-item.json`, `-k1.json` | **`k=60` của bài báo là lựa chọn tệ nhất**; `k=1` thắng nhưng chỉ 3/15 có ý nghĩa |
 | `W2-05` reranker | [`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) | `bgem3-rr-c20`, `-c50`, `-c100`, `-dense-c50` | `cmp-bgem3-vs-bgem3-rr-c50`, `cmp-bgem3-rr-c20-vs-...c50`, `...c50-vs-...c100`, `cmp-bgem3-rr-dense-c50-vs-bgem3-rr-c50`, `cmp-bgem3-rrf-k1-c20-vs-bgem3-rr-c50` | `w2-05-known-item.json`, `w2-05-rerank-probe.json` | `hit_rate@1` **+22,0 điểm**, 15/15 có ý nghĩa; **DoD 400 ms không đạt** |
+| `W2-06` metadata filter | [`tasks/w2-06-metadata-filter.md`](tasks/w2-06-metadata-filter.md) | — | — | `w2-06-filter-probe.json`, `w2-06-backfill-bgem3.json` | Phần thiếu là **đường `fetch`**, không phải date range; lọc **không tốn gì** |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -63,6 +64,8 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make truncation` | `probes/truncation-<BUNDLE>.json` |
 | `make known-item` | `probes/w2-03-known-item.json` |
 | `make rerank-probe` | `probes/w2-05-rerank-probe.json` |
+| `make filter-probe` | `probes/w2-06-filter-probe.json` |
+| `make backfill-payload` | `probes/w2-06-backfill-<BUNDLE>.json` |
 | `make goldenset-anchor` / `-freeze` | `goldenset/goldenset-anchor.json` / `-v1.json` |
 | `python scripts/category_compare.py` | *không ghi file* — in ra stdout, xem cảnh báo dưới |
 

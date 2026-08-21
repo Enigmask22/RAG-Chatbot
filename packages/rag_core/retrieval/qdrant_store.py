@@ -34,13 +34,17 @@ from ..embedding.base import EmbeddingProvider
 from ..embedding.sparse import SparseVector
 from ..schemas import Chunk, RetrievalMode, RetrievedChunk
 from .base import Retriever
+from .filters import FILTER_FIELDS, FilterSpec, MetadataFilter, build_filter
 
 if TYPE_CHECKING:
     from qdrant_client import QdrantClient
 
 __all__ = [
     "DENSE_VECTOR_NAME",
+    "FILTER_FIELDS",
+    "PAYLOAD_INDEXES",
     "SPARSE_VECTOR_NAME",
+    "MetadataFilter",
     "QdrantDenseRetriever",
     "build_filter",
     "chunk_point_id",
@@ -52,6 +56,19 @@ logger = logging.getLogger(__name__)
 
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
+
+#: (field payload, kiểu index Qdrant) cho mọi field lọc được. Phải phủ đúng
+#: `FILTER_FIELDS` — có test canh hai chiều, vì lệch chiều nào cũng hỏng im lặng:
+#: field lọc được mà không có index thì quét toàn bộ collection; có index mà
+#: `_payload` không ghi thì mọi filter trên nó trả rỗng.
+PAYLOAD_INDEXES: tuple[tuple[str, str], ...] = (
+    ("chunk_id", "keyword"),
+    ("doc_id", "keyword"),
+    ("lang", "keyword"),
+    ("doc_type", "keyword"),
+    ("tenant_id", "keyword"),
+    ("published_at", "datetime"),
+)
 _ID_NAMESPACE = uuid.UUID("6f4f2f7a-6f0c-5d3f-9a1e-0c7d9b2a4e11")
 
 
@@ -107,29 +124,6 @@ def schema_problems(
             f"hiện tại chỉ sinh dense — nửa index sẽ không được dùng tới"
         )
     return problems
-
-
-def build_filter(filters: dict[str, Any] | None) -> Any:
-    """Đổi `{field: giá trị hoặc danh sách}` thành `models.Filter` của Qdrant.
-
-    Hàm module chứ không phải method: `W2-04` (RRF) dựng hai truy vấn trong **một**
-    request nên nó cần filter mà không đi qua một instance store nào.
-    """
-    from qdrant_client import models
-
-    if not filters:
-        return None
-    # Chú thích kiểu tường minh: `list` là invariant nên `list[FieldCondition]`
-    # không khớp `list[Condition]` mà `Filter.must` mong đợi.
-    conditions: list[models.Condition] = []
-    for key, value in filters.items():
-        if isinstance(value, list | tuple | set):
-            conditions.append(
-                models.FieldCondition(key=key, match=models.MatchAny(any=list(value)))
-            )
-        else:
-            conditions.append(models.FieldCondition(key=key, match=models.MatchValue(value=value)))
-    return models.Filter(must=conditions)
 
 
 def points_to_chunks(points: Sequence[Any], *, mode: RetrievalMode) -> list[RetrievedChunk]:
@@ -274,25 +268,105 @@ class QdrantDenseRetriever(Retriever):
             },
             sparse_vectors_config=sparse_config,
         )
-        # Index payload cho các field sẽ lọc ở W2-06. Tạo sớm thì rẻ; tạo sau khi
-        # đã có vài trăm nghìn point thì Qdrant phải quét lại toàn bộ.
-        for field, schema in (
-            ("chunk_id", "keyword"),
-            ("doc_id", "keyword"),
-            ("lang", "keyword"),
-            ("doc_type", "keyword"),
-            ("tenant_id", "keyword"),
-        ):
+        # Index payload cho các field lọc được (`W2-06`). Tạo sớm thì rẻ; tạo sau
+        # khi đã có vài trăm nghìn point thì Qdrant phải quét lại toàn bộ.
+        #
+        # `published_at` là `datetime`, không phải `keyword`: nó được ghi dưới
+        # dạng chuỗi RFC3339 nên index keyword *cũng* dựng được và mọi truy vấn
+        # khớp-chính-xác vẫn chạy — rồi `DatetimeRange` sẽ không dùng được index
+        # đó và Qdrant lùi về quét. Hỏng về hiệu năng, không về kết quả, tức đúng
+        # loại không ai phát hiện.
+        for field, schema in PAYLOAD_INDEXES:
             self.client.create_payload_index(
                 collection_name=self.collection,
                 field_name=field,
                 field_schema=schema,
             )
 
+    def ensure_payload_indexes(self) -> list[str]:
+        """Dựng payload index còn thiếu trên collection **đã tồn tại**.
+
+        Tách khỏi `ensure_collection` vì hai việc khác nhau về thời điểm:
+        `ensure_collection` chạy khi build index mới, còn method này là đường
+        **migrate** — `W2-06` thêm `published_at` vào `PAYLOAD_INDEXES` và các
+        collection dựng trước đó (`rag_bgem3`, 15.814 point) không có nó.
+
+        Không có nó thì `DatetimeRange` vẫn cho **kết quả đúng** — Qdrant lùi về
+        quét toàn bộ. Đó là lý do phải gọi tường minh: một filter chậm 100 lần mà
+        đúng kết quả sẽ không bao giờ tự lộ ra trong test.
+        """
+        existing = set(self.client.get_collection(self.collection).payload_schema or {})
+        created: list[str] = []
+        for field, schema in PAYLOAD_INDEXES:
+            if field in existing:
+                continue
+            self.client.create_payload_index(
+                collection_name=self.collection,
+                field_name=field,
+                field_schema=schema,
+            )
+            created.append(field)
+        return created
+
+    def backfill_flat_payload(self, *, batch: int = 512) -> int:
+        """Dựng lại field payload phẳng từ object `chunk` lồng bên trong.
+
+        Trả số point đã cập nhật. **Không** embed lại gì: vector không đổi nên
+        mọi con số eval đã công bố vẫn đúng — khác hẳn việc build lại index.
+
+        Vì sao cần: `_payload` là chỗ duy nhất biết field nào được làm phẳng, và
+        khi nó thêm một field (`W2-06` thêm `published_at`) thì mọi point ghi
+        trước đó thiếu field ấy. Point thiếu field **không khớp** `DatetimeRange`,
+        nên trước khi backfill thì `published_after=2020` sẽ trả 0 kết quả trên
+        toàn bộ corpus — đúng chế độ hỏng im lặng mà `W2-06` tồn tại để chặn, chỉ
+        là lần này do dữ liệu cũ chứ không do code.
+
+        So payload hiện có với payload đúng rồi chỉ ghi phần lệch: chạy lại lần
+        thứ hai là no-op, nên nó an toàn khi gọi trong script build.
+        """
+        updated = 0
+        offset: Any = None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                limit=batch,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload or {}
+                raw_chunk = payload.get("chunk")
+                if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
+                    continue
+                want = self._payload(Chunk.model_validate(raw_chunk))
+                missing = {
+                    key: value
+                    for key, value in want.items()
+                    if key != "chunk" and payload.get(key) != value
+                }
+                if not missing:
+                    continue
+                self.client.set_payload(
+                    collection_name=self.collection,
+                    payload=missing,
+                    points=[point.id],
+                    wait=True,
+                )
+                updated += 1
+            if offset is None:
+                break
+        return updated
+
     def count(self) -> int:
         return int(self.client.count(self.collection, exact=True).count)
 
-    def fetch_chunks(self, chunk_ids: Sequence[str]) -> dict[str, Chunk]:
+    def fetch_chunks(
+        self,
+        chunk_ids: Sequence[str],
+        *,
+        filters: FilterSpec = None,
+    ) -> dict[str, Chunk]:
         """Lấy chunk theo `chunk_id`, bỏ qua id không có trong collection.
 
         Cố ý trả dict thay vì list: người gọi hầu như luôn cần biết id **nào**
@@ -300,15 +374,31 @@ class QdrantDenseRetriever(Retriever):
         `set(chunk_ids) - result.keys()` là chỗ duy nhất phát hiện được golden set
         đang trỏ tới chunk không còn tồn tại — chuyện xảy ra ngay khi index được
         build lại với cấu hình chunking khác.
+
+        ⚠️ **`filters` có mặt ở đây vì đây là một đường vòng qua filter (`W2-06`).**
+        Tầng search (`retrieve`) đã áp filter ở Qdrant từ `W1-07`, nhưng lấy chunk
+        **theo id** thì không đi qua đó chút nào. Ở `W4` tầng serving sẽ gọi đúng
+        method này để giải citation và mở rộng ngữ cảnh (`parent_chunk_id`) — và
+        một `chunk_id` đoán được hoặc lấy từ câu trả lời cũ của tenant khác sẽ
+        trả về nội dung đầy đủ, dù mọi truy vấn vector đều đã lọc đúng.
+
+        Hai đường code là **có chủ ý**: `client.retrieve` không nhận filter
+        (Qdrant không hỗ trợ), nên có filter thì phải chuyển sang `scroll`. Giữ
+        `retrieve` cho đường không filter vì nó là đường nóng của việc phân giải
+        nhãn golden set và nó lấy đúng point theo id, không phân trang.
         """
         if not chunk_ids:
             return {}
         wanted = list(dict.fromkeys(chunk_ids))
-        points = self.client.retrieve(
-            collection_name=self.collection,
-            ids=[chunk_point_id(cid) for cid in wanted],
-            with_payload=True,
-        )
+        query_filter = build_filter(filters)
+        if query_filter is None:
+            points: Sequence[Any] = self.client.retrieve(
+                collection_name=self.collection,
+                ids=[chunk_point_id(cid) for cid in wanted],
+                with_payload=True,
+            )
+        else:
+            points = self._scroll_filtered("chunk_id", wanted, query_filter)
         found: dict[str, Chunk] = {}
         for point in points:
             raw_chunk = (point.payload or {}).get("chunk")
@@ -389,11 +479,23 @@ class QdrantDenseRetriever(Retriever):
         if chunk.metadata is not None:
             payload["lang"] = chunk.metadata.lang.value
             payload["doc_type"] = chunk.metadata.doc_type.value
+            if chunk.metadata.published_at is not None:
+                # RFC3339 là định dạng `DatetimeRange` của Qdrant nhận. Chỉ ghi
+                # khi có giá trị: ghi `None` sẽ tạo ra một field tồn-tại-mà-rỗng,
+                # và khi đó `DatetimeRange` bỏ qua point đó *im lặng* thay vì để
+                # nó rơi vào nhóm "không có ngày" mà người gọi kiểm được.
+                payload["published_at"] = chunk.metadata.published_at.isoformat()
         if "tenant_id" in chunk.extra:
             payload["tenant_id"] = chunk.extra["tenant_id"]
         return payload
 
-    def fetch_doc_chunks(self, doc_ids: Sequence[str], *, batch: int = 512) -> list[Chunk]:
+    def fetch_doc_chunks(
+        self,
+        doc_ids: Sequence[str],
+        *,
+        batch: int = 512,
+        filters: FilterSpec = None,
+    ) -> list[Chunk]:
         """Lấy **mọi** chunk của các tài liệu được nêu, không qua truy vấn vector.
 
         Cần cho việc ánh xạ nhãn golden set theo span (`pipeline/eval/spans.py`):
@@ -403,16 +505,51 @@ class QdrantDenseRetriever(Retriever):
         Dùng `scroll` với filter `doc_id` — trường này đã có payload index từ
         `ensure_collection`, nên đây là phép quét theo khoá chứ không phải quét
         toàn bộ collection.
-        """
-        from qdrant_client import models
 
+        ⚠️ `filters` (`W2-06`): đường vòng thứ hai qua filter, và rộng hơn
+        `fetch_chunks` — một `doc_id` trả về **toàn bộ** chunk của tài liệu đó.
+        Điều kiện được **gộp vào cùng một `must`** với `doc_id`, không lọc sau,
+        nên Qdrant không bao giờ trả point của tenant khác về tiến trình này.
+        """
         if not doc_ids:
             return []
         wanted = list(dict.fromkeys(doc_ids))
-        flt = models.Filter(
-            must=[models.FieldCondition(key="doc_id", match=models.MatchAny(any=wanted))]
-        )
+        points = self._scroll_filtered("doc_id", wanted, build_filter(filters), batch=batch)
         out: list[Chunk] = []
+        for point in points:
+            raw_chunk = (point.payload or {}).get("chunk")
+            if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
+                continue
+            out.append(Chunk.model_validate(raw_chunk))
+        return out
+
+    def _scroll_filtered(
+        self,
+        key: str,
+        values: Sequence[str],
+        extra: Any,
+        *,
+        batch: int = 512,
+    ) -> list[Any]:
+        """Quét mọi point có `payload[key]` thuộc `values`, gộp thêm `extra`.
+
+        Gộp bằng cách **nối `must`** chứ không lồng `Filter` vào `Filter`: hai
+        cách cho cùng kết quả nhưng một `must` phẳng là thứ Qdrant tối ưu được
+        bằng payload index, còn filter lồng thì tuỳ phiên bản.
+
+        Trả point thô để người gọi tự dựng `Chunk` — `fetch_chunks` cần dict theo
+        `chunk_id` còn `fetch_doc_chunks` cần list, và nhồi cả hai vào đây sẽ
+        thành một hàm có hai chế độ.
+        """
+        from qdrant_client import models
+
+        conditions: list[models.Condition] = [
+            models.FieldCondition(key=key, match=models.MatchAny(any=list(values)))
+        ]
+        if extra is not None:
+            conditions.extend(extra.must or [])
+        flt = models.Filter(must=conditions)
+        out: list[Any] = []
         offset: Any = None
         while True:
             points, offset = self.client.scroll(
@@ -423,11 +560,7 @@ class QdrantDenseRetriever(Retriever):
                 with_payload=True,
                 with_vectors=False,
             )
-            for point in points:
-                raw_chunk = (point.payload or {}).get("chunk")
-                if raw_chunk is None:  # pragma: no cover - point ghi bởi phiên bản cũ
-                    continue
-                out.append(Chunk.model_validate(raw_chunk))
+            out.extend(points)
             if offset is None:
                 break
         return out
@@ -472,7 +605,7 @@ class QdrantDenseRetriever(Retriever):
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         vector = np.asarray(self.embeddings.embed_query(query), dtype=np.float32).tolist()
         response = self.client.query_points(
@@ -491,7 +624,7 @@ class QdrantDenseRetriever(Retriever):
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         """Truy hồi bằng **chỉ** nhánh sparse — trọng số lexical của BGE-M3.
 
@@ -528,5 +661,5 @@ class QdrantDenseRetriever(Retriever):
     def _to_chunks(self, points: Sequence[Any], *, mode: RetrievalMode) -> list[RetrievedChunk]:
         return points_to_chunks(points, mode=mode)
 
-    def _build_filter(self, filters: dict[str, Any] | None) -> Any:
+    def _build_filter(self, filters: FilterSpec) -> Any:
         return build_filter(filters)

@@ -141,6 +141,15 @@ eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAN
 	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
 		--out plans/reports/compare/cmp-$(BASE)-vs-$(CAND).md
 
+.PHONY: backfill-payload
+backfill-payload:  ## Vá payload phẳng + payload index của collection ĐÃ build (W2-06)
+	$(PY) python -m pipeline.indexing.backfill_payload --config $(INDEX_CONFIG) \
+		--report plans/reports/probes/w2-06-backfill-$(BUNDLE).json
+
+.PHONY: backfill-payload-dry
+backfill-payload-dry:  ## Chỉ báo payload index còn thiếu, không ghi gì
+	$(PY) python -m pipeline.indexing.backfill_payload --config $(INDEX_CONFIG) --dry-run
+
 .PHONY: truncation
 truncation:  ## Đo phần text bị model embedding cắt (TD-11). Không cần Qdrant
 	$(PY) python -m pipeline.indexing.truncation_report --config $(INDEX_CONFIG) \
@@ -187,6 +196,11 @@ eval-rerank:  ## Eval reranked trên cấu hình THẮNG của W2-04 (BUNDLE=bge
 	$(PY) python -m pipeline.eval.retrieval_eval \
 		--index-config $(INDEX_CONFIG) --run-name $(RUN) --retrieval-mode reranked \
 		--rerank-base hybrid --rrf-k 1 --candidate-k 20 $(RERANK_ARGS)
+
+.PHONY: filter-probe
+filter-probe:  ## Đo giá của metadata filter theo độ chọn lọc (W2-06)
+	$(PY) python scripts/filter_probe.py --config $(INDEX_CONFIG) --mode $(MODE) \
+		--report plans/reports/probes/w2-06-filter-probe.json
 
 .PHONY: rerank-probe
 rerank-probe:  ## Trần vùng phủ + truncation + bão hoà sigmoid + độ trễ rerank (W2-05)

@@ -26,10 +26,11 @@ thật, không phải giả thiết: `W2-04` đã gặp đúng vấn đề này 
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..schemas import RetrievalMode, RetrievedChunk
 from .base import Retriever
+from .filters import FilterSpec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -86,7 +87,7 @@ class RerankedRetriever(Retriever):
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         pool = self.base.retrieve(query, self._depth(top_k), filters=filters)
         if not pool:

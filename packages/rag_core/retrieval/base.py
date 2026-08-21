@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 from ..schemas import RetrievedChunk
+from .filters import FilterSpec
 
 __all__ = ["Retriever"]
 
@@ -26,7 +26,7 @@ class Retriever(ABC):
         query: str,
         top_k: int = 10,
         *,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec = None,
     ) -> list[RetrievedChunk]:
         """Trả tối đa `top_k` chunk, sắp xếp giảm dần theo độ liên quan.
 
