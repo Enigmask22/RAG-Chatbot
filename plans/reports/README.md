@@ -39,6 +39,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-04` RRF | [`tasks/w2-04-rrf.md`](tasks/w2-04-rrf.md) | `bgem3-rrf` (k=60), `-k1`, `-k2`, `-k5`, `-k10`, `-c20`, `-c100`, `-k1-c20`, `-k1-c100`, `-w2` | `cmp-bgem3-vs-bgem3-rrf`, `cmp-bgem3-vs-bgem3-rrf-k1` | `w2-04-known-item.json`, `-k1.json` | **`k=60` của bài báo là lựa chọn tệ nhất**; `k=1` thắng nhưng chỉ 3/15 có ý nghĩa |
 | `W2-05` reranker | [`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) | `bgem3-rr-c20`, `-c50`, `-c100`, `-dense-c50` | `cmp-bgem3-vs-bgem3-rr-c50`, `cmp-bgem3-rr-c20-vs-...c50`, `...c50-vs-...c100`, `cmp-bgem3-rr-dense-c50-vs-bgem3-rr-c50`, `cmp-bgem3-rrf-k1-c20-vs-bgem3-rr-c50` | `w2-05-known-item.json`, `w2-05-rerank-probe.json` | `hit_rate@1` **+22,0 điểm**, 15/15 có ý nghĩa; **DoD 400 ms không đạt** |
 | `W2-06` metadata filter | [`tasks/w2-06-metadata-filter.md`](tasks/w2-06-metadata-filter.md) | — | — | `w2-06-filter-probe.json`, `w2-06-backfill-bgem3.json` | Phần thiếu là **đường `fetch`**, không phải date range; lọc **không tốn gì** |
+| `W2-07` experiment runner | [`tasks/w2-07-experiment-runner.md`](tasks/w2-07-experiment-runner.md) | `e1-*` (**14 ô**) | — | — | Resume khoá vào **`fingerprint` của ô**; grid tái lập **5** con số đã công bố đúng từng chữ số; MLflow hỏng **hai** lần |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -49,6 +50,18 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 người đọc, không phải nguồn sự thật. Nhánh truy hồi **không** thuộc
 `IndexConfig.fingerprint` (nó không quyết định vector nào được ghi), nên nhiều
 `run` khác nhau dùng chung một index.
+
+**Tiền tố `e1-` = do `make exp` sinh ra, không phải gõ tay** (`run_prefix` của
+`configs/eval/exp-001-retrieval.yaml`). Nó tồn tại vì một lý do cụ thể: ô
+`bgem3-sparse` của grid trùng **đúng** tên báo cáo tiêu đề `W2-03` đang nằm ở đây,
+và preflight của `W2-07` chặn lại ở lần `--dry-run` đầu tiên. Hai không gian tên
+tách nhau: `e1-*` thuộc một grid có state ở `.cache/experiments/`, phần còn lại là
+lần chạy tay.
+
+⚠️ Tên ô grid **chỉ mang những chiều biến thiên** trong khối của nó, nên
+`e1-rr-bgem3-reranked-ondense-rc20` không hiện `rerank_dtype=float16` dù ô đó có
+ghim nó. Giá trị ghim vẫn nằm đủ trong `config.branch_options` — đọc file, đừng
+đọc tên.
 
 ---
 
@@ -65,6 +78,9 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make known-item` | `probes/w2-03-known-item.json` |
 | `make rerank-probe` | `probes/w2-05-rerank-probe.json` |
 | `make filter-probe` | `probes/w2-06-filter-probe.json` |
+| `make exp` | `runs/<run_prefix>-*` × 3 file mỗi ô + `.cache/experiments/<name>.json` + MLflow |
+| `make exp-dry` | — (chỉ in bảng grid + preflight) |
+| `make exp-backfill` | MLflow, **đọc từ** `runs/` — không chạy eval |
 | `make backfill-payload` | `probes/w2-06-backfill-<BUNDLE>.json` |
 | `make goldenset-anchor` / `-freeze` | `goldenset/goldenset-anchor.json` / `-v1.json` |
 | `python scripts/category_compare.py` | *không ghi file* — in ra stdout, xem cảnh báo dưới |
@@ -122,7 +138,18 @@ nhau** (1,9617) và cả 15 metric đều so được. Cả 15 đều cho "trong
 `cmp-baseline-vs-chunk550.md`, sáu metric có mẫu số là số nhãn bị đánh **KHÔNG SO
 ĐƯỢC** kèm lý do.
 
-**⚠️ `runs/` không có lần chạy nào của `W2-06`…`W2-09`.** Chưa làm.
+**⚠️ `runs/e1-*` (14 ô) KHÔNG phải `W2-08`.** DoD `W2-08` đòi `p`/CI **cho từng
+dòng**, tức `compare.py`, và chưa chạy trên bộ này. 14 ô đó là *bằng chứng runner
+chạy đúng* (`W2-07`), không phải một kết luận: chênh 0,6736 vs 0,6481 trên 209 câu
+là **5 câu**, và đọc nó như kết luận là lặp lại đúng lỗi `TD-11`.
+
+**⚠️ `e1-chunk550-dense` không so được recall/nDCG/MAP với 13 ô còn lại** —
+`n_relevant_mean` **1,9617** vs **1,3828** (`G2`). Log của grid nói cùng chuyện:
+`chunk550` đổi **209/209** nhãn, baseline và bgem3 đổi 9.
+
+**⚠️ `mlflow.db` không nằm trong git** — nó là một *view*, dựng lại được bằng
+`make exp-backfill` từ chính `runs/`. Nếu một con số chỉ có trên MLflow thì nó
+không tái lập được từ repo, và `W2-09` không được dựa vào chỗ đó.
 
 **⚠️ `scripts/category_compare.py` là bản tạm.** Nó lọc theo `category` rồi gọi
 lại `mcnemar_exact`/`paired_bootstrap` của `compare.py`, vì `compare.py` **chưa
