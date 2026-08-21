@@ -433,7 +433,7 @@ lượng nghiêng về tra mã tài liệu, nơi `W2-03` đo sparse thắng áp 
 suy giảm phải **chọn theo loại truy vấn**, và hiện chưa có gì trong hệ thống phân
 loại được truy vấn lúc chạy (đó là `W4-07`).
 
-Số ở phần này tái lập bằng `python plans/reports/w2-05-xling-check.py` (gọi lại
+Số ở phần này tái lập bằng `python scripts/category_compare.py` (gọi lại
 `mcnemar_exact`/`paired_bootstrap` của `compare.py`, chỉ thêm phần lọc category —
 **xoá file đó** khi `compare.py` có `--category`).
 

@@ -602,7 +602,7 @@ Sau khi hoàn thành, project này **một mình** phủ gần trọn một JD M
 | Không có GPU thường trực | Trung bình | Pipeline plane chạy theo phiên trên RunPod Secure Cloud (RTX 4090 24GB) + network volume. Serving plane không cần GPU (dùng API) |
 | Lộ API key / dữ liệu trên GPU thuê | Trung bình (Secure Cloud) | Pod chỉ chạy job GPU-bound tự chứa, **không mang API key**. Chuyển dữ liệu bằng token scoped ngắn hạn, thu hồi sau job. SSH keypair riêng cho RunPod. **Không dùng Community Cloud** |
 | Dùng tài liệu thật của khách hàng Enigmas → vi phạm NDA | **Cao, hậu quả nặng** | Bắt buộc corpus công khai (World Bank/ADB VN, văn bản pháp luật có bản dịch chính thức, báo cáo thường niên HOSE). Kiểm tra ở `W0-03` trước khi ingest bất cứ file nào |
-| Quên terminate pod / network volume tính tiền âm thầm | Trung bình | Đặt spending limit trên RunPod; checklist cuối mỗi phiên phải terminate pod; ghi GPU-hour đã dùng vào `reports/gpu-usage.md` |
+| Quên terminate pod / network volume tính tiền âm thầm | Trung bình | Đặt spending limit trên RunPod; checklist cuối mỗi phiên phải terminate pod; ghi GPU-hour đã dùng vào `reports/tasks/gpu-usage.md` |
 | Over-engineering, khó demo | Trung bình | `make up` phải chạy được toàn bộ trên laptop. HF Spaces demo là bắt buộc |
 | Repo cũ đang được link trong CV | — | Nâng cấp **trên repo mới**, giữ repo cũ tới khi bản mới có README + demo hoàn chỉnh, rồi mới đổi link |
 
@@ -618,6 +618,6 @@ Sau khi hoàn thành, project này **một mình** phủ gần trọn một JD M
 2. `docker-compose.yml` với Qdrant + Postgres + Redis.
 3. Chọn & thu thập corpus song ngữ **công khai** (~50–100 tài liệu) — xem ràng buộc NDA ở §3.6.
 4. Script sinh golden set + review thủ công → `golden_v1`.
-5. `pipeline/eval/retrieval_eval.py` → **đo baseline của hệ thống hiện tại** và ghi vào `reports/baseline.md`.
+5. `pipeline/eval/retrieval_eval.py` → **đo baseline của hệ thống hiện tại** và ghi vào `reports/runs/baseline-retrieval.md`.
 
 Con số baseline ở bước 5 là mốc tham chiếu cho toàn bộ 5 tuần còn lại.

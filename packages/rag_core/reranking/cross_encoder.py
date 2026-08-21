@@ -27,7 +27,7 @@ trọng nhất". `W2-05` đã **đo** và phản chứng: 2000 logit thật trê
 trong khoảng `[−10,87 ; +8,67]`, **0,0%** vượt ngưỡng bão hoà. Câu đó không sai về
 nguyên lý — sigmoid *có* bão hoà — nhưng tôi đã dùng một sự thật về kiểu số để kết
 luận về một phân bố chưa đo. Ghi lại nguyên văn thay vì xoá, vì cái sai ở đây là
-về **cách lập luận**, không phải về mặc định. Xem `reports/w2-05-reranker.md` §4.
+về **cách lập luận**, không phải về mặc định. Xem `reports/tasks/w2-05-reranker.md` §4.
 
 **`max_length` nằm trong `name`, `batch_size` thì không.** Cùng lý lẽ với
 `IndexConfig.fingerprint` (`W1-06`): `max_length` **cắt nội dung** nên nó đổi
@@ -84,7 +84,7 @@ def _resolve_dtype(dtype: str | None, device: str) -> str | None:
     ngân sách 400 ms của DoD `W2-05`; fp16 đưa xuống **510,1 ms**, tức **3,52×**.
     Đó là cần điều khiển duy nhất thu hẹp được khoảng đó mà không phải bỏ ứng
     viên — `max_length` chỉ cắt 1/12.100 cặp và `batch_size` không mua được gì
-    (`reports/w2-05-reranker.md` §3, §5.3). Cái giá là điểm khác đi ở chữ số thấp
+    (`reports/tasks/w2-05-reranker.md` §3, §5.3). Cái giá là điểm khác đi ở chữ số thấp
     (trùng top-1 98,3%, lệch max 0,08% khoảng logit), nên nó nằm trong `name`.
 
     CPU cố ý **không** dùng fp16: hầu hết CPU không có kernel fp16 nên PyTorch

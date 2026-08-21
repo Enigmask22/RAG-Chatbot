@@ -112,7 +112,7 @@ Giá phải trả: clone sạch không pull được ngay, phải cấu hình re
 
 Checklist ghi `W1-09` gồm cả `data/golden`. Tôi làm khác, và đây là lý do.
 
-Golden set là **thước đo**, không phải dữ liệu. Mọi con số trong `reports/baseline.md`
+Golden set là **thước đo**, không phải dữ liệu. Mọi con số trong `reports/runs/baseline-retrieval.md`
 và mọi cửa promotion về sau đều đo bằng nó, nên khi một nhãn đổi thì toàn bộ metric
 lịch sử mất nghĩa. Thứ cần nhất ở một file như vậy là **diff đọc được lúc review**:
 thấy ngay ai đổi `relevant_chunk_ids` của câu nào, từ gì sang gì. DVC thay file bằng

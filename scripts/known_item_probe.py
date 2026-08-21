@@ -19,7 +19,7 @@ project ID, trust fund ID, tên chương trình của World Bank), giữ lại m
 Chạy:
 
     python scripts/known_item_probe.py --config configs/indexing/bgem3.yaml \\
-        --report plans/reports/w2-03-known-item.json
+        --report plans/reports/probes/w2-03-known-item.json
 """
 
 from __future__ import annotations

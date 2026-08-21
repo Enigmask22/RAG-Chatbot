@@ -165,7 +165,7 @@ $ make eval-retrieval BUNDLE=baseline
 ### Đọc con số này thế nào
 
 `recall@5 = 0,17` là **thấp**, và nó thấp có lý do — hai lý do đã được đo riêng ở
-`reports/w1-11-triage.md`, không phải đoán:
+`reports/tasks/w1-11-triage.md`, không phải đoán:
 
 1. **`cross_lingual` bằng 0.** 43/209 câu, tức 20% tập đo, dùng model embedding
    **đơn ngữ** (`vietnamese-bi-encoder`, nền PhoBERT). recall@5 = 0,0000 không phải
@@ -226,7 +226,7 @@ Sau khi sửa: 209/209 câu trả lời được đều có span, `unmatched_que
 | Dọn `reference_answer` bị lẫn ngữ cảnh sinh | ~6 câu có `"Theo đoạn 1"`, `"trong các đoạn văn được cung cấp"`. Không ảnh hưởng eval retrieval (không dùng `reference_answer`) nhưng sẽ nhiễu ở `W5` |
 | `table_lookup` chỉ 4 câu | Freeze sẽ **từ chối** nếu nhóm này về 0. Chờ nguồn (c) HOSE + `W3-01` |
 | `unanswerable` thiếu đa dạng | ~12/33 câu theo cùng một khuôn "hỏi về nước khác" (Thái Lan, Malaysia, Lào, Singapore, Hàn Quốc). Nhóm này đo ở `W5-02`, nên trước đó cần thêm khuôn khác |
-| Nhãn liên quan chưa đầy đủ | Một số dữ kiện xuất hiện ở **hai** tài liệu (ví dụ "92% tài sản hệ thống tài chính" có trong cả *Financial sector assessment* và *Taking stock*). Hệ thống truy hồi bản kia sẽ bị chấm sai. Phép đo Jaccard ở `w1-11-triage.md` §4.2 cho thấy chuyện này hiếm (1/78) nhưng có thật |
+| Nhãn liên quan chưa đầy đủ | Một số dữ kiện xuất hiện ở **hai** tài liệu (ví dụ "92% tài sản hệ thống tài chính" có trong cả *Financial sector assessment* và *Taking stock*). Hệ thống truy hồi bản kia sẽ bị chấm sai. Phép đo Jaccard ở `reports/tasks/w1-11-triage.md` §4.2 cho thấy chuyện này hiếm (1/78) nhưng có thật |
 
 ---
 

@@ -30,7 +30,7 @@ Index `baseline` → collection `rag_baseline`
 Chạy lần hai (không cờ gì): `tài liệu 60 (index 0 · bỏ qua 60)`, `ghi 0`,
 `tổng trong collection 15814`. Đúng yêu cầu DoD.
 
-Báo cáo máy đọc được: [`index-baseline.json`](index-baseline.json).
+Báo cáo máy đọc được: [`reports/probes/index-baseline.json`](index-baseline.json).
 
 | Kiểm tra | Lệnh | Kết quả |
 |---|---|---|

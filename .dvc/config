@@ -10,5 +10,5 @@
 # tại, và lỗi chỉ lộ ra lúc `dvc pull` — cùng loại lỗi với đường dẫn tuyệt đối
 # trong `.venv/*.pth`.
 #
-# Xem `plans/reports/w1-09-dvc.md` để biết đường phục hồi corpus khi không có
+# Xem `plans/reports/tasks/w1-09-dvc.md` để biết đường phục hồi corpus khi không có
 # remote nào.

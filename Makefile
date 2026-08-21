@@ -82,7 +82,7 @@ logs:  ## Xem log hạ tầng
 
 # ---------------------------------------------------------------- dữ liệu (DVC)
 # Remote khai ở `.dvc/config.local` (không commit). Chưa cấu hình thì các target
-# này sẽ báo lỗi của DVC — xem `plans/reports/w1-09-dvc.md`.
+# này sẽ báo lỗi của DVC — xem `plans/reports/tasks/w1-09-dvc.md`.
 .PHONY: data-pull
 data-pull:  ## Lấy corpus từ DVC remote về `data/corpus/`
 	$(PY) dvc pull
@@ -130,7 +130,7 @@ corpus:  ## Tải corpus theo config (idempotent)
 .PHONY: index
 index:  ## Build index Qdrant (BUNDLE=baseline). Cần `make up` trước
 	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) \
-		--report plans/reports/index-$(BUNDLE).json
+		--report plans/reports/probes/index-$(BUNDLE).json
 
 .PHONY: index-dry
 index-dry:  ## Chunk thử vài tài liệu và in thống kê, không chạm Qdrant
@@ -139,12 +139,12 @@ index-dry:  ## Chunk thử vài tài liệu và in thống kê, không chạm Qd
 .PHONY: eval-compare
 eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAND=chunk550)
 	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
-		--out plans/reports/cmp-$(BASE)-vs-$(CAND).md
+		--out plans/reports/compare/cmp-$(BASE)-vs-$(CAND).md
 
 .PHONY: truncation
 truncation:  ## Đo phần text bị model embedding cắt (TD-11). Không cần Qdrant
 	$(PY) python -m pipeline.indexing.truncation_report --config $(INDEX_CONFIG) \
-		--report plans/reports/truncation-$(BUNDLE).json
+		--report plans/reports/probes/truncation-$(BUNDLE).json
 
 .PHONY: goldenset-dry
 goldenset-dry:  ## Xem phân bố lô chunk + prompt mẫu, KHÔNG gọi API
@@ -157,7 +157,7 @@ goldenset-draft:  ## Sinh nháp golden set bằng DeepSeek (TỐN TIỀN API)
 .PHONY: goldenset-anchor
 goldenset-anchor:  ## Neo nhãn nháp vào văn bản gốc (span thay chunk_id — TD-12)
 	$(PY) python -m pipeline.goldenset.anchor --index-config $(INDEX_CONFIG) \
-		--report plans/reports/goldenset-anchor.json
+		--report plans/reports/goldenset/goldenset-anchor.json
 
 .PHONY: goldenset-triage
 goldenset-triage:  ## Chạy retriever thật lên tập nháp → hàng đợi review (W1-11)
@@ -166,7 +166,7 @@ goldenset-triage:  ## Chạy retriever thật lên tập nháp → hàng đợi 
 .PHONY: goldenset-freeze
 goldenset-freeze:  ## Đóng băng golden_v1 từ decisions_v1.csv (cần review xong)
 	$(PY) python -m pipeline.goldenset.freeze \
-		--report plans/reports/goldenset-v1.json
+		--report plans/reports/goldenset/goldenset-v1.json
 
 .PHONY: goldenset-verify
 goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
@@ -180,7 +180,7 @@ eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline MODE=
 .PHONY: known-item
 known-item:  ## Known-item search: tra mã tài liệu, đo dense vs sparse (W2-03)
 	$(PY) python scripts/known_item_probe.py --config $(INDEX_CONFIG) \
-		--report plans/reports/w2-03-known-item.json
+		--report plans/reports/probes/w2-03-known-item.json
 
 .PHONY: eval-rerank
 eval-rerank:  ## Eval reranked trên cấu hình THẮNG của W2-04 (BUNDLE=bgem3 RUN=tên)
@@ -191,4 +191,4 @@ eval-rerank:  ## Eval reranked trên cấu hình THẮNG của W2-04 (BUNDLE=bge
 .PHONY: rerank-probe
 rerank-probe:  ## Trần vùng phủ + truncation + bão hoà sigmoid + độ trễ rerank (W2-05)
 	$(PY) python scripts/rerank_probe.py --config $(INDEX_CONFIG) \
-		--report plans/reports/w2-05-rerank-probe.json
+		--report plans/reports/probes/w2-05-rerank-probe.json

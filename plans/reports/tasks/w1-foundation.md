@@ -88,5 +88,5 @@ cái được đo không phải hệ thống hiện tại.
 | Nợ | Lý do chấp nhận | Kế hoạch trả |
 |---|---|---|
 | `HuggingFaceEmbeddingProvider` coverage 0% | Cần `torch` (~2.5GB) mà unit test cố ý chạy không có GPU stack | Test đánh dấu `@pytest.mark.gpu` khi làm `W0-06` (đo VRAM) và `W2-01` (BGE-M3) |
-| ~~`retrieval_eval.py` CLI chưa nối retriever thật~~ | Cần index thật, mà index cần corpus (`W0-03`) | ✅ đã trả ở `W1-08` — xem [`w1-08-build-index.md`](w1-08-build-index.md) |
+| ~~`retrieval_eval.py` CLI chưa nối retriever thật~~ | Cần index thật, mà index cần corpus (`W0-03`) | ✅ đã trả ở `W1-08` — xem [`reports/tasks/w1-08-build-index.md`](w1-08-build-index.md) |
 | ~~`pipeline/indexing/` còn rỗng~~ | Cùng lý do trên | ✅ đã trả ở `W1-08` |

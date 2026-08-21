@@ -18,7 +18,7 @@ thì sparse hit"), và không được đọc như thế:
   thấy dense **cũng** tra đúng mã ở hạng 1 (xem `_CODE_TEXTS`).
 
 Bằng chứng cho DoD là known-item search trên index thật 15.814 chunk:
-`plans/reports/w2-03-known-item.json` (sparse hit@10 0,5098 vs dense 0,0784,
+`plans/reports/probes/w2-03-known-item.json` (sparse hit@10 0,5098 vs dense 0,0784,
 McNemar `p = 4,8e-07`). Một bài test đơn vị không đứng thay được cho phép đo đó.
 """
 
@@ -194,7 +194,7 @@ class TestRefusals:
 # Sáu mã gần giống nhau + một chunk khác hẳn chủ đề.
 #
 # ⚠️ Corpus này **không** chứng minh được "dense miss, sparse hit". Đo thật trên
-# nó (2026-08-20, xem `reports/w2-03-sparse-retriever.md` §4): truy vấn
+# nó (2026-08-20, xem `reports/tasks/w2-03-sparse-retriever.md` §4): truy vấn
 # `GSO-2024-XII` thì **cả hai** nhánh đặt đúng chunk ở hạng 1 — dense 0,6947 vs
 # 0,6411 cho ứng viên gần nhất, một khoảng cách rõ ràng. Giả định ban đầu của
 # tôi là dense sẽ lẫn giữa những mã gần giống nhau; nó sai, và với 7 chunk thì

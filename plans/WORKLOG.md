@@ -16,7 +16,7 @@
 ### Lệnh để kiểm tra trạng thái hiện tại
 
 ```bash
-cd D:/studioproj/RAG-Chatbot   # đổi tên 2026-08-20, xem reports/rename-workspace.md
+cd D:/studioproj/RAG-Chatbot   # đổi tên 2026-08-20, xem reports/tasks/rename-workspace.md
 uv sync --extra dev --extra qdrant   # cài môi trường
 make lint                            # ruff check + ruff format --check + mypy strict
 make test                            # 144 unit test, không cần Docker, ~3s
@@ -39,7 +39,7 @@ make up && make test-integration     # cần Docker Desktop đang chạy
 | `W1-10` | Sinh nháp golden set | ✅ xong | 100 test mới · 266 câu · $0,5821 |
 
 **Tổng kết phiên:** 144 unit test + 18 integration test xanh · `ruff` + `mypy --strict` sạch ·
-coverage `rag_core` 81%. Bằng chứng: [`reports/w1-foundation.md`](reports/w1-foundation.md).
+coverage `rag_core` 81%. Bằng chứng: [`reports/tasks/w1-foundation.md`](reports/tasks/w1-foundation.md).
 
 Ngoài scope dự kiến, đã thêm: `test_architecture_boundaries.py` (canh chiều phụ thuộc
 hai plane) và `test_settings.py`.
@@ -173,7 +173,7 @@ hai plane) và `test_settings.py`.
 
 24. **`plans/` vừa xuất hiện trong `.gitignore`** (không phải do phiên này thêm).
     File trong đó đã tracked nên vẫn commit được, nhưng file **mới** bị bỏ qua
-    âm thầm — `reports/w1-08-build-index.md` phải `git add -f`. Ghi vào `TD-07`.
+    âm thầm — `reports/tasks/w1-08-build-index.md` phải `git add -f`. Ghi vào `TD-07`.
 
 25. **`deepseek-chat` là BÍ DANH, không phải một model.** Xác nhận trực tiếp
     trên API: cả `deepseek-chat` lẫn `deepseek-reasoner` đều được phục vụ bởi
@@ -219,9 +219,9 @@ hai plane) và `test_settings.py`.
       Cố ý **không** push thẳng `main` vì repo này đang là link trong CV — trang chủ
       repo giữ nguyên bản cũ cho tới khi bạn chủ động merge.
 - [ ] Quyết định merge `feat/w1-foundation` vào `main` hay giữ nhánh (liên quan `W0-02`).
-- [x] `W1-08` — **xong**: `reports/w1-08-build-index.md`. Collection `rag_baseline`
+- [x] `W1-08` — **xong**: `reports/tasks/w1-08-build-index.md`. Collection `rag_baseline`
       có 15.814 chunk; `make index` chạy lần hai không ghi thêm gì.
-- [x] `W1-10` — **xong**: `reports/w1-10-goldenset-draft.md`, 266 câu nháp.
+- [x] `W1-10` — **xong**: `reports/tasks/w1-10-goldenset-draft.md`, 266 câu nháp.
 - [x] `W1-11` — **xong ở phiên 2026-08-20 nhưng review bằng MODEL, không phải người**:
       `golden_v1` 242 câu, loại 24/266. Việc còn lại của bạn nằm ở `TD-13`.
 - [x] `W1-09` (DVC) và `W1-13` (đo baseline) — **xong ở phiên 2026-08-20**.
@@ -234,8 +234,8 @@ hai plane) và `test_settings.py`.
 
 ### Nếu phiên sau bắt đầu từ đây
 
-Đọc theo thứ tự: mục "Quyết định kỹ thuật" ở trên → `reports/w1-08-build-index.md`
-→ `reports/w1-foundation.md` →
+Đọc theo thứ tự: mục "Quyết định kỹ thuật" ở trên → `reports/tasks/w1-08-build-index.md`
+→ `reports/tasks/w1-foundation.md` →
 `CHECKLIST.md` §1 Dashboard và §10 Đang bị chặn. Chạy `make lint && make test` để xác
 nhận repo vẫn xanh trước khi làm tiếp.
 
@@ -283,7 +283,7 @@ make eval-retrieval                  # đo lại baseline, ~20 giây
 32. **`data/golden` KHÔNG đưa vào DVC** (khác checklist gốc). Golden set là **thước đo**;
     thứ cần nhất ở nó là **diff đọc được** lúc review — ai đổi nhãn câu nào, từ gì sang gì.
     DVC thay file bằng một hash nên mất đúng thứ đó. 284 KB text không phải lý do để tránh
-    git. Tính tái lập không mất: một commit ghim cả hai. Lý lẽ đầy đủ: `reports/w1-09-dvc.md` §3.2.
+    git. Tính tái lập không mất: một commit ghim cả hai. Lý lẽ đầy đủ: `reports/tasks/w1-09-dvc.md` §3.2.
 
 33. **Corpus giờ có HAI cơ chế versioning, và chỗ cả hai đều mù là phép so SỐ LƯỢNG.**
     sha256/manifest và md5/DVC. Thêm file vào `data/corpus/` rồi `dvc add` mà quên manifest
@@ -408,7 +408,7 @@ make eval-retrieval                  # đo lại baseline, ~20 giây
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` để xác nhận repo vẫn xanh (534 unit test).
-2. Đọc `reports/w1-11-review.md` §1 (ai review và điều đó nghĩa là gì) và §4 (baseline).
+2. Đọc `reports/tasks/w1-11-review.md` §1 (ai review và điều đó nghĩa là gì) và §4 (baseline).
 3. Đọc §4 của `CHECKLIST.md` — thứ tự tấn công W2 đã chốt: `TD-11` → `W2-01` → `W2-02` …
 4. Việc đầu tiên gõ tay: tạo config mới với `chunk_size` ~600, build index bằng `--recreate`
    vào collection **riêng**, rồi `make eval-retrieval` để có cặp số trước/sau của `TD-11`
@@ -443,7 +443,7 @@ make test                                        # 600 unit test
 | Hiệu chuẩn `chunk_size` từ dữ liệu | ✅ | 574 ký tự (an toàn cho mọi ngôn ngữ); chốt 550 |
 | `chunk550` + `chunk550nb55` build & đo | ✅ | 31.155 chunk mỗi config |
 | Kiểm định cặp giữa hai lần chạy | ✅ | `*-per-query.jsonl` + `pipeline/eval/compare.py` |
-| `TD-11` | ✅ trả xong phần đo | Kết luận **âm** — xem `reports/w2-td11-chunk-size.md` |
+| `TD-11` | ✅ trả xong phần đo | Kết luận **âm** — xem `reports/tasks/w2-td11-chunk-size.md` |
 | `W2-01` BGE-M3 | ⬜ việc tiếp theo | Giữ `chunk_size=1000`, chỉ đổi model |
 
 **Tổng kết:** 600 unit (+66) + 38 integration test xanh · `ruff` + `mypy --strict`
@@ -548,7 +548,7 @@ sạch trên 79 file.
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` (600 unit test).
-2. Đọc `reports/w2-td11-chunk-size.md` §8 (kiểm định + độ phân giải) và §10 (bước tiếp).
+2. Đọc `reports/tasks/w2-td11-chunk-size.md` §8 (kiểm định + độ phân giải) và §10 (bước tiếp).
 3. `W2-01`: thêm provider BGE-M3, `max_sequence_tokens` phải báo 8192. Chạy
    `make truncation` với config mới **trước** khi eval để xác nhận truncation về 0.
 4. Config mới đặt tên riêng + collection riêng; **không** sửa `baseline.yaml`.
@@ -578,7 +578,7 @@ Build lại từ đầu (~405 s trên RTX 4060, **bắt buộc** `--recreate` v�
 
 ```bash
 python -m pipeline.indexing.build_index --config configs/indexing/bgem3.yaml \
-  --recreate --report plans/reports/index-bgem3.json
+  --recreate --report plans/reports/probes/index-bgem3.json
 python -m pipeline.eval.retrieval_eval --index-config configs/indexing/bgem3.yaml \
   --run-name bgem3
 ```
@@ -592,7 +592,7 @@ python -m pipeline.eval.retrieval_eval --index-config configs/indexing/bgem3.yam
 | `BgeM3EmbeddingProvider` | ✅ | Dense + sparse **một** forward pass |
 | Truncation với cửa sổ 8192 | ✅ | 56,9% → **0,0%** (0/15814) |
 | Index + eval + kiểm định | ✅ | 15/15 metric "khác biệt thật" |
-| `W2-01` | ✅ | `reports/w2-01-bge-m3.md` |
+| `W2-01` | ✅ | `reports/tasks/w2-01-bge-m3.md` |
 | `W2-02` Qdrant sparse | ⬜ việc tiếp theo | Sparse đã có, cần chỗ chứa |
 
 **Tổng kết:** 644 unit (+44) + 38 integration + 11 gpu test xanh · `ruff` +
@@ -683,7 +683,7 @@ python -m pipeline.eval.retrieval_eval --index-config configs/indexing/bgem3.yam
     Triệu chứng mất, nguyên nhân còn — vẫn sửa ở `W3-01`.
 
 77. **Sửa lỗi sổ sách: p95 truy hồi của baseline là 32,8 ms, không phải 39,9 ms.**
-    `reports/baseline-retrieval.md` ghi 32,8; CHECKLIST §1 chép sai. Đã sửa cả
+    `reports/runs/baseline-retrieval.md` ghi 32,8; CHECKLIST §1 chép sai. Đã sửa cả
     cột **Baseline** lẫn ghi chú dưới bảng.
 
 ### Vấn đề đang mở
@@ -710,7 +710,7 @@ python -m pipeline.eval.retrieval_eval --index-config configs/indexing/bgem3.yam
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` (644 unit test) · `make test-gpu` nếu có GPU.
-2. Đọc `reports/w2-01-bge-m3.md` §5 (vì sao mức tăng không phải của `TD-11`) và
+2. Đọc `reports/tasks/w2-01-bge-m3.md` §5 (vì sao mức tăng không phải của `TD-11`) và
    §7 (thứ chưa được kiểm chứng đầu-cuối).
 3. `W2-02`: thêm named vector `sparse` vào schema Qdrant, dùng
    `SparseVector.as_qdrant()`. Build lại `rag_bgem3` bằng `--recreate`.
@@ -740,7 +740,7 @@ Build lại (~414 s trên RTX 4060, **bắt buộc** `--recreate`):
 
 ```bash
 python -m pipeline.indexing.build_index --config configs/indexing/bgem3.yaml \
-  --recreate --report plans/reports/index-bgem3.json
+  --recreate --report plans/reports/probes/index-bgem3.json
 make eval-retrieval BUNDLE=bgem3            # phải khớp số cũ TỪNG CHỮ SỐ
 ```
 
@@ -755,7 +755,7 @@ make eval-retrieval BUNDLE=bgem3            # phải khớp số cũ TỪNG CH�
 | `scripts/migrate_collection.py` | ✅ | Cố ý **không** migrate tại chỗ |
 | `HashingEmbeddingProvider` sinh sparse | ✅ | Mặc định **tắt** — `name` là cache key |
 | Xác nhận dense không đổi | ✅ | 0/209 câu đổi điểm |
-| `W2-02` | ✅ | `reports/w2-02-qdrant-hybrid.md` |
+| `W2-02` | ✅ | `reports/tasks/w2-02-qdrant-hybrid.md` |
 | `W2-03` sparse retriever | ⬜ việc tiếp theo | Bọc thành `Retriever` + đo có `p`/CI |
 
 **Tổng kết:** 666 unit (+22) + 59 integration (+21) + 11 gpu test xanh · `ruff` +
@@ -880,7 +880,7 @@ make eval-retrieval BUNDLE=bgem3            # phải khớp số cũ TỪNG CH�
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` · `make up && make test-integration`.
-2. Đọc `reports/w2-02-qdrant-hybrid.md` §3 (sparse trên dữ liệu thật, và vì sao
+2. Đọc `reports/tasks/w2-02-qdrant-hybrid.md` §3 (sparse trên dữ liệu thật, và vì sao
    `min = 3` quan trọng) và §7 (thứ chưa làm).
 3. `W2-03`: bọc `retrieve_sparse()` thành một `Retriever` để eval harness chạy
    được, rồi đo trên golden set. DoD là truy vấn từ khoá lạ mà dense miss thì
@@ -927,7 +927,7 @@ make known-item BUNDLE=bgem3                # ~2 phút, seed 20260820
 | DoD: từ khoá lạ dense miss sparse hit | ✅ | Phép đo riêng, `golden_v1` không đo được |
 | Hàng rào băm nhãn trong `compare.py` | ✅ | Ngoài DoD — hố im lặng, quyết định 98 |
 | `scripts/known_item_probe.py` | ✅ | Tiêu chí kiểm bằng so chuỗi, không cần nhãn người |
-| `W2-03` | ✅ | `reports/w2-03-sparse-retriever.md` |
+| `W2-03` | ✅ | `reports/tasks/w2-03-sparse-retriever.md` |
 | `W2-04` RRF | ⬜ việc tiếp theo | Trần đã biết: 0,7033 |
 
 **Tổng kết:** 697 unit (+31) + 73 integration (+14) + 15 gpu (+4) test xanh ·
@@ -1070,7 +1070,7 @@ make known-item BUNDLE=bgem3                # ~2 phút, seed 20260820
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` · `make up && make test-integration`.
-2. Đọc `reports/w2-03-sparse-retriever.md` §4 (trần của RRF và phân rã theo
+2. Đọc `reports/tasks/w2-03-sparse-retriever.md` §4 (trần của RRF và phân rã theo
    nhóm/ngôn ngữ) và §6 (vì sao sparse không phải index khớp đúng).
 3. `W2-04`: RRF `k=60`. Trần đã biết là 0,7033 — nếu ra dưới 0,6268 thì RRF đang
    làm hại, và đó là kết quả phải báo cáo.
@@ -1120,7 +1120,7 @@ make known-item BUNDLE=bgem3                # thêm --rrf-k 1 cho cột hybrid k
 | Tìm + sửa bug `len(tokenizer)` 64 ms | ✅ | Ngoài kế hoạch — quyết định 117 |
 | Đính chính `W2-02` + `W2-03` | ✅ | Ghi tại chỗ, không xoá số sai |
 | Known-item cho cả 3 nhánh | ✅ | Hybrid giữ phủ, mất thứ hạng |
-| `W2-04` | ✅ | `reports/w2-04-rrf.md` |
+| `W2-04` | ✅ | `reports/tasks/w2-04-rrf.md` |
 | `W2-05` reranker | ⬜ việc tiếp theo | Biến `recall@20` 0,6754 thành thứ hạng |
 
 **Tổng kết:** 771 unit (+73) + 102 integration (+29) + 17 gpu (+2) test xanh ·
@@ -1297,7 +1297,7 @@ make known-item BUNDLE=bgem3                # thêm --rrf-k 1 cho cột hybrid k
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` · `make up && make test-integration`.
-2. Đọc `reports/w2-04-rrf.md` §3 (bảng quét `k`), §6 (bug 64 ms và cách tìm ra) và
+2. Đọc `reports/tasks/w2-04-rrf.md` §3 (bảng quét `k`), §6 (bug 64 ms và cách tìm ra) và
    §8 (vì sao hybrid là bộ sinh ứng viên chứ không phải bộ xếp hạng).
 3. `W2-05`: `bge-reranker-v2-m3`, rerank 50 → 6 trong < 400 ms trên GPU. VRAM: đã
    biết BGE-M3 chiếm ~3,3/8 GB, reranker thêm ~2,2 GB — còn vừa, nhưng `W0-06`
@@ -1516,7 +1516,7 @@ cho generator local (Qwen3-8B 4-bit ~5,5 GB), nên kiến trúc "generator qua A
 ### Nếu phiên sau bắt đầu từ đây
 
 1. `make lint && make test` · `make up && make test-integration` · `make test-gpu`.
-2. Đọc `reports/w2-05-reranker.md` §2 (trần vùng phủ và vì sao phải đo trước),
+2. Đọc `reports/tasks/w2-05-reranker.md` §2 (trần vùng phủ và vì sao phải đo trước),
    §5.4 (DoD không đạt và ngân sách thật), §6.4 (hybrid không còn đo được) và §7
    (`TD-18` là bài toán truy hồi).
 3. `W2-06`: filter ở tầng Qdrant, ca isolation hai tenant. `create_payload_index`
@@ -1525,5 +1525,45 @@ cho generator local (Qwen3-8B 4-bit ~5,5 GB), nên kiến trúc "generator qua A
    truncation + bão hoà + độ trễ; `make eval-rerank BUNDLE=bgem3 RUN=<tên>` cho
    eval trên cấu hình thắng; `python scripts/known_item_probe.py --rerank` cho
    bốn nhánh.
+
+## 2026-08-21 · Tổ chức lại `plans/reports/` + hai lỗ bằng chứng lộ ra
+
+97 file phẳng → 5 folder chia theo **ai sinh ra file** (đó cũng là ranh giới của
+việc được sửa tay hay không): `tasks/` 14 · `runs/` 57 · `compare/` 12 ·
+`probes/` 11 · `goldenset/` 3. Bản đồ + bảng review theo `Wx-xx`:
+`reports/README.md`.
+
+**Cách rewrite tham chiếu, và vì sao không dùng regex rộng.** 130 tham chiếu trong
+21 file. Regex kiểu `reports/[\w-]+` sẽ sửa cả URL World Bank dạng
+`.../reports/documentdetail/...` — mà chuỗi đó **có thật** trong
+`data/corpus/*.txt`. Nên khớp theo **danh sách tên file tường minh** cộng ba hậu tố
+của `runs/`, rồi kiểm bằng cách grep lại: mọi `reports/<file>.md|json|jsonl|py`
+còn sót mà chưa có folder = còn việc. Cách kiểm đó tìm ra hai tham chiếu **treo từ
+trước**: `reports/baseline.md` (file chưa bao giờ tồn tại; đúng là
+`baseline-retrieval.md`) ở hai chỗ, và một đường dẫn cũ của
+`scripts/category_compare.py`.
+
+### Hai lỗ bằng chứng mà việc chia folder làm lộ ra
+
+1. **`compare/cmp-baseline-vs-bgem3.md` chưa từng được commit.** Lệnh so sánh *đã*
+   chạy ở `W2-01` (số nằm trong report) nhưng output không được lưu — nên phát biểu
+   tiêu đề "15/15 metric có ý nghĩa" của `W2-01` không có file máy sinh nào đỡ.
+   Sinh lại được (chỉ cần `runs/*-per-query.jsonl`, không cần GPU/Qdrant) và nó
+   **khớp từng chữ số** với bảng đã viết: nDCG@10 CI95 [+0,2297, +0,3346].
+   ⚠️ Kèm một cảnh báo thật: `baseline-per-query.jsonl` không có `relevant_digest`
+   (có trước `W2-03`), nên riêng cặp này cái chốt "cùng bộ nhãn" không kiểm được
+   bằng băm, chỉ suy gián tiếp qua `n_relevant_mean` 1,3828 bằng nhau.
+2. **`probes/w2-05-rerank-probe.json` không tồn tại.** `make rerank-probe` ghi ra
+   đó, nhưng ở `W2-05` tôi chạy script không truyền `--report`. Hệ quả cụ thể:
+   **trần vùng phủ `hit_rate@50` = 0,7799** — con số chặn trên mọi phát biểu khác
+   của `W2-05` — chỉ có trong bảng viết tay. Đó là vi phạm điều 3 của Định nghĩa
+   Done. **Chưa chạy lại**: phần độ trễ sẽ ra số khác lần đo cũ, nên đây là quyết
+   định có đánh đổi, không phải việc dọn dẹp.
+
+### Việc còn lại từ phiên này
+
+- `compare.py` cần `--category`/`--lang`, rồi **xoá** `scripts/category_compare.py`.
+- Quyết định có chạy lại `make rerank-probe` để có file bằng chứng cho trần 0,7799.
+- `W2-06`: filter ở tầng Qdrant, ca isolation hai tenant.
 
 ---

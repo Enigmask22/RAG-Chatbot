@@ -539,7 +539,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--index-config", type=Path, default=Path("configs/indexing/baseline.yaml"))
     parser.add_argument("--out", type=Path, default=Path("data/golden/draft_v1.jsonl"))
-    parser.add_argument("--report", type=Path, default=Path("plans/reports/goldenset-draft.json"))
+    parser.add_argument(
+        "--report", type=Path, default=Path("plans/reports/goldenset/goldenset-draft.json")
+    )
     parser.add_argument(
         "--model",
         default=DEFAULT_DEEPSEEK_MODEL,

@@ -253,7 +253,7 @@ tài liệu   60 (index 0 · bỏ qua 60 · gỡ 0)
 chunk      ghi 0 · xoá thừa 0 · tổng trong collection 15814
 ```
 
-Đúng như dự đoán ở `reports/rename-workspace.md`: volume Docker sống vì
+Đúng như dự đoán ở `reports/tasks/rename-workspace.md`: volume Docker sống vì
 `infra/docker-compose.yml` khai `name: rag-platform` tường minh, và `.cache/` sống vì
 `index_state/baseline.json` không chứa đường dẫn nào.
 

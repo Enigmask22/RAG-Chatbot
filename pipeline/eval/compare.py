@@ -406,7 +406,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("baseline", help="Tên run hoặc đường dẫn tới *-per-query.jsonl")
     parser.add_argument("candidate", help="Tên run hoặc đường dẫn")
-    parser.add_argument("--dir", type=Path, default=Path("plans/reports"))
+    parser.add_argument("--dir", type=Path, default=Path("plans/reports/runs"))
     parser.add_argument("--metrics", nargs="*", default=[])
     parser.add_argument("--iterations", type=int, default=DEFAULT_BOOTSTRAP)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)

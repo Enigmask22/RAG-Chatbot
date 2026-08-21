@@ -9,14 +9,14 @@ LangChain + Chroma + Vicuna-7B, chạy được trên Colab T4.
 mọi con số "cải thiện +X%" của W2/W3 có mốc so sánh thật. Xoá đi thì cái mốc đó
 thành lời kể lại, không kiểm chứng được.
 
-Ngoài ra `plans/reports/w1-08-build-index.md` ghi bốn chỗ bản mới **cố ý làm
+Ngoài ra `plans/reports/tasks/w1-08-build-index.md` ghi bốn chỗ bản mới **cố ý làm
 khác** bản này. Đọc ghi chú đó mà không đọc được code gốc thì không xác minh được.
 
 ## Tương ứng với code mới
 
 | File ở đây | Đã thay bằng | Ghi chú |
 |---|---|---|
-| `enhanced_chunking.py` | `packages/rag_core/chunking/` | Viết lại thuần Python, bỏ `langchain-experimental`. Bốn sai lệch có chủ ý — xem `reports/w1-08-build-index.md` |
+| `enhanced_chunking.py` | `packages/rag_core/chunking/` | Viết lại thuần Python, bỏ `langchain-experimental`. Bốn sai lệch có chủ ý — xem `reports/tasks/w1-08-build-index.md` |
 | `enhanced_chunking.py` (`ChunkingCache`) | `packages/rag_core/chunking/cache.py` | `pickle` → SQLite + JSON. `pickle.load` thực thi mã tuỳ ý khi giải mã |
 | `app.py` (Chroma) | `packages/rag_core/retrieval/qdrant_store.py` | Named vector, point ID xác định |
 | `app.py` (UI + chat state) | `serving/` | Chưa làm, `W4` |
@@ -37,7 +37,7 @@ sát mép; đó chính là lý do kiến trúc mới đẩy generator sang API.
 
 ## Khi nào xoá
 
-`W6-05`, sau khi `serving/` đã thay thế được đầu-cuối **và** `reports/baseline.md`
+`W6-05`, sau khi `serving/` đã thay thế được đầu-cuối **và** `reports/runs/baseline-retrieval.md`
 đã đóng băng số của bản cũ. Trước đó thì đây là chứng cứ, không phải rác.
 
 Code trong này **cố ý không** chịu `ruff` và `mypy` (xem `extend-exclude` trong

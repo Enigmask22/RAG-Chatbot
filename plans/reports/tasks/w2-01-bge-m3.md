@@ -280,7 +280,7 @@ Nói rõ để không ai đọc report này rồi tưởng hybrid search đã ch
 
 ```bash
 make truncation BUNDLE=bgem3                  # 0/15814 chunk bị cắt
-python -m pipeline.indexing.build_index \n  --config configs/indexing/bgem3.yaml --recreate \n  --report plans/reports/index-bgem3.json   # ~405s trên RTX 4060
+python -m pipeline.indexing.build_index \n  --config configs/indexing/bgem3.yaml --recreate \n  --report plans/reports/probes/index-bgem3.json   # ~405s trên RTX 4060
 make eval-retrieval BUNDLE=bgem3              # ~30s
 make eval-compare BASE=baseline CAND=bgem3    # McNemar + bootstrap
 make test && make test-gpu                    # 644 unit + 11 gpu

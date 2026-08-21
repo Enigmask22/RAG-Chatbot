@@ -534,7 +534,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "của index đang đo. Xét theo cả hai phía (span và chunk).",
     )
     parser.add_argument("--run-name", default="baseline")
-    parser.add_argument("--out-dir", type=Path, default=Path("plans/reports"))
+    parser.add_argument("--out-dir", type=Path, default=Path("plans/reports/runs"))
     args = parser.parse_args(argv)
 
     if not args.golden.exists():

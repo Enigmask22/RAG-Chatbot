@@ -21,7 +21,7 @@
 > là một **bug hiệu năng**: `sparse_vocab_size` gọi `len(tokenizer)` (dựng lại
 > dict 250.002 phần tử, **64 ms mỗi lần**), và `upsert` đọc nó một lần **mỗi lô**.
 > 15.814 chunk / `batch_size` 128 = **124 lô** × 64 ms ≈ **7,9 s** — gần trọn mức
-> tăng đo được. Xem `w2-04-rrf.md` §6 và §9 cho số đo lại sau khi sửa.
+> tăng đo được. Xem `reports/tasks/w2-04-rrf.md` §6 và §9 cho số đo lại sau khi sửa.
 
 | | dense-only (`W2-01`) | dense + sparse (`W2-02`) | |
 |---|---:|---:|---|
@@ -232,7 +232,7 @@ make test                                          # 666 unit (22 ca mới: 11 s
 make up && make test-integration                   # 59 integration (21 ca hybrid)
 python scripts/migrate_collection.py --config configs/indexing/bgem3.yaml
 python -m pipeline.indexing.build_index --config configs/indexing/bgem3.yaml \
-  --recreate --report plans/reports/index-bgem3.json   # ~414s trên RTX 4060
+  --recreate --report plans/reports/probes/index-bgem3.json   # ~414s trên RTX 4060
 make eval-retrieval BUNDLE=bgem3                   # phải khớp số cũ từng chữ số
 ```
 

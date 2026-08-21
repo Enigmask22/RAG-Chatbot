@@ -73,7 +73,7 @@ lệch băm nhãn — xem §7).
 | `precision@1` | 0,3397 | 0,2919 | −0,0478 | CI95 [−0,1053, +0,0096] — **nhiễu** |
 
 12/15 metric khác biệt thật, tất cả theo chiều sparse kém hơn. Bảng đầy đủ ở
-`cmp-bgem3-vs-bgem3-sparse.md`.
+`reports/compare/cmp-bgem3-vs-bgem3-sparse.md`.
 
 Đây là kết quả **phải chờ đợi**, không phải thất bại: `golden_v1` gồm câu hỏi tự
 nhiên do LLM sinh, tức đúng loại truy vấn mà dense sinh ra để xử lý. Nếu sparse
@@ -258,7 +258,7 @@ ra, không ai biết là sai".
 >
 > Cách phát hiện đáng ghi lại: các con số **không cộng lại đúng**. Phân rã
 > `retrieve_sparse` để lại **81,7 ms không thuộc thành phần nào**, trong khi
-> hybrid cộng đúng. Xem `w2-04-rrf.md` §6.
+> hybrid cộng đúng. Xem `reports/tasks/w2-04-rrf.md` §6.
 >
 > Giữ nguyên mục dưới đây thay vì xoá: con số sai và lý do nó sai đều đáng đọc.
 

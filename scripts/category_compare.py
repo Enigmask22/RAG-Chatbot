@@ -1,4 +1,4 @@
-"""Script bằng chứng cho `w2-05-reranker.md` §6.4b — kiểm định theo category.
+"""Script bằng chứng cho `reports/tasks/w2-05-reranker.md` §6.4b — kiểm định theo category.
 
 Vì sao file này tồn tại và vì sao nó **tạm thời**: `pipeline/eval/compare.py` chỉ
 so trên toàn bộ tập đo, không có chiều category; bảng `by_category` trong file
@@ -11,7 +11,7 @@ JSON có số nhưng không có kiểm định. Nên một mức tụt khu trú 
 **xoá file này** — hai công cụ trả lời cùng một câu hỏi là hai câu trả lời khác
 nhau đang chờ xảy ra.
 
-Chạy: `python plans/reports/w2-05-xling-check.py`
+Chạy: `python scripts/category_compare.py`
 """
 
 from __future__ import annotations
@@ -24,7 +24,9 @@ from pipeline.eval.compare import DEFAULT_BOOTSTRAP, DEFAULT_SEED, mcnemar_exact
 
 logger = logging.getLogger(__name__)
 
-REPORTS = Path(__file__).parent
+#: Trùng với `--dir` mặc định của `pipeline/eval/compare.py`. Suy từ vị trí file
+#: chứ không phải từ CWD: chạy script từ thư mục khác vẫn phải tìm đúng chỗ.
+RUNS = Path(__file__).resolve().parent.parent / "plans" / "reports" / "runs"
 
 #: Cặp (nền, ứng viên) cần đo. Ba dòng đầu dựng nên §6.4b; dòng cuối là phép
 #: đối chứng trả lời "reranker có vá lại phần hybrid làm hỏng không".
@@ -42,7 +44,7 @@ CONTINUOUS = ("recall@5", "recall@20", "ndcg@10")
 def load(run: str, category: str | None) -> dict[str, dict[str, float]]:
     """Điểm từng truy vấn, lọc theo `category` (None = tất cả)."""
     out: dict[str, dict[str, float]] = {}
-    with (REPORTS / f"{run}-per-query.jsonl").open(encoding="utf-8") as handle:
+    with (RUNS / f"{run}-per-query.jsonl").open(encoding="utf-8") as handle:
         for line in handle:
             row = json.loads(line)
             if category is None or row["category"] == category:

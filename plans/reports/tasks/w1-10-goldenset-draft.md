@@ -27,7 +27,7 @@ thời gian        640,6s (song song 6)
 ```
 
 - Đầu ra: [`data/golden/draft_v1.jsonl`](../../data/golden/draft_v1.jsonl) — **266 câu** (DoD ≥ 250 ✅)
-- Báo cáo máy đọc được: [`goldenset-draft.json`](goldenset-draft.json)
+- Báo cáo máy đọc được: [`reports/goldenset/goldenset-draft.json`](goldenset-draft.json)
 
 | Kiểm tra | Lệnh | Kết quả |
 |---|---|---|

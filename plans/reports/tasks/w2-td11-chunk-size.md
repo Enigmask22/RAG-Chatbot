@@ -16,7 +16,7 @@
 - Ngày chạy: 2026-08-20
 - Golden set: `golden_v1` (242 câu, chấm 209 — 33 câu `unanswerable` đo riêng ở `W5-02`)
 - Model embedding: `vietnamese-bi-encoder` ở **cả ba** cấu hình. Không đổi model ở bước này.
-- Evidence: `truncation-{baseline,chunk550}.json` · `index-chunk550.json` ·
+- Evidence: `truncation-{baseline,chunk550}.json` · `reports/probes/index-chunk550.json` ·
   `{baseline,chunk550,chunk550nb55}-retrieval.{md,json}`
 
 ---

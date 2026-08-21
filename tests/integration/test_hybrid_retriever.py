@@ -404,7 +404,7 @@ class TestAgainstQdrantNativeRRF:
 
     def test_our_default_k_is_the_paper_value_and_that_is_the_point(self) -> None:
         """Ta mặc định `k = 60` (bài báo), Qdrant cố định `k = 1`. Hai lựa chọn
-        khác nhau, và `W2-04` đo cả hai — xem `reports/w2-04-rrf.md` §5."""
+        khác nhau, và `W2-04` đo cả hai — xem `reports/tasks/w2-04-rrf.md` §5."""
         from rag_core.retrieval import RRF_K
 
         assert RRF_K == 60

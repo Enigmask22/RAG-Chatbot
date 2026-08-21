@@ -7,7 +7,7 @@
 | `map@20` | 0.1349 | 0.0921 | -0.0427 | ⚠️ số nhãn/câu đổi 1.38 → 1.96; mẫu số là số nhãn nên metric tụt 29.5% kể cả khi truy hồi y nguyên | KHÔNG SO ĐƯỢC |
 | `mrr` | 0.1660 | 0.1414 | -0.0246 | CI95 [-0.0624, +0.0126] | trong ngưỡng nhiễu |
 | `ndcg@10` | 0.1621 | 0.1215 | -0.0407 | ⚠️ số nhãn/câu đổi 1.38 → 1.96; mẫu số là số nhãn nên metric tụt 29.5% kể cả khi truy hồi y nguyên | KHÔNG SO ĐƯỢC |
-| `precision@1` | 0.1196 | 0.0861 | -0.0335 | CI95 [-0.0813, +0.0144] | trong ngưỡng nhiễu |
+| `precision@1` | 0.1196 | 0.0861 | -0.0335 | p=0.248 · 17↔10 câu đổi chiều | trong ngưỡng nhiễu |
 | `precision@10` | 0.0306 | 0.0282 | -0.0024 | CI95 [-0.0081, +0.0033] | trong ngưỡng nhiễu |
 | `precision@20` | 0.0187 | 0.0165 | -0.0022 | CI95 [-0.0055, +0.0010] | trong ngưỡng nhiễu |
 | `precision@5` | 0.0459 | 0.0431 | -0.0029 | CI95 [-0.0144, +0.0077] | trong ngưỡng nhiễu |
