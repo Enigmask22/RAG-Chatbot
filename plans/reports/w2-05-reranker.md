@@ -369,6 +369,82 @@ chọn một, chọn reranker (+22,0 điểm `hit_rate@1`, 15/15 có ý nghĩa) 
 chọn hybrid (+0,0 điểm `hit_rate@1`, 3/15 có ý nghĩa). Giữ cả hai vì tầng thứ hai
 miễn phí, không vì nó đo được.
 
+⚠️ **Chưa đủ — xem §6.4b.** Cả ba lý do trên đo trên **toàn bộ** 209 câu, và một
+mức tụt khu trú ở 20% tập đo đã đi qua chúng mà không ai thấy: hybrid làm tụt
+`cross_lingual` **có ý nghĩa** khi không có reranker. Câu "hybrid miễn phí" chỉ
+đúng ở dạng đầy đủ hơn: **miễn phí và vô hại *khi có* reranker phía sau.**
+
+### 6.4b ⭐ Nhánh hybrid làm **tụt** `cross_lingual` có ý nghĩa — và reranker vá lại
+
+Phần này đo sau khi `W2-05` đã đóng, lúc tổng kết tiến độ (2026-08-21). Nó **đổi
+cách đọc §6.4**, nên đặt ngay cạnh chứ không để ở cuối.
+
+`compare.py` chỉ so trên **toàn bộ** 209 câu, không có chiều category. Bảng
+`by_category` trong file JSON thì có số nhưng **không có kiểm định** — nên một mức
+tụt khu trú vẫn có thể đi qua cả hai mà không ai thấy. Đúng một cái như vậy đã đi
+qua `W2-04`:
+
+| `cross_lingual` (43 câu = 20% tập đo) | recall@5 | nDCG@10 | hit@5 |
+|---|---:|---:|---:|
+| bgem3 dense | **0,3023** | **0,2538** | 0,3256 |
+| hybrid k=1 c=20 | **0,2093** | **0,1707** | 0,2326 |
+
+- recall@5 CI95 **[−0,1860, −0,0233]** — không chứa 0
+- nDCG@10 CI95 **[−0,1279, −0,0396]** — không chứa 0
+- `hit_rate@5` **4↔0**: hybrid làm hỏng 4 câu và **không sửa được câu nào**
+- recall@20 CI95 **[−0,1163, 0,0000]** — *nhiễu*, và chi tiết này quan trọng: thiệt
+  hại nằm ở **đầu danh sách**, không ở vùng phủ. Đúng hình dạng `W2-04` đã kết luận
+  ("hybrid là bộ sinh ứng viên tốt, bộ xếp hạng cuối tệ"), chỉ là lần này đo được
+  **trong** `golden_v1` chứ không phải trên phép đo known-item ngoài nó
+
+Cơ chế giống hệt phần known-item ở `W2-04`, chỉ khác loại truy vấn: câu hỏi một
+ngôn ngữ, tài liệu ngôn ngữ khác thì **trùng lặp từ vựng gần bằng 0 theo định
+nghĩa**, nên nhánh sparse đóng góp toàn nhiễu — mà RRF trọng số đều vẫn cho nó
+quyền bầu ngang nhánh dense. `W2-04` đã viết đúng câu này ("RRF trọng số đều
+không biết nhánh nào đáng tin cho truy vấn nào") nhưng chỉ chứng minh nó trên tra
+mã tài liệu, tức trên một phép đo *ngoài* `golden_v1`. Nó cũng đúng **trong**
+`golden_v1`, ở 20% tập đo, và chỗ đó không ai kiểm.
+
+⚠️ Vì sao đáng ghi to: `cross_lingual` **0 → 0,3023** là kết quả tiêu đề của
+`W2-01`, lý do chọn BGE-M3. `W2-04` lấy lại gần một phần ba của nó, trong khi
+bảng tổng vẫn xanh — 43 câu tụt 9,3 điểm bị 166 câu còn lại pha loãng thành
++0,0319 recall@5 "trong ngưỡng nhiễu".
+
+**Reranker vá lại đúng phần đó**, và đây là phần làm §6.4 vẫn đứng:
+
+| `cross_lingual`, cùng reranker c=50 | hit@1 | recall@5 | nDCG@10 |
+|---|---:|---:|---:|
+| nền dense | 0,4651 | 0,5814 | 0,5393 |
+| nền hybrid | 0,4419 | 0,5581 | 0,5191 |
+| | `p = 1,000` · **1↔0** | CI95 [−0,0698, 0,0000] | CI95 [−0,0698, +0,0091] |
+
+Mức tụt còn **một câu**, tức nhiễu. So với chính nó không rerank thì reranker đưa
+`cross_lingual` hit@1 **0,0465 → 0,4419** (`p < 0,0001`, **0↔17** — 17 câu được
+sửa, **0** câu bị làm hỏng).
+
+Nên phát biểu chính xác của §6.4 phải là: **hybrid miễn phí và vô hại *khi có*
+reranker phía sau.** Không phải "hybrid vô hại".
+
+⚠️⚠️ **Hệ quả vận hành mà §8 ghi SAI.** §8 và `w2-05` nói mất GPU thì tắt tầng
+rerank và lùi về hybrid ở 31 ms. Với lưu lượng có `cross_lingual`, đó là lùi về
+đúng cấu hình vừa đo được là **tệ hơn dense** (recall@5 0,2093 vs 0,3023, CI95
+không chứa 0). Chế độ suy giảm đúng là **dense**, không phải hybrid — trừ khi lưu
+lượng nghiêng về tra mã tài liệu, nơi `W2-03` đo sparse thắng áp đảo. Tức chế độ
+suy giảm phải **chọn theo loại truy vấn**, và hiện chưa có gì trong hệ thống phân
+loại được truy vấn lúc chạy (đó là `W4-07`).
+
+Số ở phần này tái lập bằng `python plans/reports/w2-05-xling-check.py` (gọi lại
+`mcnemar_exact`/`paired_bootstrap` của `compare.py`, chỉ thêm phần lọc category —
+**xoá file đó** khi `compare.py` có `--category`).
+
+**Việc còn lại từ đây:** `compare.py` cần `--category` / `--lang` để kiểm định
+theo tập con thay vì phải viết script tay như lần này. Nó cũng là điều kiện của
+DoD `W2-09` ("ít nhất 2 nhận xét về *category nào cải thiện nhiều nhất*") — mà
+"cải thiện nhiều nhất" không kiểm định thì đúng là cái mà `TD-11` đã dạy là vô
+nghĩa. Cảnh báo về lực: 43 câu thì ngưỡng phân giải thô hơn nhiều so với 209 câu,
+nên `--category` phải in kèm `n` và không được cho phép tuyên bố người thắng chỉ
+bằng Δ.
+
 ### 6.5 Một hố im lặng trong `compare.py` mà hạng mục này lộ ra
 
 `precision@1` **bằng `hit_rate@1` từng chữ số** — top-1 chỉ có một chỗ nên nó liên
