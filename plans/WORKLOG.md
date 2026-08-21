@@ -1436,7 +1436,7 @@ cho mọi thứ liên quan tới cross-encoder, cả chi phí lẫn lợi ích.
 sigmoid đơn điệu nên nó không thêm gì cho việc xếp hạng. "Nó bão hoà" là một tuyên
 bố tôi chưa có quyền nói.
 
-### Hai lần tự quy kết sai và phải sửa lại
+### Ba lần tự quy kết sai và phải sửa lại
 
 1. **fp32 chậm không phải vì bị nhiễm.** Lần đo corpus thật đầu tiên bị một tiến
    trình pytest thứ hai tranh VRAM (7934/8188 MiB, `max_ms` chạm **171.759 ms**)
@@ -1452,6 +1452,24 @@ bố tôi chưa có quyền nói.
    device, và ngưỡng 0,5 cách nhiễu fp32 giữa hai device (~1e-4) nhiều bậc.
    `lru_cache(maxsize=2)` cho reranker là một lời hứa phần cứng này **không giữ
    được** khi bge-m3 cũng thường trú. Bằng chứng thật cho `W0-06`.
+
+3. **Một vòng chờ quay vô ích 1h47m, và tôi chẩn đoán sai nguyên nhân của nó
+   trước khi tìm ra.** Tôi arm `until grep -qE "passed|failed|error" <file test>`
+   để chờ suite xong. Nó không bao giờ khớp. Chẩn đoán đầu của tôi: "`tail -8`
+   trong pipe đã cắt mất dòng tổng kết" — **sai**. Nguyên nhân thật:
+   `pyproject.toml` đã có `addopts = "-q --strict-markers"`, nên `pytest -q` gõ
+   tay thành **`-qq`**, và `-qq` **tắt hẳn** dòng tổng kết. Chuỗi ấy chưa bao giờ
+   được in.
+
+   Hai hệ quả, và cái thứ hai đáng hơn: (a) vòng chờ đó vô nghĩa từ đầu vì harness
+   **đã** thông báo task xong — poll một việc harness tự theo dõi là thuần lãng
+   phí; (b) **mọi con số test tôi báo trong phiên này đều là suy ra** từ
+   `--collect-only` cộng exit code, chưa lần nào đọc trực tiếp từ pytest. Chạy lại
+   không thêm `-q` cho: unit [not gpu] **839**, unit [gpu] **13**, integration
+   [not gpu] **109**, integration [gpu] **13**, tất cả **974 passed** trong 267,14s
+   — khớp đúng con số đã ghi, nhưng đường đi tới nó yếu hơn tôi trình bày. Đã ghi
+   cảnh báo ngay cạnh `addopts` trong `pyproject.toml`; các target `Makefile` cố ý
+   không thêm `-q`.
 
 ### Phép kiểm nội tại tình cờ, và nó rất mạnh
 

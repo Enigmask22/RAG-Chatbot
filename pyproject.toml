@@ -126,6 +126,13 @@ ignore_missing_imports = true
 # --------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# ⚠️ `-q` ĐÃ CÓ Ở ĐÂY — đừng thêm `-q` trên dòng lệnh nữa.
+# `pytest -q` cộng với dòng này thành `-qq`, và `-qq` **tắt hẳn** dòng tổng kết
+# ("974 passed in 267s"). Hệ quả không phải mỹ quan: ở `W2-05` tôi gõ `-q` theo
+# phản xạ suốt cả phiên, nên mọi con số test báo ra đều là suy từ
+# `--collect-only` cộng exit code chứ chưa lần nào đọc trực tiếp; và một vòng
+# `until grep "passed"` canh file output đó đã quay vô ích 1h47m vì chuỗi ấy
+# không bao giờ xuất hiện. Các target trong `Makefile` cố ý **không** thêm `-q`.
 addopts = "-q --strict-markers"
 markers = [
     "integration: cần service ngoài (Qdrant/Postgres/Redis) — chạy bằng `make test-integration`",
