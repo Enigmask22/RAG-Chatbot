@@ -1,13 +1,13 @@
 | metric | bgem3 | bgem3-rrf | Δ | kiểm định | kết luận |
 |---|---:|---:|---:|---|---|
-| `hit_rate@1` | 0.3397 | 0.3014 | -0.0383 | p=0.169 · 17↔9 câu đổi chiều | trong ngưỡng nhiễu |
-| `hit_rate@10` | 0.6268 | 0.5742 | -0.0526 | p=0.061 · 20↔9 câu đổi chiều | trong ngưỡng nhiễu |
-| `hit_rate@20` | 0.6746 | 0.6746 | +0.0000 | p=1.000 · 11↔11 câu đổi chiều | trong ngưỡng nhiễu |
-| `hit_rate@5` | 0.5455 | 0.4689 | -0.0766 | p=0.014 · 27↔11 câu đổi chiều | khác biệt thật |
+| `hit_rate@1` | 0.3397 | 0.3014 | -0.0383 | p=0.1686 · 17↔9 câu đổi chiều | trong ngưỡng nhiễu |
+| `hit_rate@10` | 0.6268 | 0.5742 | -0.0526 | p=0.06143 · 20↔9 câu đổi chiều | trong ngưỡng nhiễu |
+| `hit_rate@20` | 0.6746 | 0.6746 | +0.0000 | p=1 · 11↔11 câu đổi chiều | trong ngưỡng nhiễu |
+| `hit_rate@5` | 0.5455 | 0.4689 | -0.0766 | p=0.01385 · 27↔11 câu đổi chiều | khác biệt thật |
 | `map@20` | 0.3853 | 0.3583 | -0.0270 | CI95 [-0.0635, +0.0079] | trong ngưỡng nhiễu |
 | `mrr` | 0.4394 | 0.3871 | -0.0523 | CI95 [-0.0916, -0.0145] | khác biệt thật |
 | `ndcg@10` | 0.4442 | 0.4021 | -0.0421 | CI95 [-0.0785, -0.0071] | khác biệt thật |
-| `precision@1` | 0.3397 | 0.3014 | -0.0383 | p=0.169 · 17↔9 câu đổi chiều | trong ngưỡng nhiễu |
+| `precision@1` | 0.3397 | 0.3014 | -0.0383 | p=0.1686 · 17↔9 câu đổi chiều | trong ngưỡng nhiễu |
 | `precision@10` | 0.0818 | 0.0742 | -0.0077 | CI95 [-0.0144, -0.0014] | khác biệt thật |
 | `precision@20` | 0.0445 | 0.0445 | +0.0000 | CI95 [-0.0029, +0.0026] | trong ngưỡng nhiễu |
 | `precision@5` | 0.1340 | 0.1187 | -0.0153 | CI95 [-0.0306, -0.0010] | khác biệt thật |

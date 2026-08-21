@@ -501,17 +501,31 @@ lượng nghiêng về tra mã tài liệu, nơi `W2-03` đo sparse thắng áp 
 suy giảm phải **chọn theo loại truy vấn**, và hiện chưa có gì trong hệ thống phân
 loại được truy vấn lúc chạy (đó là `W4-07`).
 
-Số ở phần này tái lập bằng `python scripts/category_compare.py` (gọi lại
-`mcnemar_exact`/`paired_bootstrap` của `compare.py`, chỉ thêm phần lọc category —
-**xoá file đó** khi `compare.py` có `--category`).
+⚠️ **Cập nhật 2026-08-21 (`W2-08-prep`):** script tạm `scripts/category_compare.py` **đã bị xoá**; số ở phần này giờ tái lập bằng
+`make eval-compare-by BASE=bgem3 CAND=bgem3-rrf-k1-c20` (quét mọi nhóm, có hiệu chỉnh) hoặc
+`make eval-compare-subset BASE=… CAND=… CAT=cross_lingual` (một nhóm nêu trước).
 
-**Việc còn lại từ đây:** `compare.py` cần `--category` / `--lang` để kiểm định
+⚠️⚠️ **Và hai dẫn chứng của phần này SAI, dù kết luận đúng.** Chạy lại bằng công cụ có hiệu chỉnh:
+kết luận "hybrid làm tụt `cross_lingual`" **sống sót** Bonferroni cho cả 90 phép kiểm — nhưng ở
+`map@20`/`mrr`/`ndcg@10`, **không** ở `recall@5` (thành `KHÔNG KẾT LUẬN`, biên CI đúng 0) và
+**không** ở `hit_rate@5` `4↔0` (**trần `p` = 0,125**, chưa bao giờ có lực). Con số "reranker vá lại
+(còn `1↔0`, `p` = 1,000)" có **trần `p` = 1,0**, tức không mang thông tin nào — bằng chứng thật là
+`bgem3-rrf-k1-c20 → bgem3-rr-c50` trên `cross_lingual`: `hit_rate@5` **0↔14, `p` = 0,00012**.
+Xem `w2-08-prep-compare-groups.md` §5.
+
+**Việc còn lại từ đây — ✅ ĐÃ LÀM ở `W2-08-prep` (2026-08-21):** `compare.py` cần `--category` / `--lang` để kiểm định
 theo tập con thay vì phải viết script tay như lần này. Nó cũng là điều kiện của
 DoD `W2-09` ("ít nhất 2 nhận xét về *category nào cải thiện nhiều nhất*") — mà
 "cải thiện nhiều nhất" không kiểm định thì đúng là cái mà `TD-11` đã dạy là vô
 nghĩa. Cảnh báo về lực: 43 câu thì ngưỡng phân giải thô hơn nhiều so với 209 câu,
 nên `--category` phải in kèm `n` và không được cho phép tuyên bố người thắng chỉ
 bằng Δ.
+>
+> ✅ **Cảnh báo đó đúng, và nó còn nhẹ hơn thực tế.** `W2-08-prep` đo được: trần `p` của
+> McNemar là `2/2ⁿ` với `n` là số câu **đổi chiều**, nên `hit_rate@5` `4↔0` của chính phần này
+> có trần `p` = **0,125** — nó không phải "phân giải thô", nó **không thể** đạt ý nghĩa. Và
+> nhóm `table_lookup` (4 câu) thì vĩnh viễn không đo được. Cờ `KHÔNG ĐỦ LỰC` giờ nói ra điều đó
+> thay vì để nó thành "trong ngưỡng nhiễu".
 
 ### 6.5 Một hố im lặng trong `compare.py` mà hạng mục này lộ ra
 

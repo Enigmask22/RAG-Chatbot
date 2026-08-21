@@ -17,10 +17,17 @@ from pathlib import Path
 import pytest
 
 from pipeline.eval.compare import (
+    DEFAULT_ALPHA,
+    ComparisonRow,
     RunScores,
+    bootstrap_intervals,
+    compare_by_group,
     compare_runs,
+    format_grouped_table,
+    format_table,
     load_per_query,
     mcnemar_exact,
+    min_achievable_p,
     paired_bootstrap,
 )
 
@@ -398,3 +405,405 @@ class TestLabelDigestGuard:
         run = load_per_query(path)
         assert run.relevant_digest == {"q1": ""}
         assert run.has_digests is False
+
+
+# ============================================================ chia nhóm (W2-08-prep)
+
+
+def _rows(
+    scores: dict[str, dict[str, float]],
+    *,
+    category: dict[str, str] | None = None,
+    lang: dict[str, str] | None = None,
+    n_relevant: int = 2,
+) -> RunScores:
+    """`RunScores` dựng tay — không chạm đĩa."""
+    return RunScores(
+        name="r",
+        scores=scores,
+        n_relevant=dict.fromkeys(scores, n_relevant),
+        relevant_digest=dict.fromkeys(scores, "same"),
+        category=category or {},
+        lang=lang or {},
+    )
+
+
+class TestMinAchievableP:
+    """`p` nhỏ nhất McNemar có thể trả về — cơ sở của cờ `KHÔNG ĐỦ LỰC`."""
+
+    @pytest.mark.parametrize(
+        ("n", "expected"),
+        [(0, 1.0), (1, 1.0), (2, 0.5), (3, 0.25), (4, 0.125), (5, 0.0625), (6, 0.03125)],
+    )
+    def test_matches_the_binomial_tail(self, n: int, expected: float) -> None:
+        assert min_achievable_p(n) == pytest.approx(expected)
+
+    def test_six_discordant_pairs_is_the_first_that_can_reach_significance(self) -> None:
+        """Con số quyết định: nhóm dưới 6 câu đổi chiều là vô vọng ở α=0,05.
+
+        `table_lookup` của `golden_v1` có **4** câu, nên nó không bao giờ đạt được
+        ý nghĩa trên bất kỳ metric nhị phân nào — không phải "chưa đạt", mà là
+        không thể.
+        """
+        assert min_achievable_p(5) >= 0.05
+        assert min_achievable_p(6) < 0.05
+
+    def test_it_agrees_with_mcnemar_at_the_extreme(self) -> None:
+        """Định nghĩa phải khớp hàm thật, không phải khớp công thức tôi nhớ."""
+        for n in range(1, 9):
+            assert mcnemar_exact(n, 0) == pytest.approx(min_achievable_p(n))
+            assert mcnemar_exact(0, n) == pytest.approx(min_achievable_p(n))
+
+
+class TestUnderpoweredIsNotTheSameAsNoEffect:
+    def test_a_row_that_cannot_reach_alpha_says_so(self) -> None:
+        row = ComparisonRow(
+            metric="hit_rate@5",
+            baseline=0.3,
+            candidate=0.2,
+            delta=-0.1,
+            test="McNemar exact",
+            p_value=0.125,
+            n_baseline_only=4,
+            n_candidate_only=0,
+            n_queries=43,
+        )
+        assert row.underpowered
+        assert row.verdict == "KHÔNG ĐỦ LỰC"
+
+    def test_a_row_with_power_that_found_nothing_says_something_else(self) -> None:
+        """Phân biệt cả bài test này tồn tại để bảo vệ."""
+        row = ComparisonRow(
+            metric="hit_rate@5",
+            baseline=0.5,
+            candidate=0.5,
+            delta=0.0,
+            test="McNemar exact",
+            p_value=1.0,
+            n_baseline_only=10,
+            n_candidate_only=10,
+            n_queries=209,
+        )
+        assert not row.underpowered
+        assert row.verdict == "trong ngưỡng nhiễu"
+
+    def test_tightening_alpha_can_make_a_powered_row_powerless(self) -> None:
+        """Cùng dữ liệu, ngưỡng khắt khe hơn → hết lực. Đo được ở `cross_lingual`.
+
+        `hit_rate@10` có 5↔1 (trần `p` = 0,03125): có lực ở α=0,05 nhưng **không**
+        ở α đã hiệu chỉnh cho 90 phép kiểm. Cờ này phải phân biệt được, không thì
+        nó chỉ là "n nhỏ" đội lốt.
+        """
+
+        def row(alpha: float) -> ComparisonRow:
+            return ComparisonRow(
+                metric="hit_rate@10",
+                baseline=0.44,
+                candidate=0.35,
+                delta=-0.09,
+                test="McNemar exact",
+                p_value=0.2188,
+                n_baseline_only=5,
+                n_candidate_only=1,
+                n_queries=43,
+                alpha=alpha,
+            )
+
+        assert not row(DEFAULT_ALPHA).underpowered
+        assert row(DEFAULT_ALPHA / 90).underpowered
+
+    def test_a_non_comparable_row_is_not_relabelled(self) -> None:
+        """`KHÔNG SO ĐƯỢC` (nhãn lệch) phải thắng, nó là vấn đề nghiêm trọng hơn."""
+        row = ComparisonRow(
+            metric="recall@5",
+            baseline=0.1,
+            candidate=0.2,
+            delta=0.1,
+            test="—",
+            comparable=False,
+            n_queries=4,
+        )
+        assert row.verdict == "KHÔNG SO ĐƯỢC"
+
+
+class TestCiTouchingZeroIsNotEvidenceOfNoEffect:
+    """Biên CI đúng 0 = biên giới của lưới rời rạc, không phải kết luận âm.
+
+    Đo được: trong bảng `bgem3 → bgem3-rrf-k1-c20` chia theo category, **4/4**
+    dòng `recall@5` có một biên ghim đúng `0,0000` và cả bốn từng bị dán "trong
+    ngưỡng nhiễu". Đổi seed dịch biên đúng **một bước lưới** (1/43 = 0,0233) chứ
+    không dịch trơn, và tăng 10.000 → 50.000 iterations không đổi gì.
+    """
+
+    def _row(self, lo: float, hi: float) -> ComparisonRow:
+        return ComparisonRow(
+            metric="recall@5",
+            baseline=0.3,
+            candidate=0.21,
+            delta=-0.09,
+            test="bootstrap cặp (10000)",
+            ci_low=lo,
+            ci_high=hi,
+            n_queries=43,
+        )
+
+    def test_upper_bound_exactly_zero_gives_no_conclusion(self) -> None:
+        row = self._row(-0.2558, 0.0)
+        assert row.ci_touches_zero
+        assert row.verdict == "KHÔNG KẾT LUẬN"
+
+    def test_lower_bound_exactly_zero_gives_no_conclusion(self) -> None:
+        assert self._row(0.0, 0.1765).verdict == "KHÔNG KẾT LUẬN"
+
+    def test_an_interval_that_merely_straddles_zero_is_noise(self) -> None:
+        """Bao 0 ở cả hai phía là kết luận thật; ghim đúng 0 thì không."""
+        row = self._row(-0.05, 0.03)
+        assert not row.ci_touches_zero
+        assert row.verdict == "trong ngưỡng nhiễu"
+
+    def test_an_interval_excluding_zero_still_wins(self) -> None:
+        assert self._row(-0.1630, -0.0054).verdict == "khác biệt thật"
+
+
+class TestBootstrapIntervalsIsOneResampling:
+    def test_paired_bootstrap_is_a_thin_wrapper(self) -> None:
+        """Hai đường phải cho **cùng** con số, không thì bảng lệch theo cách vô hình."""
+        diffs = [0.0] * 30 + [0.5, -0.25, 0.75, -0.5]
+        assert (
+            paired_bootstrap(diffs, iterations=500, seed=7)
+            == bootstrap_intervals(diffs, (DEFAULT_ALPHA,), iterations=500, seed=7)[DEFAULT_ALPHA]
+        )
+
+    def test_several_alphas_come_from_the_same_sorted_draws(self) -> None:
+        """Khoảng khắt khe hơn phải **chứa** khoảng rộng hơn — cùng một dãy mẫu.
+
+        Gọi bootstrap hai lần với hai alpha có thể vi phạm điều này; lấy hai phân
+        vị từ một lần sắp thì không thể.
+        """
+        diffs = [0.0] * 40 + [0.4, -0.2, 0.6, -0.3, 0.1]
+        out = bootstrap_intervals(diffs, (0.05, 0.001), iterations=2000, seed=3)
+        wide_lo, wide_hi = out[0.001]
+        narrow_lo, narrow_hi = out[0.05]
+        assert wide_lo <= narrow_lo
+        assert wide_hi >= narrow_hi
+
+    def test_empty_diffs_give_zero_for_every_alpha(self) -> None:
+        assert bootstrap_intervals([], (0.05, 0.001)) == {0.05: (0.0, 0.0), 0.001: (0.0, 0.0)}
+
+
+class TestGrouping:
+    @pytest.fixture
+    def pair(self) -> tuple[RunScores, RunScores]:
+        cat = {"q1": "factoid", "q2": "factoid", "q3": "cross_lingual", "q4": ""}
+        lang = {"q1": "vi", "q2": "en", "q3": "en", "q4": "vi"}
+        base = _rows(
+            {q: {"hit_rate@5": 1.0, "recall@5": 0.5} for q in cat},
+            category=cat,
+            lang=lang,
+        )
+        cand = _rows(
+            {q: {"hit_rate@5": 0.0, "recall@5": 0.25} for q in cat},
+            category=cat,
+            lang=lang,
+        )
+        return base, cand
+
+    def test_groups_are_ordered_largest_first(self, pair: tuple[RunScores, RunScores]) -> None:
+        """Nhóm to trước: người đọc gặp kết luận có lực trước, gặp nhóm 4 câu cuối."""
+        base, _ = pair
+        assert list(base.groups("category")) == ["factoid", "", "cross_lingual"]
+
+    def test_an_unlabelled_query_becomes_its_own_group_not_a_silent_drop(
+        self, pair: tuple[RunScores, RunScores]
+    ) -> None:
+        base, _ = pair
+        assert base.groups("category")[""] == ["q4"]
+        assert sum(len(v) for v in base.groups("category").values()) == 4
+
+    def test_an_invalid_dimension_raises_instead_of_giving_one_empty_group(self) -> None:
+        """Chia theo trường không có sẽ cho **một nhóm rỗng**, đọc y như 'không khác biệt'."""
+        with pytest.raises(ValueError, match="Chiều chia nhóm"):
+            _rows({"q1": {"mrr": 1.0}}).groups("doc_type")
+
+    def test_subset_narrows_every_parallel_dict(self, pair: tuple[RunScores, RunScores]) -> None:
+        """Thiếu một dict là một hàng rào của `compare_runs` chạy trên tập sai."""
+        base, _ = pair
+        small = base.subset(["q1", "q3"])
+        assert small.query_ids == {"q1", "q3"}
+        assert set(small.n_relevant) == {"q1", "q3"}
+        assert set(small.relevant_digest) == {"q1", "q3"}
+        assert set(small.category) == {"q1", "q3"}
+        assert set(small.lang) == {"q1", "q3"}
+        assert small.name == base.name
+
+    def test_subset_ignores_ids_that_are_not_there(self, pair: tuple[RunScores, RunScores]) -> None:
+        base, _ = pair
+        assert base.subset(["q1", "khong-co"]).query_ids == {"q1"}
+
+    def test_every_group_gets_a_table(self, pair: tuple[RunScores, RunScores]) -> None:
+        base, cand = pair
+        out = compare_by_group(base, cand, "category", iterations=200)
+        assert set(out) == {"factoid", "(không nhãn)", "cross_lingual"}
+
+    def test_n_queries_is_recorded_per_group(self, pair: tuple[RunScores, RunScores]) -> None:
+        """43 câu và 209 câu không cùng độ tin cậy; bảng không in `n` là bảng mời so sai."""
+        base, cand = pair
+        out = compare_by_group(base, cand, "category", iterations=200)
+        assert {k: v[0].n_queries for k, v in out.items()} == {
+            "factoid": 2,
+            "(không nhãn)": 1,
+            "cross_lingual": 1,
+        }
+
+
+class TestMultipleComparisonCorrection:
+    """Chia nhóm **là** một cuộc tìm kiếm, nên nó phải tự hiệu chỉnh."""
+
+    @pytest.fixture
+    def pair(self) -> tuple[RunScores, RunScores]:
+        cat = {f"q{i}": ("a" if i < 10 else "b") for i in range(20)}
+        base = _rows({q: {"mrr": 0.5, "hit_rate@5": 1.0} for q in cat}, category=cat)
+        cand = _rows({q: {"mrr": 0.6, "hit_rate@5": 1.0} for q in cat}, category=cat)
+        return base, cand
+
+    def test_alpha_is_divided_by_groups_times_metrics(
+        self, pair: tuple[RunScores, RunScores]
+    ) -> None:
+        base, cand = pair
+        out = compare_by_group(base, cand, "category", iterations=200)
+        row = out["a"][0]
+        assert row.family_size == 2 * 2
+        assert row.alpha == pytest.approx(DEFAULT_ALPHA / 4)
+
+    def test_no_correction_leaves_alpha_alone(self, pair: tuple[RunScores, RunScores]) -> None:
+        base, cand = pair
+        out = compare_by_group(base, cand, "category", iterations=200, correct=False)
+        assert out["a"][0].alpha == pytest.approx(DEFAULT_ALPHA)
+        assert out["a"][0].family_size == 1
+
+    def test_family_size_counts_tests_attempted_not_tests_that_worked(
+        self, pair: tuple[RunScores, RunScores]
+    ) -> None:
+        """`m` phải tính được TRƯỚC khi chạy.
+
+        Nếu nó phụ thuộc số hàng so được thì chính `m` trở thành một lựa chọn dựa
+        trên dữ liệu — đúng cái hiệu chỉnh tồn tại để chặn.
+        """
+        base, cand = pair
+        out = compare_by_group(base, cand, "category", metrics=["mrr"], iterations=200)
+        assert out["a"][0].family_size == 2 * 1
+
+    def test_a_pairwise_comparison_is_never_corrected(self) -> None:
+        """`compare_runs` mặc định giữ nguyên α — điều kiện, không phải tình cờ.
+
+        Đổi ngưỡng ở đó sẽ lặng lẽ viết lại kết luận của mọi bảng đã công bố từ
+        `W2-01` đến `W2-07`.
+        """
+        base = _rows({f"q{i}": {"mrr": 0.5} for i in range(20)})
+        cand = _rows({f"q{i}": {"mrr": 0.6} for i in range(20)})
+        (row,) = compare_runs(base, cand, iterations=200)
+        assert row.alpha == pytest.approx(DEFAULT_ALPHA)
+        assert row.family_size == 1
+
+
+class TestGroupedTableTellsTheReaderWhatItIs:
+    @pytest.fixture
+    def table(self) -> str:
+        cat = {f"q{i}": ("a" if i < 6 else "b") for i in range(12)}
+        base = _rows({q: {"mrr": 0.5, "hit_rate@5": 1.0} for q in cat}, category=cat)
+        cand = _rows({q: {"mrr": 0.6, "hit_rate@5": 0.0} for q in cat}, category=cat)
+        groups = compare_by_group(base, cand, "category", iterations=300)
+        return format_grouped_table(groups, baseline="A", candidate="B", dimension="category")
+
+    def test_it_states_the_family_size_and_the_adjusted_alpha(self, table: str) -> None:
+        assert "phép kiểm" in table
+        assert "Bonferroni" in table
+
+    def test_it_states_how_many_false_positives_are_expected_without_correction(
+        self, table: str
+    ) -> None:
+        """Con số này là lý do hiệu chỉnh tồn tại; nó phải ở đầu file, không ở cuối."""
+        assert "thuần do ngẫu nhiên" in table
+
+    def test_it_explains_every_verdict_that_is_not_a_number(self, table: str) -> None:
+        for label in ("KHÔNG ĐỦ LỰC", "KHÔNG SO ĐƯỢC", "KHÔNG KẾT LUẬN"):
+            assert label in table
+
+    def test_every_group_shows_its_n(self, table: str) -> None:
+        assert "n = 6" in table
+
+    def test_rows_carry_the_n_column(self, table: str) -> None:
+        assert "| n |" in table
+
+
+class TestPairwiseTableIsUnchanged:
+    """Bảng một-cặp phải giữ nguyên hình dạng: 12 file trong `compare/` dùng nó."""
+
+    def test_no_n_column_by_default(self) -> None:
+        base = _rows({f"q{i}": {"mrr": 0.5} for i in range(10)})
+        cand = _rows({f"q{i}": {"mrr": 0.6} for i in range(10)})
+        rows = compare_runs(base, cand, iterations=200)
+        table = format_table(rows, baseline="A", candidate="B")
+        assert "| n |" not in table
+        assert table.splitlines()[0] == "| metric | A | B | Δ | kiểm định | kết luận |"
+
+    def test_n_column_appears_on_request(self) -> None:
+        base = _rows({f"q{i}": {"mrr": 0.5} for i in range(10)})
+        cand = _rows({f"q{i}": {"mrr": 0.6} for i in range(10)})
+        rows = compare_runs(base, cand, iterations=200)
+        assert "| n |" in format_table(rows, baseline="A", candidate="B", show_n=True)
+
+
+class TestLoadReadsTheGroupingColumns:
+    def test_category_and_lang_come_from_the_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "r-per-query.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "query_id": "q1",
+                    "category": "cross_lingual",
+                    "lang": "en",
+                    "n_relevant": 2,
+                    "n_retrieved": 5,
+                    "scores": {"mrr": 0.5},
+                    "relevant_digest": "d",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        run = load_per_query(path)
+        assert run.category == {"q1": "cross_lingual"}
+        assert run.lang == {"q1": "en"}
+
+    def test_a_file_without_those_columns_still_loads(self, tmp_path: Path) -> None:
+        """File của lần chạy cũ không có `category`; thiếu thì là chuỗi rỗng, không nổ."""
+        path = tmp_path / "old-per-query.jsonl"
+        path.write_text(
+            json.dumps({"query_id": "q1", "n_relevant": 1, "scores": {"mrr": 1.0}}) + "\n",
+            encoding="utf-8",
+        )
+        run = load_per_query(path)
+        assert run.category == {"q1": ""}
+        assert run.groups("category") == {"": ["q1"]}
+
+
+class TestRealGoldenSetShape:
+    """Ghim hình dạng thật của `golden_v1` — nó là lý do các cờ trên tồn tại."""
+
+    def test_table_lookup_can_never_reach_significance(self) -> None:
+        """4 câu → trần `p` = 0,125. Không phải "chưa đạt", là **không thể**."""
+        run = load_per_query("plans/reports/runs/e1-bgem3-dense-per-query.jsonl")
+        groups = run.groups("category")
+        assert len(groups["table_lookup"]) == 4
+        assert min_achievable_p(len(groups["table_lookup"])) >= DEFAULT_ALPHA
+
+    def test_cross_lingual_is_a_fifth_of_the_set(self) -> None:
+        run = load_per_query("plans/reports/runs/e1-bgem3-dense-per-query.jsonl")
+        groups = run.groups("category")
+        assert len(groups["cross_lingual"]) == 43
+        assert sum(len(v) for v in groups.values()) == 209
+
+    def test_both_languages_are_large_enough_to_test(self) -> None:
+        run = load_per_query("plans/reports/runs/e1-bgem3-dense-per-query.jsonl")
+        assert {k: len(v) for k, v in run.groups("lang").items()} == {"vi": 127, "en": 82}

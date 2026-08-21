@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-21 (cuối file)** — `W2-07` xong: experiment runner (YAML matrix → 14 ô → MLflow), resume theo `fingerprint` của ô, preflight bắt ngay một ô sắp ghi đè bằng chứng `W2-03`. Grid tái lập **5** con số đã công bố đúng từng chữ số. ⚠️ Lượt chạy đầu chạy trọn 14 ô mà **không ghi gì lên MLflow** (mlflow 3 bỏ file store) → URI không mở được giờ là lỗi preflight, và có `make exp-backfill` dựng lại view từ file báo cáo. Việc tiếp theo: `--category` cho `compare.py`, rồi `W2-08`.
+> **Phiên mới nhất: 2026-08-21 (cuối file)** — `W2-08-prep` xong: `compare.py` có `--by category|lang` (quét, **có** hiệu chỉnh Bonferroni) và `--category X` (một giả thuyết nêu trước, không hiệu chỉnh); `scripts/category_compare.py` **đã xoá**. ⭐ Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh cho cả 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực trích cạnh một CI có nghĩa — đã sửa. ⭐ Hai cờ mới `KHÔNG ĐỦ LỰC` (trần `p` của McNemar là `2/2ⁿ`; `table_lookup` 4 câu là vĩnh viễn không đo được) và `KHÔNG KẾT LUẬN` (biên CI đúng 0 — lỗi do chính bản hiệu chỉnh của tôi tạo ra, phải đo mới thấy). Việc tiếp theo: `W2-08`.
+>
+> Phiên trước: `W2-07` xong: experiment runner (YAML matrix → 14 ô → MLflow), resume theo `fingerprint` của ô, preflight bắt ngay một ô sắp ghi đè bằng chứng `W2-03`. Grid tái lập **5** con số đã công bố đúng từng chữ số. ⚠️ Lượt chạy đầu chạy trọn 14 ô mà **không ghi gì lên MLflow** (mlflow 3 bỏ file store) → URI không mở được giờ là lỗi preflight, và có `make exp-backfill` dựng lại view từ file báo cáo. Việc tiếp theo: `--category` cho `compare.py`, rồi `W2-08`.
 >
 > Phiên trước: 2026-08-20 — tuần 1 xong 13/13; W2 xong `TD-11` (âm), `W2-01` BGE-M3, `W2-02` hybrid schema, `W2-03` sparse retriever, `W2-04` RRF (**`k=60` của bài báo kém dense có ý nghĩa**; `k=1` thắng nhưng chỉ 3/15 metric đạt ý nghĩa; và một **bug 64 ms** làm sai hai con số đã công bố — sparse thật ra miễn phí hoàn toàn). Việc tiếp theo: `W2-05`.
 > Sắp xếp theo thứ tự thời gian, mục mới thêm vào **cuối**.
@@ -1877,6 +1879,148 @@ file · `W2` 7/9 · tổng 27/77.
 6. ⚠️ Cột `p95` của grid dùng để **sàng**, không để kết luận: 13 phút chạy liên
    tục trên GPU laptop, không có đối chứng thứ tự. Số độ trễ đáng tin đến từ probe
    riêng (`W2-04` §6, `W2-06` §5).
+
+---
+
+## Phiên 2026-08-21 (tiếp) · `W2-08-prep` — `--category`/`--lang` cho `compare.py`
+
+**Mục tiêu phiên:** điều kiện của DoD `W2-09`. Kiểm định được theo tập con, và xoá
+`scripts/category_compare.py`.
+
+```bash
+make eval-compare-by BASE=bgem3 CAND=bgem3-rrf-k1-c20            # quét mọi category
+make eval-compare-by BASE=bgem3 CAND=bgem3-rr-c50 BY=lang        # quét theo ngôn ngữ
+make eval-compare-subset BASE=bgem3 CAND=bgem3-rrf-k1-c20 CAT=cross_lingual
+```
+
+### Phần khó không phải bộ lọc
+
+Lọc theo `category` là mười dòng. Vấn đề thật: **hỏi 6 nhóm × 15 metric = 90 câu
+hỏi rồi chọn cái to nhất là một quy trình chọn mẫu**, và ở α=0,05 nó kỳ vọng **4,5
+kết quả "có ý nghĩa" thuần do ngẫu nhiên** — tức "category nào cải thiện nhiều
+nhất" gần như *bảo đảm* tìm ra một cái, kể cả khi không có gì.
+
+Nên **hai lệnh, vì có hai loại suy luận**:
+
+| Lệnh | Là gì | Hiệu chỉnh |
+|---|---|---|
+| `--category X` | Một giả thuyết **nêu trước** | Không |
+| `--by category` | Một cuộc **tìm kiếm** | Bonferroni trên `nhóm × metric` |
+
+CLI **từ chối** dùng cả hai cùng lúc. `compare_runs` một-cặp giữ nguyên α=0,05 —
+đổi ở đó sẽ lặng lẽ viết lại kết luận `W2-01`…`W2-07`, có test ghim.
+
+Bonferroni chứ không Holm: Holm dùng ngưỡng khác nhau cho từng hạng, mà một khoảng
+tin cậy bootstrap không biểu diễn được điều đó bằng một khoảng duy nhất — bảng sẽ
+có hai luật trong một bảng.
+
+### `KHÔNG ĐỦ LỰC` — phân biệt quan trọng nhất, và nó tính được
+
+McNemar exact chỉ dùng `n` câu **đổi chiều**, nên trần `p` của nó là `2/2ⁿ`:
+n=4 → **0,125**; n=5 → 0,0625; **n=6 → 0,031** (chỗ đầu qua 0,05); n=12 → chỗ đầu
+qua α đã hiệu chỉnh cho 90 phép kiểm.
+
+`golden_v1` có `table_lookup` = **4 câu**, nên nó **vĩnh viễn** không đo được trên
+metric nhị phân. Không có cờ này thì "trong ngưỡng nhiễu" của nó đọc như *không có
+hiệu ứng* trong khi nó là *không có lực* — hai chuyện trái ngược, cùng một dòng chữ.
+
+### `KHÔNG KẾT LUẬN` — lỗi tôi tự tạo ra, rồi phải đo mới thấy
+
+Sau khi thêm Bonferroni, bảng hiện `CI99,72% [+0,0000, +0,1765]` — biên **đúng 0**.
+Và **4/4** dòng `recall@5` bị vậy, nên cả bốn bị dán "trong ngưỡng nhiễu" *do cấu
+tạo*.
+
+Lo ngại đầu của tôi sai: tôi cho là 10.000 iterations không đủ đọc phân vị 0,14%
+và định nâng lên ~72.000. **Đo 6 seed × 3 mức trước khi sửa:**
+
+| iterations | điểm ở đuôi | dao động biên theo seed |
+|---|---|---|
+| 10.000 | 13,9 | **0,0233** |
+| 50.000 | 69,4 | **0,0233** |
+| 200.000 | 277,8 | 0,0000 |
+
+`0,0233` = **đúng 1/43** = một bước lưới, không phải sai số Monte Carlo. Phần lớn
+câu có hiệu bằng 0 nên phân bố bootstrap nằm trên lưới bước `1/n` và phân vị cực
+đoan rơi đúng lên 0. Tăng iterations gấp 5 **không đổi gì** — ghi lại để lần sau
+không ai "sửa" bằng cách tăng iterations.
+
+⚠️ Tự phê: cờ này tồn tại vì chính bản hiệu chỉnh của tôi tạo ra vấn đề. Không đo
+thì tôi đã công bố một bảng toàn "trong ngưỡng nhiễu" và tưởng đó là kết quả.
+
+### Kết quả: `W2-04` sống sót, nhưng cả ba dẫn chứng đã công bố đều sai
+
+Phát hiện `cross_lingual` **sống sót** hiệu chỉnh cho cả 90 phép kiểm (α=0,000556):
+`map@20` CI99,94% [−0,1235, −0,0193] · `mrr` [−0,1335, −0,0193] · `ndcg@10`
+[−0,1630, −0,0054]. Bằng chứng **mạnh hơn** lúc phát biểu.
+
+Nhưng ba con số CHECKLIST/`w2-05` trích đều sai **cùng một khuôn**:
+
+| Dẫn chứng đã công bố | Vấn đề |
+|---|---|
+| `recall@5` CI95 [−0,1860, −0,0233] | `KHÔNG KẾT LUẬN` ở mức hiệu chỉnh (biên CI đúng 0) |
+| `hit_rate@5` **4↔0** | trần `p` = **0,125** — chưa bao giờ có lực |
+| "reranker vá lại (1↔0, `p`=1,000)" | trần `p` = **1,0** — không mang thông tin nào |
+
+💡 Khuôn: **một `p` vô nghĩa trích cạnh một CI có nghĩa**, trông như bằng chứng bổ
+trợ trong khi nó là số 0. Bằng chứng thật cho dòng cuối: `bgem3-rrf-k1-c20 →
+bgem3-rr-c50` trên `cross_lingual`, `hit_rate@5` **0↔14, `p` = 0,00012**.
+
+Đã sửa cả `CHECKLIST.md` và `w2-05-reranker.md`.
+
+### Đối chứng: cờ không dán "không kết luận" cho mọi thứ
+
+Reranker chia theo `lang`, 30 phép kiểm: **29/30 sống sót** Bonferroni (vi 15/15,
+en 14/15, 1 hàng không đủ lực). So với `W2-04` (60/90 không kết luận được), sự đối
+lập chính là thông tin: `W2-05` là hiệu ứng lớn thật, `W2-04` là hiệu ứng biên mà
+bảng tổng che đi.
+
+### Script tái sinh bắt được điều tôi đã cho là không xảy ra
+
+Đổi `p` sang `{:.4g}` (vì `0.000` không phân biệt `4e-9` với `4,9e-4`) chạm 12 file
+`compare/`. Tôi tự nhủ "`family_size=1` nên hành vi một-cặp không đổi" và viết script
+tái sinh **so mọi ô trừ ô kiểm định**. Nó nổ ở 2 file: `α` thì không đổi, nhưng
+**hai cờ mới áp cả ở `family_size=1`** → 3 hàng đổi kết luận.
+
+Cả ba đúng và đều làm sắc thêm — đáng chú ý nhất là `hit_rate@1` của `c50 → c100`
+(`0↔4`, trần `p`=0,125): docstring `BINARY_METRICS` viết ở `W2-05` **đã** lý giải
+đúng ("bốn lần tung xu cùng mặt thì không kết luận được gì") trong khi cột kết luận
+nói "trong ngưỡng nhiễu". Cùng một file đã tự nói hai điều khác nhau từ `W2-05`;
+giờ chúng khớp. Và `13/15 trong ngưỡng nhiễu` của `W2-05` (cơ sở của kết luận kiến
+trúc về hybrid) **còn nguyên 13**, không hàng nào bị gắn cờ.
+
+💡 Bài học lặp lại từ `W2-07` §8: cách duy nhất biết một đợt sửa "không đổi con số
+nào" là **có một script nói không**.
+
+### Trạng thái
+
+**1143 test xanh** (1100 → 1143: +43 unit, `test_eval_compare.py` 39 → 82) · ruff +
+`mypy --strict` sạch trên 110 file · `W2` 8/10 · tổng 28/78.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration` · `make test-gpu`.
+2. **`W2-08`** chạy được rồi: 14 ô của `make exp` + `make eval-compare-by` cho
+   `p`/CI từng dòng. Ba bẫy đã đo: `e1-chunk550-dense` không so được recall/nDCG/MAP
+   (`n_relevant_mean` 1,9617 vs 1,3828); `table_lookup` (4 câu) vĩnh viễn
+   `KHÔNG ĐỦ LỰC`; bảng `--by` đọc để **loại** giả thuyết, muốn **chọn** người
+   thắng thì nêu tên nhóm trước bằng `--category`.
+3. ⚠️ **`W2-09` phải quyết một chuyện tôi cố ý không quyết**: bảng một-cặp **vẫn**
+   không hiệu chỉnh cho 15 metric (kỳ vọng 0,75 dương giả/bảng). Sửa thì viết lại
+   kết luận `W2-01`…`W2-07`; không sửa thì phải nói ra.
+4. ⚠️ **`TD-19` trước `TD-13`**: báo cáo lẻ không nói được nó đo trên golden set nào.
+5. ⚠️ Bẫy tooling lặp **lần thứ tư**: heredoc `<<'PY'` chứa `\n` trong string
+   Python bị bash ăn mất một lớp escape → newline thật, file syntax error. Và
+   `grep -rn` vẫn timeout vì quét `.venv`. Dùng Write ra scratchpad + `uv run
+   python <path>`, và dùng Grep tool thay `grep -r`.
+6. ⚠️⚠️ **Bẫy MỚI, và nó thuộc đúng họ lỗi mà cả W2 đang chống:**
+   `uv run pytest | tail -4` trả exit code của **`tail`**, không của `pytest`. Tôi
+   đọc "exit code 0" và suýt báo cáo "1143 test xanh" trong khi pytest thật ra
+   **18 failed, 127 errors** (Docker Desktop tắt qua đêm nên mọi integration test
+   mất Qdrant — không phải do thay đổi nào của tôi). Một phép kiểm báo thành công
+   mà không kiểm đúng thứ cần kiểm, giống `ensure_collection` ở `W2-02` và
+   `MatchAny(any=[])` ở `W2-06`.
+   Cách chạy đúng: `uv run pytest > file 2>&1; echo "exit=$?"` rồi mới `tail`.
+   Xác nhận lại sau khi `make up`: **986 unit + 157 integration/gpu = 1143, exit 0**.
 
 ---
 

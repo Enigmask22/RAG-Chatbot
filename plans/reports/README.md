@@ -40,6 +40,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-05` reranker | [`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) | `bgem3-rr-c20`, `-c50`, `-c100`, `-dense-c50` | `cmp-bgem3-vs-bgem3-rr-c50`, `cmp-bgem3-rr-c20-vs-...c50`, `...c50-vs-...c100`, `cmp-bgem3-rr-dense-c50-vs-bgem3-rr-c50`, `cmp-bgem3-rrf-k1-c20-vs-bgem3-rr-c50` | `w2-05-known-item.json`, `w2-05-rerank-probe.json` | `hit_rate@1` **+22,0 điểm**, 15/15 có ý nghĩa; **DoD 400 ms không đạt** |
 | `W2-06` metadata filter | [`tasks/w2-06-metadata-filter.md`](tasks/w2-06-metadata-filter.md) | — | — | `w2-06-filter-probe.json`, `w2-06-backfill-bgem3.json` | Phần thiếu là **đường `fetch`**, không phải date range; lọc **không tốn gì** |
 | `W2-07` experiment runner | [`tasks/w2-07-experiment-runner.md`](tasks/w2-07-experiment-runner.md) | `e1-*` (**14 ô**) | — | — | Resume khoá vào **`fingerprint` của ô**; grid tái lập **5** con số đã công bố đúng từng chữ số; MLflow hỏng **hai** lần |
+| `W2-08-prep` `--category`/`--lang` | [`tasks/w2-08-prep-compare-groups.md`](tasks/w2-08-prep-compare-groups.md) | — | `bycategory-*`, `bylang-*` | — | Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -83,7 +84,8 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make exp-backfill` | MLflow, **đọc từ** `runs/` — không chạy eval |
 | `make backfill-payload` | `probes/w2-06-backfill-<BUNDLE>.json` |
 | `make goldenset-anchor` / `-freeze` | `goldenset/goldenset-anchor.json` / `-v1.json` |
-| `python scripts/category_compare.py` | *không ghi file* — in ra stdout, xem cảnh báo dưới |
+| `make eval-compare-by` | `compare/by<BY>-<BASE>-vs-<CAND>.md` (có hiệu chỉnh Bonferroni) |
+| `make eval-compare-subset` | *không ghi file* — in ra stdout (một nhóm nêu trước, không hiệu chỉnh) |
 
 Mặc định trong code cũng trỏ vào đây: `retrieval_eval.py --out-dir` và
 `compare.py --dir` đều là `plans/reports/runs`.
@@ -151,13 +153,26 @@ là **5 câu**, và đọc nó như kết luận là lặp lại đúng lỗi `T
 `make exp-backfill` từ chính `runs/`. Nếu một con số chỉ có trên MLflow thì nó
 không tái lập được từ repo, và `W2-09` không được dựa vào chỗ đó.
 
-**⚠️ `scripts/category_compare.py` là bản tạm.** Nó lọc theo `category` rồi gọi
-lại `mcnemar_exact`/`paired_bootstrap` của `compare.py`, vì `compare.py` **chưa
-có** `--category`. Kiểm định theo category là điều kiện của DoD `W2-09`, và chính
-việc thiếu nó đã để một mức tụt có ý nghĩa của `W2-04` đi qua không ai thấy (xem
-[`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) §6.4b). Khi `compare.py` có
-`--category` thì **xoá script đó** — hai công cụ trả lời cùng một câu hỏi là hai
-câu trả lời khác nhau đang chờ xảy ra.
+**✅ `scripts/category_compare.py` đã bị xoá** ở `W2-08-prep` — `compare.py` giờ có
+`--by category|lang` (quét mọi nhóm, **có** hiệu chỉnh Bonferroni) và
+`--category X`/`--lang Y` (một nhóm nêu trước, **không** hiệu chỉnh). Hai loại suy
+luận khác nhau, và CLI từ chối dùng cả hai cùng lúc.
+
+**⚠️ Đọc bảng `bycategory-*`/`bylang-*` thì phải biết ba nhãn không phải con số:**
+`KHÔNG ĐỦ LỰC` = phép kiểm **không thể** đạt ý nghĩa (trần `p` của McNemar là
+`2/2ⁿ`; `table_lookup` có 4 câu nên **vĩnh viễn** không đo được). `KHÔNG KẾT LUẬN` =
+biên CI **đúng bằng 0**, tức việc khoảng chứa 0 phụ thuộc một bước lưới `1/n`.
+`KHÔNG SO ĐƯỢC` = phân bố nhãn hai bên khác nhau (`G2`). Không cái nào nghĩa là
+"không có khác biệt".
+
+**⚠️ Ba dẫn chứng trong `CHECKLIST.md`/`w2-05-reranker.md` đã được sửa** ở
+`W2-08-prep`: kết luận đúng, nhưng `recall@5` CI95 của `cross_lingual`, `hit_rate@5`
+`4↔0`, và "reranker vá lại (1↔0, `p`=1,000)" đều là **`p` không có lực trích cạnh
+một CI có nghĩa**. Xem `tasks/w2-08-prep-compare-groups.md` §5.
+
+**⚠️ Bảng một-cặp (`cmp-*.md`) KHÔNG hiệu chỉnh cho 15 metric** — kỳ vọng 0,75 kết
+quả dương giả mỗi bảng. Lựa chọn có chủ đích (sửa sẽ viết lại kết luận `W2-01`…
+`W2-07`), nhưng là giới hạn thật; quyết định thuộc `W2-09`.
 
 ---
 

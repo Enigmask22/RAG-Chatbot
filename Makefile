@@ -141,6 +141,21 @@ eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAN
 	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
 		--out plans/reports/compare/cmp-$(BASE)-vs-$(CAND).md
 
+# Chiều chia nhóm (W2-08-prep). `BY` quét mọi nhóm và TỰ hiệu chỉnh đa so sánh;
+# `CAT`/`LANG` so một nhóm đã nêu trước và KHÔNG hiệu chỉnh. Hai loại suy luận
+# khác nhau, nên hai target khác nhau — xem docstring `compare_by_group`.
+BY ?= category
+CAT ?=
+LANG ?=
+
+.PHONY: eval-compare-by
+eval-compare-by:  ## So theo TỪNG nhóm, có hiệu chỉnh Bonferroni (BY=category|lang)
+	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) --by $(BY) 		--out plans/reports/compare/by$(BY)-$(BASE)-vs-$(CAND).md
+
+.PHONY: eval-compare-subset
+eval-compare-subset:  ## So trên MỘT nhóm đã nêu trước, không hiệu chỉnh (CAT=… LANG=…)
+	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) 		$(if $(CAT),--category $(CAT)) $(if $(LANG),--lang $(LANG))
+
 .PHONY: backfill-payload
 backfill-payload:  ## Vá payload phẳng + payload index của collection ĐÃ build (W2-06)
 	$(PY) python -m pipeline.indexing.backfill_payload --config $(INDEX_CONFIG) \
