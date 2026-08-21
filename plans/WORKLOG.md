@@ -1306,3 +1306,206 @@ make known-item BUNDLE=bgem3                # thêm --rrf-k 1 cho cột hybrid k
    `reranked` (hiện raise `NotImplementedError` chỉ đúng vào `W2-05`).
 
 ---
+
+## Phiên 2026-08-21 · Tuần 2 — `W2-05` cross-encoder reranker
+
+**Làm gì:** `rag_core/reranking/` (`Reranker` ABC + `CrossEncoderReranker` cho
+`bge-reranker-v2-m3`), `rag_core/retrieval/reranked.py` (`RerankedRetriever`),
+`build_branch` đệ quy cho nhánh nền, 8 cờ CLI mới, `scripts/rerank_probe.py`,
+`known_item_probe.py` thêm nhánh thứ tư, hai target Makefile.
+
+**Kết quả một dòng:** `hit_rate@1` **0,3397 → 0,5598 (+22,0 điểm)**, 15/15 metric
+có ý nghĩa — mức cải thiện lớn nhất của W2 sau chính BGE-M3. Nhưng **DoD 400 ms
+không đạt** (524 ms cho 50 cặp), và hai kết quả kiến trúc quan trọng hơn cả con
+số chính.
+
+### Số đo chính
+
+| run | hit@1 | hit@5 | hit@10 | hit@20 | nDCG@10 | recall@20 | p50 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dense | 0,3397 | 0,5455 | 0,6268 | 0,6746 | 0,4442 | 0,6324 | 30,3 |
+| hybrid k=1 c=20 | 0,3397 | 0,5742 | 0,6555 | 0,7177 | 0,4563 | 0,6770 | 31,3 |
+| rerank c=20 | 0,5407 | 0,7033 | 0,7129 | 0,7177 | 0,6075 | 0,6770 | 232,8 |
+| **rerank c=50** | **0,5598** | 0,7512 | 0,7703 | 0,7751 | **0,6481** | 0,7424 | 534,4 |
+| rerank c=100 | 0,5789 | 0,7895 | 0,8134 | **0,8182** | 0,6736 | 0,7775 | 1044,3 |
+| rerank dense-c50 | 0,5455 | 0,7273 | 0,7416 | 0,7464 | 0,6268 | 0,7121 | 538,0 |
+
+Trần vùng phủ (đo **trước** khi làm): `hit_rate@50` của nhánh nền = **0,7799**.
+
+### Quyết định kỹ thuật phát sinh trong phiên
+
+131. **Đo trần vùng phủ trước khi cài bất cứ thứ gì.** `retrieval_eval` chỉ chấm
+     ở `k ∈ {1,5,10,20}` nên nó không nói được `hit_rate@50` — mà đó chính là
+     trần cứng của mọi phép xếp lại. `scripts/rerank_probe.py` tồn tại cho đúng
+     việc đó. Không có số 0,7799 thì "+22 điểm" là một câu vô nghĩa: 22 trên bao
+     nhiêu điểm còn lại?
+
+132. **`RerankedRetriever` bọc một `Retriever` bất kỳ**, không bọc
+     `QdrantDenseRetriever`. Đó là điều kiện để câu hỏi "reranker có cần hybrid
+     không" hỏi được mà không sửa code — và câu trả lời (quyết định 138) là loại
+     kết quả rất dễ không đi tìm.
+
+133. **`build_branch` gọi lại chính nó** cho nhánh nền của `reranked`, nên mọi
+     phép kiểm tham số của `W2-03`/`W2-04` áp dụng nguyên vẹn ở tầng dưới:
+     `--rerank-base dense --rrf-k 1` vẫn nổ. `RERANK_OPTIONS` là tập tham số
+     chỉ nhánh này nhận; phần còn lại chuyển xuống y nguyên.
+
+134. **`top_n` là trần của lượt TRẢ VỀ, không phải của phép đo.** DoD nói "50 →
+     6" nhưng đặt `--rerank-top-n 6` rồi chấm `recall@20` thì mọi metric @k > 6
+     mất nghĩa. Mặc định `None`, và có test **ghim** cái bẫy đó thay vì sửa nó —
+     hành vi là đúng theo thiết kế, cái thiếu là câu giải thích ở chỗ dễ gặp.
+
+135. **`max_length` và `dtype` vào `name`, `batch_size` thì không.** Cùng lý lẽ
+     `IndexConfig.fingerprint` (`W1-06`): cái nào đổi kết quả thì phải xuất hiện
+     trong nhãn. Có test canh cả hai chiều — `max_length` **đổi** điểm,
+     `batch_size` **không** đổi.
+
+136. **`dtype="auto"` phân giải NGAY lúc dựng**, không để chữ "auto" trong `name`.
+     Một nhãn ghi "auto" thì đọc log xong vẫn không biết lần chạy đó ở fp16 hay
+     fp32 — mà hai cái cho điểm khác nhau.
+
+137. **Chết khi điểm không hữu hạn.** `NaN` so với mọi thứ đều `False` nên
+     `sorted` trả thứ tự **tuỳ ý mà không báo gì**, và hậu quả trên bảng metric
+     trông y như "model kém". Chế độ hỏng thật của fp16.
+
+138. ⭐ **Sau khi có reranker, tầng hybrid không còn đo được.** Cùng reranker
+     c=50: nền dense vs nền hybrid cho **13/15 metric trong ngưỡng nhiễu**
+     (`hit_rate@1` `p = 0,453`, `recall@20` CI95 [−0,0008, +0,0630]). Ở `W2-04`
+     hybrid hơn dense **có ý nghĩa**. Hai tầng sửa **cùng một khuyết điểm** của
+     dense và chồng lên nhau. **Vẫn giữ hybrid** vì nó miễn phí (534,4 vs 538,0
+     ms), cả 15 metric vẫn cùng chiều, và `golden_v1` không đo được chỗ sparse
+     thắng — nhưng thứ tự ưu tiên giữa hai tầng thì rõ hẳn.
+
+139. ⭐⭐ **`TD-18` là bài toán TRUY HỒI, không phải biểu diễn.** Dự đoán D4 của
+     tôi sai hẳn: known-item hit@1 **0,0980 → 0,5490**, hit@10 0,4706 → 0,6471,
+     và nó **thắng cả sparse** (0,3529, `p = 0,0391`, 1↔8). Vocab subword phá
+     việc **truy hồi** một mã — điểm sparse là tích vô hướng trên *túi* subword
+     nên `['▁P','171','645']` mất hết thông tin thứ tự/liền kề — nhưng **không**
+     phá việc **nhận ra** nó, vì cross-encoder có attention trên cả cặp. Reranked
+     tìm 33/51 mã vs 26/51 của hợp dense+sparse ở top-10: **7 mã cứu từ vùng sâu
+     pool**. Nợ thu hẹp thành **35% mã không vào được pool 50**.
+
+140. **DoD 400 ms không đạt, và tôi không sửa DoD cho khớp số đo.** 50 cặp tốn
+     **524 ms**; 400 ms mua được pool **38**. Ba cần điều khiển tối ưu đều cạn và
+     mỗi cái có số: `max_length` chỉ cắt **1/12.100 cặp** (p50 287 token vs trần
+     512) nên hạ trần không giảm tính toán thật; fp16 lấy **3,52×** (1794,7 →
+     510,1 ms) và đổi top-1 ở đúng 1/60 câu; `batch_size` **không mua được gì** —
+     8/16 là nhiễu, 32/64 **tệ dần** vì `CrossEncoder.predict` gom batch theo độ
+     dài đã sắp, nên batch lớn nhét cả pool vào một batch và tối đa hoá padding.
+     Còn lại chỉ `candidates`, và nó là **trả bằng vùng phủ** chứ không phải tối ưu.
+
+141. **`candidates` tách được hai loại metric, và có kiểm định.** 20→50 và 50→100
+     đều làm `hit_rate@1` cải thiện **không có ý nghĩa** (`p = 0,219` và
+     `p = 0,125`) nhưng `hit_rate@10`/`recall@20` thì có. Pool sâu mua **chất
+     lượng danh sách**, không mua **chất lượng hạng nhất**. Điểm vận hành khuyến
+     nghị cho `W4`: **c=20 ở 233 ms** — 91% mức lợi hạng nhất, 44% chi phí.
+
+142. **CPU fallback tồn tại để code chạy đúng, không để phục vụ.** 19.446 ms cho
+     pool 50 (chậm **38×**). `dtype="auto"` cố ý **không** chọn fp16 trên CPU —
+     phần lớn CPU không có kernel fp16 nên PyTorch lùi về emulate và chạy *chậm
+     hơn* fp32. Mất GPU thì cách đúng là **tắt tầng rerank** và lùi về hybrid ở
+     31 ms, không phải chạy reranker trên CPU rồi để truy vấn treo 20 giây.
+
+143. ⭐ **Hố im lặng thứ hai trong `compare.py`.** `precision@1` **bằng
+     `hit_rate@1` từng chữ số** nhưng đi đường bootstrap, nên cùng một con số
+     nhận hai kết luận trái nhau (McNemar `p = 0,125` "nhiễu" vs CI95 loại 0
+     "khác biệt thật"). Người đọc bảng sẽ trích dòng nào thuận với mình. Đã route
+     qua McNemar — và **bản sửa đầu tự tạo bug mới**: `"precision@10".startswith(
+     "precision@1")` là `True` nên `precision@10` (nhận 0; 0,1; 0,2…) bị đẩy sang
+     McNemar ngay lần chạy sau. Tách `BINARY_METRICS` khớp **đúng tên**, và test
+     thứ hai canh **chính cái bẫy tiền tố** chứ không canh cách sửa.
+
+### Ba lần đoán, ba lần thấp
+
+Dự đoán ghi trước khi đo: 3/7 sai, và **cả ba lần đều thấp**.
+
+* độ trễ: đoán 150–300 ms → thật **1794,7 ms** (fp32). Sai về **bậc**, vì tôi
+  nghĩ về reranker như *một* forward pass trong khi nó là `candidates` forward
+  pass — điều tôi đã viết đúng trong docstring của `Reranker` rồi vẫn đoán như
+  thể nó không tồn tại. Số phép tính nói ngay: 302,0M tham số encoder × 14.350
+  token × 2 = **8,67 TFLOP** cho *một* truy vấn.
+* fp16: đoán 1,7–2,2× → thật **3,52×**.
+* `hit_rate@1`: đoán +8…+15 điểm → thật **+22,0**.
+
+Đó là một thiên lệch về **hiệu chuẩn**, không phải lỗi tính: tôi ước lượng dè dặt
+cho mọi thứ liên quan tới cross-encoder, cả chi phí lẫn lợi ích.
+
+**D6 cũng bị phản chứng.** Tôi khẳng định sigmoid sẽ bão hoà trên ≥1% cặp và lấy
+đó làm lý do mặc định dùng logit thô. Đo 2000 logit: khoảng **[−10,87; +8,67]**,
+**0,0%** vượt ngưỡng. Mặc định giữ nhưng lý do phải hạ xuống mức yếu hơn và đúng:
+sigmoid đơn điệu nên nó không thêm gì cho việc xếp hạng. "Nó bão hoà" là một tuyên
+bố tôi chưa có quyền nói.
+
+### Hai lần tự quy kết sai và phải sửa lại
+
+1. **fp32 chậm không phải vì bị nhiễm.** Lần đo corpus thật đầu tiên bị một tiến
+   trình pytest thứ hai tranh VRAM (7934/8188 MiB, `max_ms` chạm **171.759 ms**)
+   và cho 1869,7 ms; bản synthetic sạch cho 1278,7 ms. Tôi kết luận chênh lệch là
+   do nhiễm. **Sai** — lần đo sạch trên corpus thật cho 1794,7 ms. Con số "nhanh"
+   1278,7 ms là số *lạc quan* vì text synthetic dài đều nhau nên batch không có
+   padding thừa. Số bị nhiễm vẫn không dùng được, nhưng lý do nó khác không phải
+   lý do tôi nói.
+2. **Test suite OOM là do tôi.** `max_length` nằm trong khoá cache của
+   `_load_cross_encoder`, nên bản `L32` là **model thứ ba** trong cùng phiên
+   pytest: bge-m3 3,3GB + fp16 1,15GB + fp32 2,3GB + 2,3GB = **9,05GB trên GPU
+   8,0GB**. Chuyển bản `L32` sang CPU — điều test đó khẳng định không phụ thuộc
+   device, và ngưỡng 0,5 cách nhiễu fp32 giữa hai device (~1e-4) nhiều bậc.
+   `lru_cache(maxsize=2)` cho reranker là một lời hứa phần cứng này **không giữ
+   được** khi bge-m3 cũng thường trú. Bằng chứng thật cho `W0-06`.
+
+### Phép kiểm nội tại tình cờ, và nó rất mạnh
+
+`rerank c=20` cho `hit_rate@20` **0,7177** và `recall@20` **0,6770** — trùng khít
+từng chữ số với hybrid c=20. Đúng như bắt buộc: cùng `candidates` và `top_k` thì
+tập trả về y hệt, chỉ khác thứ tự, nên metric theo **tập** phải bất biến còn
+metric theo **hạng** thì đổi (và `hit_rate@1` nhảy 20 điểm thuần do đảo thứ tự).
+Không thiết kế ra nó — nó rơi từ bảng. Nhưng nó canh đúng chỗ dễ sai nhất:
+`retrieve()` dựng lại `RetrievedChunk` từ đầu, nên gán lệch chunk cho điểm, đánh
+rơi ứng viên, hay off-by-one ở `rank` đều sẽ làm hai số đó lệch.
+
+### VRAM (số thật, chưa phải `W0-06` chính thức)
+
+| trạng thái | MiB / 8188 |
+|---|---:|
+| bge-m3 fp32 | ~3.300 |
+| + reranker fp16 | ~3.900 |
+| + reranker fp32 | **5.685** |
+| + tiến trình pytest thứ hai nạp bge-m3 | **7.934** ⚠️ |
+
+Với fp16 mặc định, tầng rerank thêm ~600 MiB → còn dư ~4,3 GB. **Vẫn không đủ**
+cho generator local (Qwen3-8B 4-bit ~5,5 GB), nên kiến trúc "generator qua API"
+đứng nguyên.
+
+### Vấn đề đang mở
+
+- **`W2-06` là việc tiếp theo.** Nửa phần đã có: nhánh reranked chuyển tiếp
+  `filters`, và có test integration canh filter được áp **ở Qdrant trước khi vào
+  pool** — lọc *sau* rerank thì cross-encoder đã đọc nội dung tenant khác.
+- **Chốt cho `W2-08`:** thêm `rerank_base` và `candidates ∈ {20,50,100}` vào ma
+  trận. **Không** quét `batch_size` (quyết định 140) và **không** quét
+  `max_length` (đo được nó chỉ cắt 1/12.100 cặp). Ghi lại để không đốt thời gian
+  vào ô trống.
+- **Trần 0,7799 là câu hỏi của `W3`**: 22% golden set không có bằng chứng trong 50
+  ứng viên đầu. Không tầng xếp hạng nào chạm được phần đó.
+- ⚠️ `TD-18` sửa phát biểu (quyết định 139): còn 35% mã không vào được pool 50.
+  Ưu tiên **đã hạ** vì giá của việc trì hoãn nhỏ đi nhiều.
+- ⚠️ `W0-06` (ngân sách VRAM) giờ có bằng chứng là nó **cần thiết**, không chỉ là
+  việc nên làm: một phiên pytest đã OOM thật.
+- ⚠️ Mọi con số vẫn đo trên `golden_v1` — **review bằng model** (`TD-13`).
+- Collection trong Qdrant không đổi.
+- Các mục còn lại không đổi: `TD-05`, `TD-08`, `TD-10`, `TD-13`…`TD-18`, `W0-02`.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration` · `make test-gpu`.
+2. Đọc `reports/w2-05-reranker.md` §2 (trần vùng phủ và vì sao phải đo trước),
+   §5.4 (DoD không đạt và ngân sách thật), §6.4 (hybrid không còn đo được) và §7
+   (`TD-18` là bài toán truy hồi).
+3. `W2-06`: filter ở tầng Qdrant, ca isolation hai tenant. `create_payload_index`
+   đã có từ `W1-07`.
+4. Nếu cần chạy lại số của `W2-05`: `make rerank-probe BUNDLE=bgem3` cho trần +
+   truncation + bão hoà + độ trễ; `make eval-rerank BUNDLE=bgem3 RUN=<tên>` cho
+   eval trên cấu hình thắng; `python scripts/known_item_probe.py --rerank` cho
+   bốn nhánh.
+
+---

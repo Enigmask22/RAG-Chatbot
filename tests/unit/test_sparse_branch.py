@@ -59,16 +59,18 @@ class TestBuildBranch:
         with pytest.raises(ValueError, match="không hợp lệ"):
             build_branch(_store(sparse=True), "bm25")
 
-    def test_reranked_is_not_invalid_it_is_unimplemented(self) -> None:
+    def test_every_mode_is_now_implemented(self) -> None:
         """Hai thông báo khác nhau cho hai chuyện khác nhau: "tên sai" gửi người
-        đọc đi tra chính tả, "chưa cài" gửi họ đi xem `W2-05`.
+        đọc đi tra chính tả, "chưa cài" gửi họ đi xem hạng mục đang làm.
 
-        Test này trước đây trỏ vào `hybrid`; `W2-04` đã cài nó nên nó chuyển sang
-        `reranked` — và việc test cũ **đỏ** lúc đó chính là thứ nhắc rằng
-        `SUPPORTED_MODES` cần cập nhật.
+        Test này đã trỏ vào `hybrid` (`W2-04` cài), rồi `reranked` (`W2-05` cài).
+        Cả hai lần, việc nó **đỏ** là thứ nhắc rằng `SUPPORTED_MODES` cần cập
+        nhật. Giờ không còn tên nào để trỏ vào, nên nó canh chính điều đó — và nó
+        sẽ đỏ đúng lúc ai đó thêm một mode mới vào `RetrievalMode` mà quên cài.
         """
-        with pytest.raises(NotImplementedError, match="W2-05"):
-            build_branch(_store(sparse=True), "reranked")
+        from rag_core.retrieval import SUPPORTED_MODES
+
+        assert set(SUPPORTED_MODES) == set(RetrievalMode)
 
     def test_hybrid_is_implemented_since_w2_04(self) -> None:
         assert build_branch(_store(sparse=True), "hybrid") is not None

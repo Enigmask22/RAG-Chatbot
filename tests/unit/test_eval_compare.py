@@ -132,6 +132,53 @@ class TestCompareRuns:
         assert row.p_value is not None and row.p_value < 0.01
         assert row.verdict == "khác biệt thật"
 
+    def test_precision_at_1_uses_mcnemar_like_hit_rate_at_1(self) -> None:
+        """`precision@1` bằng `hit_rate@1` từng chữ số — phải cùng một kiểm định.
+
+        `W2-05` phát hiện việc này bằng một mâu thuẫn quan sát được: cùng con số
+        0,5598 → 0,5789, McNemar cho `p = 0,125` (0↔4 câu) còn bootstrap cho CI95
+        không chứa 0. Hai kiểm định cho hai kết luận về **cùng một số** là một hố
+        im lặng — người đọc sẽ trích dòng nào thuận với mình.
+        """
+        ids = [f"q{i}" for i in range(10)]
+        base = RunScores(
+            name="base",
+            scores={qid: {"precision@1": 0.0, "precision@10": 0.1} for qid in ids},
+            n_relevant=dict.fromkeys(ids, 1),
+        )
+        cand = RunScores(
+            name="cand",
+            scores={qid: {"precision@1": 1.0, "precision@10": 0.2} for qid in ids},
+            n_relevant=dict.fromkeys(ids, 1),
+        )
+        rows = {r.metric: r for r in compare_runs(base, cand, iterations=200)}
+        assert rows["precision@1"].test == "McNemar exact"
+        assert (rows["precision@1"].n_baseline_only, rows["precision@1"].n_candidate_only) == (
+            0,
+            10,
+        )
+
+    def test_precision_at_10_is_not_caught_by_the_precision_at_1_rule(self) -> None:
+        """Bẫy tiền tố: `"precision@10".startswith("precision@1")` là `True`.
+
+        Bản sửa đầu của tôi ở `W2-05` đưa `precision@1` vào `BINARY_PREFIXES` và
+        đẩy luôn `precision@10` sang McNemar — một metric nhận 0; 0,1; 0,2… nên
+        McNemar không áp được. Test này canh đúng cái bẫy đó, không canh cách sửa.
+        """
+        ids = [f"q{i}" for i in range(10)]
+        base = RunScores(
+            name="base",
+            scores={qid: {"precision@1": 0.0, "precision@10": 0.1} for qid in ids},
+            n_relevant=dict.fromkeys(ids, 1),
+        )
+        cand = RunScores(
+            name="cand",
+            scores={qid: {"precision@1": 1.0, "precision@10": 0.3} for qid in ids},
+            n_relevant=dict.fromkeys(ids, 1),
+        )
+        rows = {r.metric: r for r in compare_runs(base, cand, iterations=200)}
+        assert "bootstrap" in rows["precision@10"].test
+
     def test_continuous_metric_uses_bootstrap(self) -> None:
         base = _run("base", {f"q{i}": 0.5 for i in range(20)})
         cand = _run("cand", {f"q{i}": 0.5 for i in range(20)})

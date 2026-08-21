@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from rag_core.reranking import BGE_RERANKER_V2_M3
 from rag_core.retrieval.base import Retriever
 from rag_core.schemas import RetrievalMode
 
@@ -474,7 +475,56 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="dense",
         choices=[m.value for m in RetrievalMode],
         help="Nhánh truy hồi trên index đã build. `dense` là mặc định và là thứ "
-        "mọi lần chạy trước W2-03 đã đo; `sparse` dùng trọng số lexical.",
+        "mọi lần chạy trước W2-03 đã đo; `sparse` dùng trọng số lexical; "
+        "`reranked` xếp lại pool của `--rerank-base` bằng cross-encoder.",
+    )
+    parser.add_argument(
+        "--rerank-base",
+        choices=[m.value for m in RetrievalMode if m is not RetrievalMode.RERANKED],
+        help="Nhánh SINH ứng viên cho `reranked` (mặc định `hybrid`). ⚠️ Nó dùng "
+        "mặc định của chính nó, tức `--rrf-k` = 60 — giá trị `W2-04` đo được là "
+        "tệ nhất. Cấu hình thắng: `--rrf-k 1 --candidate-k 20`.",
+    )
+    parser.add_argument(
+        "--reranker-model",
+        help=f"Cross-encoder dùng để xếp lại (mặc định {BGE_RERANKER_V2_M3}).",
+    )
+    parser.add_argument(
+        "--rerank-candidates",
+        type=int,
+        help="Số ứng viên lấy từ nhánh nền để chấm lại (mặc định 50). Đây là "
+        "TRẦN CỨNG của nhánh: chunk đúng không vào pool thì không phép xếp nào cứu được.",
+    )
+    parser.add_argument(
+        "--rerank-top-n",
+        type=int,
+        help="Chặn thêm số chunk trả về (mặc định không chặn). ⚠️ Đặt nhỏ hơn "
+        "`--top-k` thì mọi metric @k lớn hơn bị chặn theo và mất nghĩa — dùng cho "
+        "bench độ trễ lúc phục vụ, không dùng cho phép đo.",
+    )
+    parser.add_argument(
+        "--rerank-max-length",
+        type=int,
+        help="Trần token cho cả cặp (truy vấn, chunk); mặc định 512. Đây là cần "
+        "điều khiển ĐỔI KẾT QUẢ vì nó cắt nội dung, nên nó có trong `retriever.name`.",
+    )
+    parser.add_argument("--rerank-batch-size", type=int, help="Số cặp mỗi forward pass (16).")
+    parser.add_argument(
+        "--rerank-device", help="`cuda`/`cpu`/`auto` cho reranker; mặc định `auto`."
+    )
+    parser.add_argument(
+        "--rerank-dtype",
+        choices=["auto", "float16", "bfloat16", "float32"],
+        help="Độ chính xác của reranker; `auto` (mặc định) = fp16 trên CUDA, fp32 "
+        "ở nơi khác. fp32 đo được 1794,7 ms cho 50 cặp trên 4060; fp16 đưa xuống "
+        "510,1 ms (3,52×) và chỉ đổi top-1 ở 1/60 câu. Nó ĐỔI ĐIỂM nên nó có "
+        "trong `retriever.name`.",
+    )
+    parser.add_argument(
+        "--rerank-activation",
+        choices=["none", "sigmoid"],
+        help="`none` (mặc định) giữ logit thô. `sigmoid` đơn điệu nên không đổi "
+        "thứ hạng, nhưng bão hoà ở float32 và sinh ties nhân tạo.",
     )
     parser.add_argument(
         "--min-overlap-ratio",
@@ -506,6 +556,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "k": args.rrf_k,
                 "candidate_k": args.candidate_k,
                 "weights": tuple(args.rrf_weights) if args.rrf_weights else None,
+                "base": args.rerank_base,
+                "reranker_model": args.reranker_model,
+                "rerank_candidates": args.rerank_candidates,
+                "rerank_top_n": args.rerank_top_n,
+                "rerank_max_length": args.rerank_max_length,
+                "rerank_batch_size": args.rerank_batch_size,
+                "rerank_device": args.rerank_device,
+                "rerank_activation": args.rerank_activation,
+                "rerank_dtype": args.rerank_dtype,
             },
             min_overlap_ratio=args.min_overlap_ratio,
         )

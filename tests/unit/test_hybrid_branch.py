@@ -77,9 +77,18 @@ class TestBuildBranch:
         assert isinstance(branch, QdrantHybridRetriever)
         assert isinstance(branch, Retriever)
 
-    def test_reranked_still_points_at_w2_05(self) -> None:
-        with pytest.raises(NotImplementedError, match="W2-05"):
-            build_branch(_store(), "reranked")
+    def test_reranked_is_implemented_since_w2_05(self) -> None:
+        """Trước `W2-05` test này khẳng định `reranked` raise `NotImplementedError`.
+
+        `W2-05` làm điều đó thành sai, và việc test cũ **đỏ** chính là thứ nhắc
+        rằng `SUPPORTED_MODES` cần cập nhật — cùng cơ chế đã hoạt động ở `W2-04`.
+        Chi tiết của nhánh này ở `tests/unit/test_reranker.py`.
+        """
+        from rag_core.retrieval import RerankedRetriever
+
+        assert isinstance(
+            build_branch(_store(), "reranked", rerank_device="cpu"), RerankedRetriever
+        )
 
     def test_options_reach_the_retriever(self) -> None:
         branch = build_branch(_store(), "hybrid", k=10, candidate_k=200, weights=(2.0, 1.0))

@@ -118,6 +118,10 @@ RUN ?= $(BUNDLE)
 # Tham số RRF (W2-04) — rỗng thì dùng mặc định (k=60, candidate_k=50). Ví dụ:
 #   make eval-retrieval BUNDLE=bgem3 MODE=hybrid RUN=bgem3-rrf-c100 RRF_ARGS="--candidate-k 100"
 RRF_ARGS ?=
+# Tham số rerank (W2-05) — cùng chỗ với RRF_ARGS vì nhánh `reranked` nhận cả hai:
+# nó bọc một nhánh nền, nên tham số của nền vẫn có nghĩa. Ví dụ:
+#   make eval-rerank BUNDLE=bgem3 RUN=bgem3-rr-c100 RERANK_ARGS="--rerank-candidates 100"
+RERANK_ARGS ?=
 
 .PHONY: corpus
 corpus:  ## Tải corpus theo config (idempotent)
@@ -171,9 +175,20 @@ goldenset-verify:  ## Đối chiếu golden_v1.jsonl với checksum đi kèm
 .PHONY: eval-retrieval
 eval-retrieval:  ## Eval retrieval trên index đã build (BUNDLE=baseline MODE=dense RUN=tên)
 	$(PY) python -m pipeline.eval.retrieval_eval \
-		--index-config $(INDEX_CONFIG) --run-name $(RUN) --retrieval-mode $(MODE) $(RRF_ARGS)
+		--index-config $(INDEX_CONFIG) --run-name $(RUN) --retrieval-mode $(MODE) $(RRF_ARGS) $(RERANK_ARGS)
 
 .PHONY: known-item
 known-item:  ## Known-item search: tra mã tài liệu, đo dense vs sparse (W2-03)
 	$(PY) python scripts/known_item_probe.py --config $(INDEX_CONFIG) \
 		--report plans/reports/w2-03-known-item.json
+
+.PHONY: eval-rerank
+eval-rerank:  ## Eval reranked trên cấu hình THẮNG của W2-04 (BUNDLE=bgem3 RUN=tên)
+	$(PY) python -m pipeline.eval.retrieval_eval \
+		--index-config $(INDEX_CONFIG) --run-name $(RUN) --retrieval-mode reranked \
+		--rerank-base hybrid --rrf-k 1 --candidate-k 20 $(RERANK_ARGS)
+
+.PHONY: rerank-probe
+rerank-probe:  ## Trần vùng phủ + truncation + bão hoà sigmoid + độ trễ rerank (W2-05)
+	$(PY) python scripts/rerank_probe.py --config $(INDEX_CONFIG) \
+		--report plans/reports/w2-05-rerank-probe.json

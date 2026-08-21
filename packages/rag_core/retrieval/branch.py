@@ -23,16 +23,44 @@ from .base import Retriever
 if TYPE_CHECKING:
     from .qdrant_store import QdrantDenseRetriever
 
-__all__ = ["SUPPORTED_MODES", "build_branch"]
+__all__ = ["DEFAULT_RERANK_BASE", "RERANK_OPTIONS", "SUPPORTED_MODES", "build_branch"]
 
-#: Nhánh dựng được ở thời điểm hiện tại. `RERANKED` vào đây ở `W2-05` — liệt kê
-#: tường minh để `--retrieval-mode reranked` báo "chưa cài" thay vì báo "tên
-#: không hợp lệ", hai chuyện rất khác nhau khi đang gỡ lỗi.
+#: Nhánh dựng được ở thời điểm hiện tại — liệt kê tường minh để một tên hợp lệ
+#: nhưng chưa cài báo "chưa cài" thay vì báo "tên không hợp lệ", hai chuyện rất
+#: khác nhau khi đang gỡ lỗi. `RERANKED` vào đây ở `W2-05`; danh sách này giờ
+#: bằng `RetrievalMode`, nên `NotImplementedError` ở cuối `build_branch` là
+#: nhánh chết cho tới khi có mode mới — và nó phải ở lại đúng vì lý do đó.
 SUPPORTED_MODES: tuple[RetrievalMode, ...] = (
     RetrievalMode.DENSE,
     RetrievalMode.SPARSE,
     RetrievalMode.HYBRID,
+    RetrievalMode.RERANKED,
 )
+
+#: Tham số chỉ nhánh `reranked` nhận. Mọi thứ còn lại trong `options` được
+#: chuyển xuống nhánh nền, nên `--rrf-k 1 --rerank-base dense` vẫn báo lỗi.
+RERANK_OPTIONS = frozenset(
+    {
+        "base",
+        "reranker_model",
+        "rerank_candidates",
+        "rerank_top_n",
+        "rerank_max_length",
+        "rerank_batch_size",
+        "rerank_device",
+        "rerank_activation",
+        "rerank_dtype",
+    }
+)
+
+#: Nhánh nền mặc định của `reranked`. `W2-04` đo được hybrid là bộ sinh ứng viên
+#: tốt nhất (`recall@20` 0,6754 vs dense 0,6324) — nhưng ⚠️ **`k` của nó vẫn lấy
+#: mặc định `RRF_K = 60` của bài báo**, mà `W2-04` đo được đó là giá trị tệ nhất.
+#: Cố ý không sửa mặc định của thư viện ở đây: một giá trị thắng theo số đo thuộc
+#: về **config của thí nghiệm** (`W2-07`), không thuộc về hằng số thư viện, và
+#: `retriever.name` mang `rrf60` nên chuyện đó không im lặng. Muốn cấu hình
+#: thắng thì truyền `--rrf-k 1 --candidate-k 20`.
+DEFAULT_RERANK_BASE = RetrievalMode.HYBRID
 
 
 def build_branch(
@@ -47,9 +75,13 @@ def build_branch(
     so với các lần chạy W1/W2-01/W2-02, tức không so được số cũ nữa.
 
     `options` chỉ dành cho nhánh có tham số (`hybrid`: `k`, `candidate_k`,
-    `weights`). Truyền cho nhánh không nhận là **lỗi**, không phải bị bỏ qua: một
-    lần chạy ablation gõ `--rrf-k 10 --retrieval-mode dense` mà im lặng chạy tiếp
-    sẽ vào bảng `W2-08` như một dòng hợp lệ trong khi nó không đo cái nó nói.
+    `weights`; `reranked`: xem `RERANK_OPTIONS`). Truyền cho nhánh không nhận là
+    **lỗi**, không phải bị bỏ qua: một lần chạy ablation gõ `--rrf-k 10
+    --retrieval-mode dense` mà im lặng chạy tiếp sẽ vào bảng `W2-08` như một dòng
+    hợp lệ trong khi nó không đo cái nó nói.
+
+    `reranked` **gọi lại chính hàm này** cho nhánh nền, nên phép kiểm trên áp
+    dụng nguyên vẹn ở tầng dưới: `--rerank-base dense --rrf-k 1` vẫn nổ.
     """
     try:
         resolved = RetrievalMode(mode)
@@ -59,6 +91,16 @@ def build_branch(
         ) from None
 
     supplied = {name: value for name, value in options.items() if value is not None}
+
+    if resolved is RetrievalMode.RERANKED:
+        return _build_reranked(store, supplied)
+
+    unknown = RERANK_OPTIONS & supplied.keys()
+    if unknown:
+        raise ValueError(
+            f"Nhánh {resolved.value!r} không nhận tham số {sorted(unknown)} — "
+            f"chúng chỉ có nghĩa với nhánh 'reranked'."
+        )
 
     if resolved is RetrievalMode.HYBRID:
         from .hybrid import QdrantHybridRetriever
@@ -77,7 +119,56 @@ def build_branch(
 
         return QdrantSparseRetriever(store)
 
-    raise NotImplementedError(
+    raise NotImplementedError(  # pragma: no cover - nhánh chết, xem SUPPORTED_MODES
         f"Nhánh {resolved.value!r} là tên hợp lệ nhưng chưa cài. "
-        f"Hiện có: {[m.value for m in SUPPORTED_MODES]} (reranked ở `W2-05`)."
+        f"Hiện có: {[m.value for m in SUPPORTED_MODES]}."
+    )
+
+
+def _build_reranked(store: QdrantDenseRetriever, supplied: dict[str, Any]) -> Retriever:
+    """Dựng nhánh `reranked`: một nhánh nền + một cross-encoder bọc ngoài.
+
+    Tách khỏi `build_branch` vì nó là nhánh duy nhất **đệ quy** — mọi tham số
+    không thuộc `RERANK_OPTIONS` được chuyển xuống nhánh nền y nguyên, kể cả
+    việc bị từ chối ở đó.
+    """
+    from ..reranking import CrossEncoderReranker
+    from .reranked import RerankedRetriever
+
+    base_mode = supplied.get("base", DEFAULT_RERANK_BASE)
+    # So bằng **chuỗi**, không qua `RetrievalMode(...)`: một `base` rác phải đi
+    # tiếp xuống `build_branch` để nhận đúng câu "nhánh truy hồi không hợp lệ",
+    # chứ không nhận một `ValueError` trần của enum ở đây.
+    if str(base_mode) == RetrievalMode.RERANKED.value:
+        # Rerank hai lần bằng cùng một model là chạy đúng model đó hai lượt trên
+        # cùng dữ liệu — không đổi thứ hạng, chỉ đôi chi phí. Chặn ở đây để nó
+        # không lọt vào bảng `W2-08` như một dòng "cấu hình mới".
+        raise ValueError("`--rerank-base reranked` không có nghĩa: xếp lại hai lần cùng model")
+
+    base_options = {name: value for name, value in supplied.items() if name not in RERANK_OPTIONS}
+    base = build_branch(store, base_mode, **base_options)
+
+    reranker_kwargs: dict[str, Any] = {}
+    if "rerank_device" in supplied:
+        reranker_kwargs["device"] = supplied["rerank_device"]
+    if "rerank_batch_size" in supplied:
+        reranker_kwargs["batch_size"] = supplied["rerank_batch_size"]
+    if "rerank_max_length" in supplied:
+        reranker_kwargs["max_length"] = supplied["rerank_max_length"]
+    if "rerank_activation" in supplied:
+        reranker_kwargs["activation"] = supplied["rerank_activation"]
+    if "rerank_dtype" in supplied:
+        reranker_kwargs["dtype"] = supplied["rerank_dtype"]
+    model_name = supplied.get("reranker_model")
+    reranker = (
+        CrossEncoderReranker(model_name, **reranker_kwargs)
+        if model_name is not None
+        else CrossEncoderReranker(**reranker_kwargs)
+    )
+
+    return RerankedRetriever(
+        base,
+        reranker,
+        candidates=supplied.get("rerank_candidates"),
+        top_n=supplied.get("rerank_top_n"),
     )

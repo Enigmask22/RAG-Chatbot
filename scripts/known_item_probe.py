@@ -68,9 +68,13 @@ class ProbeRow:
     dense_rank: int | None
     sparse_rank: int | None
     hybrid_rank: int | None
-    dense_returned: int
-    sparse_returned: int
-    hybrid_returned: int
+    #: `None` khi không chạy nhánh reranked (`--rerank`), khác hẳn với "chạy mà
+    #: không tìm ra" — nên `reranked_returned` là chỗ phân biệt hai ca đó.
+    reranked_rank: int | None = None
+    dense_returned: int = 0
+    sparse_returned: int = 0
+    hybrid_returned: int = 0
+    reranked_returned: int = 0
 
 
 def scan_contents(store: QdrantDenseRetriever, *, batch: int = 2048) -> dict[str, str]:
@@ -146,6 +150,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--candidate-k", type=int, help="Số ứng viên mỗi nhánh cho hybrid (mặc định 50)"
     )
+    parser.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Đo thêm nhánh reranked (`W2-05`). Opt-in vì nó nạp 2,2GB trọng số và "
+        "chấm 50 cặp cho mỗi mã — câu hỏi nó trả lời là: cross-encoder có lấy lại "
+        "được thứ hạng mà RRF làm mất ở đây không?",
+    )
+    parser.add_argument("--rerank-candidates", type=int, help="Pool cho reranker (mặc định 50)")
+    parser.add_argument("--rerank-dtype", help="`auto`/`float16`/`float32` cho reranker")
     parser.add_argument("--report", type=Path, help="Ghi JSON kết quả đầy đủ")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
@@ -175,6 +188,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     # đo được ở đây và không đo được trên `golden_v1` (209 câu không có câu tra mã).
     hybrid = build_branch(store, "hybrid", k=args.rrf_k, candidate_k=args.candidate_k)
     assert isinstance(hybrid, QdrantHybridRetriever)
+    # `W2-05`: `W2-04` §8 đo được RRF trọng số đều làm hit@1 tra mã tụt 0,3529 →
+    # 0,0980. Reranker có lấy lại được chỗ đó không? Dự đoán ghi trước: **không**,
+    # vì cross-encoder cũng là model subword cùng họ nên nó gặp đúng `TD-18`.
+    reranked = (
+        build_branch(
+            store,
+            "reranked",
+            base="hybrid",
+            k=args.rrf_k,
+            candidate_k=args.candidate_k,
+            rerank_candidates=args.rerank_candidates,
+            rerank_dtype=args.rerank_dtype,
+        )
+        if args.rerank
+        else None
+    )
 
     logger.info("Đang quét %s...", store.collection)
     contents = scan_contents(store)
@@ -196,6 +225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dense_hits = store.retrieve(code, args.top_k)
         sparse_hits = sparse.retrieve(code, args.top_k)
         hybrid_hits = hybrid.retrieve(code, args.top_k)
+        reranked_hits = reranked.retrieve(code, args.top_k) if reranked is not None else []
         rows.append(
             ProbeRow(
                 code=code,
@@ -203,9 +233,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dense_rank=_rank_of(code, dense_hits),
                 sparse_rank=_rank_of(code, sparse_hits),
                 hybrid_rank=_rank_of(code, hybrid_hits),
+                reranked_rank=_rank_of(code, reranked_hits) if reranked is not None else None,
                 dense_returned=len(dense_hits),
                 sparse_returned=len(sparse_hits),
                 hybrid_returned=len(hybrid_hits),
+                reranked_returned=len(reranked_hits),
             )
         )
         if i % 20 == 0:
@@ -225,7 +257,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "dense": summarise([r.dense_rank for r in rows], n=n),
         "sparse": summarise([r.sparse_rank for r in rows], n=n),
         "hybrid": summarise([r.hybrid_rank for r in rows], n=n),
-        "retriever_names": {"dense": store.name, "sparse": sparse.name, "hybrid": hybrid.name},
+        "retriever_names": {
+            "dense": store.name,
+            "sparse": sparse.name,
+            "hybrid": hybrid.name,
+            **({"reranked": reranked.name} if reranked is not None else {}),
+        },
         "hybrid_vs_sparse": {
             # Câu hỏi của `W2-04`: hợp nhất có làm mất chỗ sparse thắng không?
             "sparse_only": sum(1 for r in rows if r.sparse_rank and not r.hybrid_rank),
@@ -244,10 +281,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         "rows": [asdict(r) for r in rows],
     }
+    if reranked is not None:
+        payload["reranked"] = summarise([r.reranked_rank for r in rows], n=n)
+        # Hai phép so, và chúng trả lời hai câu khác nhau: so với hybrid là "xếp
+        # lại có giúp gì không", so với sparse là "có lấy lại được nhánh đang
+        # thắng ở đây không". Câu thứ hai mới là câu của `TD-18`.
+        for label, other in (("hybrid", "hybrid_rank"), ("sparse", "sparse_rank")):
+            only_other = sum(1 for r in rows if getattr(r, other) and not r.reranked_rank)
+            only_reranked = sum(1 for r in rows if r.reranked_rank and not getattr(r, other))
+            payload[f"reranked_vs_{label}"] = {
+                f"{label}_only": only_other,
+                "reranked_only": only_reranked,
+                "mcnemar_p": mcnemar_exact(only_other, only_reranked),
+            }
 
     logger.info("─" * 62)
     logger.info("Known-item search · %d truy vấn · top-%d", n, args.top_k)
-    for branch in ("dense", "sparse", "hybrid"):
+    branches = (
+        ("dense", "sparse", "hybrid", "reranked")
+        if reranked
+        else (
+            "dense",
+            "sparse",
+            "hybrid",
+        )
+    )
+    for branch in branches:
         stats = payload[branch]
         assert isinstance(stats, dict)
         logger.info(
@@ -277,6 +336,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         hvs["hybrid_only"],
         hvs["mcnemar_p"],
     )
+    if reranked is not None:
+        for label in ("hybrid", "sparse"):
+            block = payload[f"reranked_vs_{label}"]
+            assert isinstance(block, dict)
+            logger.info(
+                "  reranked vs %s: chỉ %s %d · chỉ reranked %d · McNemar p=%.3g",
+                label,
+                label,
+                block[f"{label}_only"],
+                block["reranked_only"],
+                block["mcnemar_p"],
+            )
     logger.info("─" * 62)
 
     if args.report is not None:

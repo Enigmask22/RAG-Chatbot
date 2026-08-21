@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
+    "BINARY_METRICS",
     "ComparisonRow",
     "RunScores",
     "compare_runs",
@@ -55,7 +56,30 @@ logger = logging.getLogger("pipeline.eval.compare")
 CARDINALITY_SENSITIVE = ("recall@", "ndcg@", "map@")
 
 #: Metric nhận giá trị 0/1 trên từng câu → dùng McNemar.
+#:
+#: `precision@1` vào đây từ `W2-05`, và nó vào vì một **mâu thuẫn quan sát được**:
+#: `precision@1` bằng `hit_rate@1` từng chữ số (top-1 chỉ có một chỗ, nên nó liên
+#: quan hay không là 0/1), nhưng nó đi đường bootstrap và cho kết luận **khác**.
+#: So `bgem3-rr-c50` với `bgem3-rr-c100`: cùng con số 0,5598 → 0,5789, McNemar cho
+#: `p = 0,125` (0↔4 câu đổi chiều — bốn lần tung xu cùng mặt thì không kết luận
+#: được gì) còn bootstrap cho CI95 `[+0,0048, +0,0383]`, tức "khác biệt thật".
+#: Bootstrap tự tin quá mức trên một metric rời rạc có rất ít câu đổi chiều, và
+#: hai kiểm định cho hai câu trả lời về cùng một số là một hố im lặng —
+#: người đọc sẽ trích dòng nào thuận với mình.
+#:
+#: ⚠️ Chỉ `precision@1`, không phải `precision@` chung: `precision@5` nhận
+#: 0; 0,2; 0,4… nên McNemar không áp được. Và `recall@1` cũng **không** vào đây —
+#: nó là `0` hoặc `1/n_relevant`, tức không nhị phân, dù mẫu câu khác 0 của nó
+#: trùng với `hit_rate@1`.
+#:
+#: ⚠️⚠️ `precision@1` phải khớp **đúng tên**, không phải tiền tố: bản sửa đầu của
+#: tôi đưa nó vào `BINARY_PREFIXES` và `"precision@10".startswith("precision@1")`
+#: là `True`, nên `precision@10` — nhận 0; 0,1; 0,2… — bị đẩy sang McNemar ngay
+#: trong lần chạy tiếp theo. Hai tập tách riêng vì hai cơ chế khớp khác nhau.
 BINARY_PREFIXES = ("hit_rate@",)
+
+#: Metric nhị phân nhưng tên không có tiền tố dùng chung được — xem cảnh báo trên.
+BINARY_METRICS = frozenset({"precision@1"})
 
 DEFAULT_BOOTSTRAP = 10_000
 DEFAULT_SEED = 20260820
@@ -324,7 +348,7 @@ def compare_runs(
             )
             continue
 
-        if metric.startswith(BINARY_PREFIXES):
+        if metric.startswith(BINARY_PREFIXES) or metric in BINARY_METRICS:
             b_only = sum(1 for a, b in pairs if a > b)
             c_only = sum(1 for a, b in pairs if b > a)
             rows.append(
