@@ -52,34 +52,41 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 |---|---:|---:|---:|---:|---:|---:|:---:|
 | W0 · Chuẩn bị | 8 | 1 | 0 | 2 | 2 | 3 | — |
 | W1 · Nền móng + Eval baseline | 13 | 13 | 0 | 0 | 0 | 0 | `G1` 🟡 |
-| W2 · Retrieval upgrade | 9 | 4 | 0 | 0 | 0 | 5 | `G2` ⬜ |
+| W2 · Retrieval upgrade | 9 | 5 | 0 | 0 | 0 | 4 | `G2` ⬜ |
 | W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng backlog gốc** | **71** | **18** | **0** | **2** | **2** | **49** | 0/6 |
+| **Tổng backlog gốc** | **71** | **19** | **0** | **2** | **2** | **48** | 0/6 |
 | §9 Task thêm mới (`NEW-xx`) | 6 | 6 | 0 | 0 | 0 | 0 | — |
-| **Tổng cộng** | **77** | **24** | **0** | **2** | **2** | **49** | 0/6 |
+| **Tổng cộng** | **77** | **25** | **0** | **2** | **2** | **48** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 > ⚠️ Con số tổng cũ ("73") là lỗi sổ sách tích lại: `NEW-03`…`NEW-06` được thêm vào §9 mà
 > không cộng vào tổng. Đã đếm lại trực tiếp từ các mục §2–§8 (**71**) và §9 (**6**).
+>
+> ⚠️ **Lỗi sổ sách thứ hai, cùng loại** (sửa 2026-08-21): `W2-05` được tick `[x]` ở §4 nhưng
+> dòng W2 ở đây vẫn ghi 4 done, nên tổng cộng đếm thiếu một task. Quy tắc §0 nói rõ "đổi
+> trạng thái → cập nhật luôn §1 Dashboard" và tôi đã bỏ nửa sau. Cách kiểm không tốn gì:
+> `grep -cE '^- \[x\]'` trên đúng khoảng dòng của từng mục §2–§8.
 
 **Chỉ số chất lượng (điền dần, lấy từ `plans/reports/`)**
 
 | Metric | Baseline (hệ thống hiện tại) | Hiện tại | Mục tiêu | Nguồn |
 |---|---|---|---|---|
-| Recall@10 | **0,2257** | **0,5813** | ≥ 0.90 | `reports/bgem3-retrieval.md` |
-| Recall@5 | **0,1746** | **0,4769** | — | `reports/bgem3-retrieval.md` |
-| nDCG@10 | **0,1621** | **0,4442** | ≥ 0.82 | `reports/bgem3-retrieval.md` |
-| MRR | **0,1660** | **0,4394** | ≥ 0.75 | `reports/bgem3-retrieval.md` |
-| MAP@20 | **0,1349** | **0,3853** | — | `reports/bgem3-retrieval.md` |
+| Recall@10 | **0,2257** | **0,7352** | ≥ 0.90 | `reports/bgem3-rr-c50-retrieval.json` |
+| Recall@5 | **0,1746** | **0,7026** | — | `reports/bgem3-rr-c50-retrieval.json` |
+| nDCG@10 | **0,1621** | **0,6481** | ≥ 0.82 | `reports/bgem3-rr-c50-retrieval.json` |
+| MRR | **0,1660** | **0,6440** | ≥ 0.75 | `reports/bgem3-rr-c50-retrieval.json` |
+| MAP@20 | **0,1349** | **0,6051** | — | `reports/bgem3-rr-c50-retrieval.json` |
+| hit_rate@1 | **0,1196** | **0,5598** | — | `reports/bgem3-rr-c50-retrieval.json` |
 | Faithfulness | *chưa đo* | — | ≥ 0.92 | `W5-01` |
 | Citation accuracy | *chưa đo* | — | ≥ 0.85 | `W5-02` |
 | Refusal correctness | *chưa đo* | — | ≥ 0.85 | `W5-02` (33 câu `unanswerable`) |
-| p95 latency (truy hồi) | **32,8 ms** | **45,7 ms** | — | `reports/bgem3-retrieval.md` |
-| p50 latency · nhánh hybrid | — | **30,6 ms** (= dense) | — | `reports/w2-04-rrf.md` §6 |
+| p95 latency (truy hồi) | **32,8 ms** | **604,0 ms** | — | `reports/bgem3-rr-c50-retrieval.json` |
+| p50 latency · nhánh hybrid | — | **31,3 ms** (= dense) | — | `reports/bgem3-rrf-k1-c20-retrieval.json` |
+| p50 latency · nhánh reranked | — | **534,4 ms** (c=50) · **232,8 ms** (c=20) | — | `reports/w2-05-reranker.md` §5 |
 | p95 latency (end-to-end) | *chưa đo* | — | ≤ 3500 ms | `W4-13` / `W6-05` |
 | Cost / query | *chưa đo* | — | ≤ $0.005 | `W5-11` |
 | Judge–human kappa | *chưa đo* | — | ≥ 0.6 | `W5-04` |
@@ -90,8 +97,17 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 > **p95 là độ trễ truy hồi thuần** (embed câu hỏi + tìm trong Qdrant, sau warm-up), không
 > phải end-to-end — chỉ so được với ngưỡng 3500 ms sau `W4-13`.
 > ⚠️ Con số baseline cũ "39,9 ms" là lỗi sổ sách; `reports/baseline-retrieval.md` ghi **32,8 ms**.
-> Cột **Hiện tại** = `bgem3` (`W2-01`, 2026-08-20), đo trên cùng 209 câu và **cùng nhãn**
-> (`n_relevant_mean` 1,3828 ở cả hai lần chạy), nên recall@k/nDCG/MAP so được trực tiếp.
+> Cột **Hiện tại** = **`bgem3-rr-c50`** (`W2-05`, 2026-08-21): BGE-M3 + hybrid RRF `k=1` +
+> cross-encoder rerank trên pool 50. Đo trên cùng 209 câu và **cùng nhãn**
+> (`n_relevant_mean` 1,3828 ở mọi lần chạy từ `W2-01` trở đi), nên recall@k/nDCG/MAP so được
+> trực tiếp với baseline.
+> ⚠️ Cột này **đứng lại ở `W2-01` suốt `W2-04` và `W2-05`** (sửa 2026-08-21). Hệ quả không
+> phải mỹ quan: bảng này là chỗ duy nhất trong repo trả lời "đang ở đâu so với mục tiêu", và
+> đọc nó thì nDCG@10 còn cách ngưỡng `G6` 0,82 một khoảng 0,38 trong khi thật ra chỉ còn 0,17.
+> **`c=50` không phải cấu hình nhanh nhất cũng không phải tốt nhất** — nó là cấu hình `W2-05`
+> báo cáo chính. `c=100` tốt hơn ở mọi metric (nDCG@10 **0,6736**, Recall@10 **0,7679**) nhưng
+> tốn 1044 ms; `c=20` giữ 91% mức lợi hạng nhất với 233 ms và là điểm vận hành khuyến nghị cho
+> `W4`. Chốt một con số vào bảng mà không nói kèm `candidates` là bỏ mất chiều đắt nhất.
 > ⚠️ Đừng đọc "Recall@10 ≥ 0,90" như một khoảng cách lấp được bằng tinh chỉnh retrieval:
 > `cross_lingual` (20% tập đo) đang bằng **0** vì model embedding **đơn ngữ** — đổi model
 > là đổi hẳn tầng nền, không phải tinh chỉnh tham số.
@@ -447,7 +463,8 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · Đo được ở `TD-11`: với 209 câu và `hit_rate@5` ≈ 0,20, phải chênh **≥ 6 điểm tuyệt đối (≈28% tương đối)** mới phát hiện được. Xếp hạng 12 tổ hợp bằng mức chênh vài phần trăm là tung đồng xu
 - [ ] Có bảng ablation ≥ 12 dòng, tái lập được bằng `make eval EXP=exp_001`
 - [ ] Không tổ hợp nào làm p95 latency vượt 3500 ms
-  · Số hiện có (chỉ **truy hồi**, chưa end-to-end): dense p95 45,7 ms · hybrid p95 ~49 ms · sparse 46,2 ms. Còn rất nhiều chỗ, nhưng ngưỡng 3500 ms là end-to-end nên chỉ đối chiếu được sau `W4-13`
+  · Số hiện có (chỉ **truy hồi**, chưa end-to-end): dense p95 **46,2 ms** · hybrid `k=1 c20` **48,0 ms** · reranked **604,0 ms** (c=50) / **263,9 ms** (c=20) / **1154,5 ms** (c=100). Còn nhiều chỗ, nhưng ngưỡng 3500 ms là end-to-end nên chỉ đối chiếu được sau `W4-13`
+  · ⚠️ Con số dense cũ ở dòng này ("45,7 ms") **không có trong nguồn được dẫn**: `bgem3-retrieval.md` ghi 46,2. Nó lấy từ bảng ở `w2-03-sparse-retriever.md` §8 — chính phần đã bị đánh dấu "Nội dung gốc (SAI)" sau khi tìm ra bug 64 ms. Phần dense của bảng đó không sai, nhưng dẫn số từ một khối đã gạch là cách chắc chắn để nó tái sinh
   · ⚠️ Đừng dùng số p95 của `W2-03` §8 — nó sai vì bug 64 ms, đã đính chính ở `W2-04` §6
 
 ---
