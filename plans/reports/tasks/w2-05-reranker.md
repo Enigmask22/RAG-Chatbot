@@ -383,8 +383,9 @@ chứng trực tiếp rằng pool sâu đang nhập thêm vùng phủ, không ch
 | hybrid k=1 → rerank c50 | +0,2201 · **7↔53** | +0,1770 · 2↔39 | +0,1148 · 1↔25 | +0,0654 | **15/15** |
 
 `hit_rate@5` từ dense: **43 câu được sửa, 0 câu bị làm hỏng.** Khác hẳn `W2-04`
-nơi chỉ 3/15 metric đạt ý nghĩa và mức tăng nằm dưới ngưỡng phân giải của
-`golden_v1`; ở đây mọi thứ vượt xa ngưỡng đó.
+nơi chỉ **2/15** metric đạt ý nghĩa (con số công bố ban đầu là 3/15 — sửa ở
+`W2-08`) và mức tăng nằm dưới ngưỡng phân giải của `golden_v1`; ở đây mọi thứ
+vượt xa ngưỡng đó.
 
 ⚠️ Vẫn giữ nguyên cảnh báo của `W2-04`: **"15/15 đều dương" không phải 15 phép
 thử độc lập** — các metric này tương quan mạnh. Điều làm kết quả này đáng tin
@@ -399,7 +400,19 @@ hiện từ nhiễu.
 | c50 → c100 | +0,0191 · **p=0,125 (nhiễu)** | +0,0431 · p=0,004 | +0,0351 có ý nghĩa |
 
 Pool sâu hơn mua **chất lượng danh sách**, không mua **chất lượng hạng nhất** —
-và đó là kiểm định, không phải lập luận. Cơ chế khớp: từ pool 20 trở lên,
+và đó là kiểm định, không phải lập luận.
+
+> 📝 **Sắc thêm ở `W2-08` (2026-08-22)**: câu trên đúng, và nó đúng **hơn** mức đo
+> được lúc đó. Chạy đủ 15 metric cho `c50 → c100`: **vùng phủ** tăng sạch
+> (`hit_rate@10` **0↔9**, `recall@20` 1↔10, `recall@10` 1↔9 — không câu nào mất),
+> còn `ndcg@10` và `map@20` là **`TRÁI CHIỀU`**: `Δ` dương nhưng đếm câu là 10↔11 và
+> 10↔12, tức *nhiều câu bị làm hỏng hơn số câu được sửa*, trung bình dương chỉ vì
+> mấy câu thắng thắng đậm. Nên không chỉ `hit_rate@1` đứng yên — chính `nDCG`/`MAP`
+> cũng có các thay đổi **triệt tiêu nhau**. Pool sâu hơn *nhập thêm bằng chứng đúng
+> vào danh sách và đồng thời xáo lại phần đầu*.
+>
+> Hệ quả cho điểm vận hành: `c100` vs `c50` là đánh đổi **vùng phủ vs 1,91× độ
+> trễ**, không phải chất lượng vs chi phí. Xem `w2-08-ablation.md` §6. Cơ chế khớp: từ pool 20 trở lên,
 reranker đã đưa được cái đúng nhất *lên đầu* rồi; thêm ứng viên chỉ nhập thêm
 những chunk đúng khác vào *danh sách*.
 
@@ -414,7 +427,20 @@ không đi tìm.
 | hybrid k=1 c=20 | 0,5598 | 0,7703 | 0,6481 | 0,7424 | 534,4 ms |
 
 `hit_rate@1` `p = 0,453` (2↔5) · `hit_rate@10` `p = 0,180` (4↔10) · `recall@20`
-CI95 **[−0,0008, +0,0630]** — **13/15 metric trong ngưỡng nhiễu.**
+CI95 **[−0,0008, +0,0630]** — **13/15 metric không đạt ý nghĩa.**
+
+> 📝 **Đính chính 2026-08-22 (`W2-08`)**: câu này viết "13/15 **trong ngưỡng
+> nhiễu**". Con số 13 giữ nguyên, nhưng thành phần thì không: `recall@20` — chính
+> dòng trích ở trên — giờ là `KHÔNG KẾT LUẬN`, vì biên `−0,0008` nằm trong một bước
+> lưới **và** khoảng dao động của chính nó (`[−0,0008, +0,0000]`) chứa 0. Tức dẫn
+> chứng mạnh nhất của đoạn này hoá ra là dòng yếu nhất trong ba dòng được trích.
+>
+> ✅ **Nhưng kết luận thì mạnh hơn lúc phát biểu.** `W2-08` đo lại nền dense vs nền
+> hybrid ở **cả ba** độ sâu pool (20/50/100): **0/24 hàng** đạt ý nghĩa, và
+> `hit_rate@10` ở pool 20 cho **10↔10, `p` = 1,0** — đối xứng hoàn hảo. Hybrid cũng
+> không đắt hơn ở mức nào (267,6 → 276,5 · 618,5 → **608,9** · 1182,3 → **1163,9**
+> ms). Nên "sau khi có reranker, tầng hybrid không đo được" không phải chuyện của
+> một độ sâu pool. Xem `w2-08-ablation.md` §7.
 
 Ở `W2-04`, hybrid cho `recall@20` hơn dense **có ý nghĩa** (+0,0446). Sau khi
 thêm reranker, phần đóng góp đó không còn phát hiện được. Cách đọc đúng: hai

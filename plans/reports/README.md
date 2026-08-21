@@ -11,7 +11,7 @@ tay hay không*.
 |---|---|---|---|
 | [`tasks/`](tasks/) | Tường thuật một hạng mục `Wx-xx`: câu hỏi, dự đoán ghi trước, số đo, kết luận, cái gì sai | Tôi viết | ✅ đây là chỗ duy nhất |
 | [`runs/`](runs/) | Output của **một lần chạy eval**: `<run>-retrieval.json` + `.md` + `<run>-per-query.jsonl` | `pipeline.eval.retrieval_eval` | ❌ sửa là làm hỏng bằng chứng |
-| [`compare/`](compare/) | `cmp-<base>-vs-<cand>.md` — bảng có `p`/CI95 | `pipeline.eval.compare` | ❌ |
+| [`compare/`](compare/) | `cmp-<base>-vs-<cand>.md` (một cặp) · `by<chiều>-*.md` (chia nhóm, có hiệu chỉnh) · `ablation-*.md` (**N ô** + tập tương đương) | `pipeline.eval.compare`, `pipeline.eval.ablation` | ❌ |
 | [`probes/`](probes/) | Output script đo lẻ + report build index | `scripts/*_probe.py`, `pipeline.indexing.*` | ❌ |
 | [`goldenset/`](goldenset/) | Provenance + checksum của tập nhãn | `pipeline.goldenset.*` | ❌ |
 
@@ -36,11 +36,12 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-01` BGE-M3 | [`tasks/w2-01-bge-m3.md`](tasks/w2-01-bge-m3.md) | `bgem3` | `cmp-baseline-vs-bgem3` | `truncation-bgem3`, `index-bgem3.json` | nDCG@10 → **0,4442**, 15/15 có ý nghĩa |
 | `W2-02` named vectors | [`tasks/w2-02-qdrant-hybrid.md`](tasks/w2-02-qdrant-hybrid.md) | — | — | `index-bgem3.json` | Một collection, hai loại vector; `ensure_collection` **kiểm** schema |
 | `W2-03` sparse | [`tasks/w2-03-sparse-retriever.md`](tasks/w2-03-sparse-retriever.md) | `bgem3-sparse` | `cmp-bgem3-vs-bgem3-sparse` | `w2-03-known-item.json` | Kém dense trên golden set, **thắng áp đảo** ở tra mã |
-| `W2-04` RRF | [`tasks/w2-04-rrf.md`](tasks/w2-04-rrf.md) | `bgem3-rrf` (k=60), `-k1`, `-k2`, `-k5`, `-k10`, `-c20`, `-c100`, `-k1-c20`, `-k1-c100`, `-w2` | `cmp-bgem3-vs-bgem3-rrf`, `cmp-bgem3-vs-bgem3-rrf-k1` | `w2-04-known-item.json`, `-k1.json` | **`k=60` của bài báo là lựa chọn tệ nhất**; `k=1` thắng nhưng chỉ 3/15 có ý nghĩa |
+| `W2-04` RRF | [`tasks/w2-04-rrf.md`](tasks/w2-04-rrf.md) | `bgem3-rrf` (k=60), `-k1`, `-k2`, `-k5`, `-k10`, `-c20`, `-c100`, `-k1-c20`, `-k1-c100`, `-w2` | `cmp-bgem3-vs-bgem3-rrf`, `cmp-bgem3-vs-bgem3-rrf-k1` | `w2-04-known-item.json`, `-k1.json` | **`k=60` của bài báo là lựa chọn tệ nhất**; `k=1` thắng nhưng chỉ **2/15** có ý nghĩa (sửa từ 3/15 ở `W2-08`) |
 | `W2-05` reranker | [`tasks/w2-05-reranker.md`](tasks/w2-05-reranker.md) | `bgem3-rr-c20`, `-c50`, `-c100`, `-dense-c50` | `cmp-bgem3-vs-bgem3-rr-c50`, `cmp-bgem3-rr-c20-vs-...c50`, `...c50-vs-...c100`, `cmp-bgem3-rr-dense-c50-vs-bgem3-rr-c50`, `cmp-bgem3-rrf-k1-c20-vs-bgem3-rr-c50` | `w2-05-known-item.json`, `w2-05-rerank-probe.json` | `hit_rate@1` **+22,0 điểm**, 15/15 có ý nghĩa; **DoD 400 ms không đạt** |
 | `W2-06` metadata filter | [`tasks/w2-06-metadata-filter.md`](tasks/w2-06-metadata-filter.md) | — | — | `w2-06-filter-probe.json`, `w2-06-backfill-bgem3.json` | Phần thiếu là **đường `fetch`**, không phải date range; lọc **không tốn gì** |
 | `W2-07` experiment runner | [`tasks/w2-07-experiment-runner.md`](tasks/w2-07-experiment-runner.md) | `e1-*` (**14 ô**) | — | — | Resume khoá vào **`fingerprint` của ô**; grid tái lập **5** con số đã công bố đúng từng chữ số; MLflow hỏng **hai** lần |
 | `W2-08-prep` `--category`/`--lang` | [`tasks/w2-08-prep-compare-groups.md`](tasks/w2-08-prep-compare-groups.md) | — | `bycategory-*`, `bylang-*` | — | Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực |
+| `W2-08` ablation | [`tasks/w2-08-ablation.md`](tasks/w2-08-ablation.md) | `e1-*` (**14 ô**) | `ablation-exp-001-ndcg` | — | **Cấu hình thắng là một TẬP, không một dòng**; và người thắng từng do **6 mẫu lại trên 10.000** quyết định |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -86,6 +87,7 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make goldenset-anchor` / `-freeze` | `goldenset/goldenset-anchor.json` / `-v1.json` |
 | `make eval-compare-by` | `compare/by<BY>-<BASE>-vs-<CAND>.md` (có hiệu chỉnh Bonferroni) |
 | `make eval-compare-subset` | *không ghi file* — in ra stdout (một nhóm nêu trước, không hiệu chỉnh) |
+| `make ablation` | `compare/ablation-exp-001-<RANK_SLUG>.md` — **N ô** kèm tập tương đương (hiệu chỉnh trên `(số ô − 1) × số metric`) |
 
 Mặc định trong code cũng trỏ vào đây: `retrieval_eval.py --out-dir` và
 `compare.py --dir` đều là `plans/reports/runs`.
@@ -123,7 +125,15 @@ báo thật của công cụ: `baseline-per-query.jsonl` **không có `relevant_
 không kiểm được bằng băm — chỉ suy được gián tiếp qua `n_relevant_mean` 1,3828
 bằng nhau ở cả hai lần chạy.
 
-**⚠️ Toàn bộ `compare/` được sinh lại ngày 2026-08-21.** Không phải để dọn dẹp:
+**⚠️ Toàn bộ `compare/` được sinh lại lần nữa ngày 2026-08-22 (`W2-08`).** Ba cờ
+mới — `TRÁI CHIỀU`, `TRÙNG KHỚP`, `mc_unstable` — đổi kết luận **10 hàng trong 6/14
+file**, và kiểm từng hàng thì cả 10 đều đúng. Hai chốt kiểm soát giữ nguyên đúng
+từng chữ số: `cmp-baseline-vs-bgem3` vẫn **15/15** và `cmp-bgem3-vs-bgem3-rr-c50`
+vẫn **15/15**. Bản đầu của luật dùng bước lưới `1/n` và làm **13/14** file đổi kết
+luận — phần lớn là dương giả trên `precision@k`/`recall@k`, vì `1/n` chỉ đúng cho
+metric nhị phân. Chi tiết: `tasks/w2-08-ablation.md` §9.
+
+**⚠️ Và lần sinh lại trước đó, ngày 2026-08-21.** Không phải để dọn dẹp:
 các file cũ có **trước** bản sửa `precision@1` ở `W2-05`, nên chúng vẫn đi đường
 bootstrap cho một metric nhị phân — tức cùng một con số nhận hai kết luận khác
 nhau tuỳ file được sinh lúc nào. Sinh lại chỉ cần `runs/*-per-query.jsonl`, không
@@ -140,14 +150,19 @@ nhau** (1,9617) và cả 15 metric đều so được. Cả 15 đều cho "trong
 `cmp-baseline-vs-chunk550.md`, sáu metric có mẫu số là số nhãn bị đánh **KHÔNG SO
 ĐƯỢC** kèm lý do.
 
-**⚠️ `runs/e1-*` (14 ô) KHÔNG phải `W2-08`.** DoD `W2-08` đòi `p`/CI **cho từng
-dòng**, tức `compare.py`, và chưa chạy trên bộ này. 14 ô đó là *bằng chứng runner
-chạy đúng* (`W2-07`), không phải một kết luận: chênh 0,6736 vs 0,6481 trên 209 câu
-là **5 câu**, và đọc nó như kết luận là lặp lại đúng lỗi `TD-11`.
+**✅ `runs/e1-*` (14 ô) đã thành `W2-08` ngày 2026-08-22** — `p`/CI từng dòng nằm
+ở [`compare/ablation-exp-001-ndcg.md`](compare/ablation-exp-001-ndcg.md), sinh bằng
+`make ablation`. Cảnh báo cũ ở chỗ này ("chênh 0,6736 vs 0,6481 là **5 câu**, đọc nó
+như kết luận là lặp lại lỗi `TD-11`") **hoá ra đúng**: 5 câu đó là `ndcg@10`
+`TRÁI CHIỀU` (đếm câu +10/−11) và ở `B = 50.000` mẫu lại thì khoảng tin cậy **chứa
+0**.
 
-**⚠️ `e1-chunk550-dense` không so được recall/nDCG/MAP với 13 ô còn lại** —
-`n_relevant_mean` **1,9617** vs **1,3828** (`G2`). Log của grid nói cùng chuyện:
-`chunk550` đổi **209/209** nhãn, baseline và bgem3 đổi 9.
+**⚠️ `e1-chunk550-dense` không so được metric NÀO với 13 ô còn lại** — không chỉ
+`recall`/`nDCG`/`MAP`. `n_relevant_mean` **1,9617** vs **1,3828** (`G2`) là phần dễ
+thấy, nhưng phần chặt hơn là **tập** nhãn: `chunk550` đổi **209/209** nhãn (baseline
+và bgem3 đổi 9), nên hàng rào băm `relevant_digest` của `W2-03` từ chối cả 15 metric.
+Chỉ dẫn của `G2` ("đổi `chunk_size` thì dùng `hit_rate@k`/MRR") **không thực hiện
+được** với công cụ hiện tại → `TD-20`.
 
 **⚠️ `mlflow.db` không nằm trong git** — nó là một *view*, dựng lại được bằng
 `make exp-backfill` từ chính `runs/`. Nếu một con số chỉ có trên MLflow thì nó

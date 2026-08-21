@@ -17,8 +17,13 @@ Ba kết quả, và cả ba đều ngược với thứ tôi tin lúc bắt đ�
 
 Cấu hình thắng là **`k=1`, `candidate_k=20`**: `hit_rate@10` **0,6555** vs dense
 0,6268, `hit_rate@20` **0,7177** vs 0,6746, và **cả 15 metric đều tốt hơn dense**
-— nhưng chỉ 3/15 đạt ý nghĩa thống kê, nên đây là cải thiện **nhỏ**, phần lớn nằm
-dưới ngưỡng phân giải của `golden_v1`.
+— nhưng chỉ **2/15** đạt ý nghĩa thống kê, nên đây là cải thiện **nhỏ**, phần lớn
+nằm dưới ngưỡng phân giải của `golden_v1`.
+
+> 📝 **Đính chính 2026-08-22 (`W2-08`)**: con số này là **3/15** khi công bố. `W2-08`
+> thêm cờ phân giải vào `compare.py` và `precision@5` thành `KHÔNG KẾT LUẬN` — biên
+> CI95 `+0,0010` nằm trong một bước lưới của chính metric ấy. Cùng chiều kết luận,
+> yếu hơn một bậc. Xem `w2-08-ablation.md` §9.
 
 Phần đáng nhất của phiên lại không phải RRF: phân rã độ trễ để kiểm một con số
 không khớp đã tìm ra **một bug hiệu năng 64 ms/lần gọi**, và bug đó làm **sai hai

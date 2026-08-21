@@ -18,9 +18,12 @@ import pytest
 
 from pipeline.eval.compare import (
     DEFAULT_ALPHA,
+    MIN_TAIL_RESAMPLES,
+    BootstrapBounds,
     ComparisonRow,
     RunScores,
     bootstrap_intervals,
+    bootstrap_resample,
     compare_by_group,
     compare_runs,
     format_grouped_table,
@@ -526,16 +529,20 @@ class TestUnderpoweredIsNotTheSameAsNoEffect:
         assert row.verdict == "KHÔNG SO ĐƯỢC"
 
 
-class TestCiTouchingZeroIsNotEvidenceOfNoEffect:
-    """Biên CI đúng 0 = biên giới của lưới rời rạc, không phải kết luận âm.
+class TestCiWithinResolutionIsNotEvidenceOfNoEffect:
+    """Biên CI sát 0 = biên giới của lưới rời rạc, không phải kết luận âm.
 
     Đo được: trong bảng `bgem3 → bgem3-rrf-k1-c20` chia theo category, **4/4**
     dòng `recall@5` có một biên ghim đúng `0,0000` và cả bốn từng bị dán "trong
     ngưỡng nhiễu". Đổi seed dịch biên đúng **một bước lưới** (1/43 = 0,0233) chứ
     không dịch trơn, và tăng 10.000 → 50.000 iterations không đổi gì.
+
+    Luật đổi ở `W2-08` từ "biên `== 0`" sang "biên cách 0 dưới **một bước lưới**",
+    vì luật cũ bỏ lọt đúng ca quyết định người thắng của bảng ablation. Và bước
+    lưới là `min_increment / n`, **không** phải `1/n` — xem lớp dưới.
     """
 
-    def _row(self, lo: float, hi: float) -> ComparisonRow:
+    def _row(self, lo: float, hi: float, *, increment: float = 1.0) -> ComparisonRow:
         return ComparisonRow(
             metric="recall@5",
             baseline=0.3,
@@ -545,24 +552,77 @@ class TestCiTouchingZeroIsNotEvidenceOfNoEffect:
             ci_low=lo,
             ci_high=hi,
             n_queries=43,
+            min_increment=increment,
         )
 
     def test_upper_bound_exactly_zero_gives_no_conclusion(self) -> None:
         row = self._row(-0.2558, 0.0)
-        assert row.ci_touches_zero
+        assert row.ci_within_resolution
         assert row.verdict == "KHÔNG KẾT LUẬN"
 
     def test_lower_bound_exactly_zero_gives_no_conclusion(self) -> None:
         assert self._row(0.0, 0.1765).verdict == "KHÔNG KẾT LUẬN"
 
     def test_an_interval_that_merely_straddles_zero_is_noise(self) -> None:
-        """Bao 0 ở cả hai phía là kết luận thật; ghim đúng 0 thì không."""
+        """Bao 0 ở cả hai phía là kết luận thật; sát 0 thì không."""
         row = self._row(-0.05, 0.03)
-        assert not row.ci_touches_zero
+        assert not row.ci_within_resolution
         assert row.verdict == "trong ngưỡng nhiễu"
 
     def test_an_interval_excluding_zero_still_wins(self) -> None:
-        assert self._row(-0.1630, -0.0054).verdict == "khác biệt thật"
+        """Ca này là lý do `min_increment` mặc định KHÔNG phải 1,0.
+
+        `[−0,1630, −0,0054]` là `ndcg@10` của `cross_lingual` ở `W2-04` — dẫn chứng
+        đã công bố. Với `min_increment = 1,0` thì bước lưới là `1/43 = 0,0233` và
+        biên `0,0054` bị dán `KHÔNG KẾT LUẬN`, tức luật mới **xoá một kết quả
+        thật**. Độ hạt thật của `ndcg@10` ở đó là ~0,0068, nên bước lưới là
+        `0,00016` và kết luận giữ nguyên.
+        """
+        assert self._row(-0.1630, -0.0054, increment=0.0068).verdict == "khác biệt thật"
+        # Chính ca sai: coi metric liên tục như nhị phân.
+        assert self._row(-0.1630, -0.0054, increment=1.0).verdict == "KHÔNG KẾT LUẬN"
+
+    def test_unknown_granularity_never_raises_the_flag(self) -> None:
+        """`min_increment` mặc định là "chưa biết", và chưa biết thì không gắn cờ."""
+        row = self._row(-0.1630, -0.0054, increment=0.0)
+        assert row.grid_step == 0.0
+        assert not row.ci_within_resolution
+        assert row.verdict == "khác biệt thật"
+
+
+class TestGridStepComesFromTheMetricNotFromN:
+    """Bước lưới là `min_increment / n`. Đo được: luật `1/n` cho 13/14 dương giả.
+
+    `precision@20` nhận giá trị bội của 1/20, nên bước thật của nó nhỏ hơn `1/n`
+    **hai mươi lần**. Áp `1/n` lên nó làm mọi hiệu dưới 0,0048 bị gắn cờ, và khi
+    tôi chạy thử luật đó trên 14 file `compare/` đã công bố thì **13** file đổi
+    kết luận — gần hết là `precision@k`/`recall@k` bị gắn cờ oan.
+    """
+
+    def _row(self, increment: float) -> ComparisonRow:
+        return ComparisonRow(
+            metric="precision@20",
+            baseline=0.0187,
+            candidate=0.0244,
+            delta=0.0057,
+            test="bootstrap cặp (10000)",
+            ci_low=0.0024,
+            ci_high=0.0119,
+            n_queries=209,
+            min_increment=increment,
+        )
+
+    def test_binary_metric_keeps_one_over_n(self) -> None:
+        assert self._row(1.0).grid_step == pytest.approx(1 / 209)
+
+    def test_coarse_metric_has_a_finer_step(self) -> None:
+        assert self._row(0.05).grid_step == pytest.approx(0.05 / 209)
+
+    def test_the_false_positive_the_naive_rule_produced(self) -> None:
+        """Cùng một hàng: luật `1/n` gắn cờ, luật đúng thì không."""
+        assert self._row(1.0).ci_within_resolution is True
+        assert self._row(0.05).ci_within_resolution is False
+        assert self._row(0.05).verdict == "khác biệt thật"
 
 
 class TestBootstrapIntervalsIsOneResampling:
@@ -807,3 +867,246 @@ class TestRealGoldenSetShape:
     def test_both_languages_are_large_enough_to_test(self) -> None:
         run = load_per_query("plans/reports/runs/e1-bgem3-dense-per-query.jsonl")
         assert {k: len(v) for k, v in run.groups("lang").items()} == {"vi": 127, "en": 82}
+
+
+class TestIdenticalIsTheMostCertainRowNotTheLeast:
+    """0 câu khác nhau là hàng chắc chắn nhất trong bảng, không phải mơ hồ nhất.
+
+    Đo được ở `W2-08`: `recall@5` giữa `rrf k=0` và `rrf k=1` có **0/209** câu
+    khác nhau và `Δ = 0`, nên CI là `[0, 0]`. Luật cũ thấy "một biên đúng 0" và
+    dán `KHÔNG KẾT LUẬN`; luật `underpowered` cũng thoả (`min_achievable_p(0) = 1`).
+    Cả hai đều đọc bằng chứng mạnh nhất có thể thành bằng chứng yếu nhất.
+    """
+
+    def _row(self, *, binary: bool) -> ComparisonRow:
+        common = {
+            "metric": "recall@5",
+            "baseline": 0.5088,
+            "candidate": 0.5088,
+            "delta": 0.0,
+            "n_queries": 209,
+            "n_baseline_only": 0,
+            "n_candidate_only": 0,
+        }
+        if binary:
+            return ComparisonRow(test="McNemar exact", p_value=1.0, **common)  # type: ignore[arg-type]
+        return ComparisonRow(
+            test="bootstrap cặp (10000)",
+            ci_low=0.0,
+            ci_high=0.0,
+            **common,  # type: ignore[arg-type]
+        )
+
+    def test_bootstrap_row_with_no_differing_query(self) -> None:
+        row = self._row(binary=False)
+        assert row.identical
+        assert row.verdict == "TRÙNG KHỚP"
+
+    def test_binary_row_with_no_differing_query(self) -> None:
+        """Hàng McNemar 0↔0 cũng trùng khớp — không phải `KHÔNG ĐỦ LỰC`."""
+        row = self._row(binary=True)
+        assert row.identical
+        assert row.underpowered, "trần p của 0 câu đổi chiều vẫn là 1,0"
+        assert row.verdict == "TRÙNG KHỚP", "thứ tự nhánh: identical phải chạy trước"
+
+    def test_a_nonzero_delta_is_never_identical(self) -> None:
+        row = ComparisonRow(
+            metric="mrr",
+            baseline=0.5,
+            candidate=0.5,
+            delta=1e-9,
+            test="bootstrap cặp (10000)",
+            ci_low=0.0,
+            ci_high=0.0,
+            n_queries=209,
+        )
+        assert not row.identical
+
+
+class TestDirectionSplitIsNotTheSameAsNoEffect:
+    """Trung bình nói một hướng, đếm câu nói hướng ngược — có chữ riêng: TRÁI CHIỀU.
+
+    Đây là ca quyết định người thắng của bảng ablation `W2-08`. `rc50 → rc100`,
+    `ndcg@10`: `Δ = +0,0255`, CI95 `[+0,0075, +0,0478]` loại 0 hẳn hoi, nhưng đếm
+    câu là **+10 tốt hơn / −11 xấu đi**. Trung bình dương vì mấy câu thắng thắng
+    đậm hơn mấy câu thua thua — hợp lệ, nhưng không phải "hệ thống tốt hơn".
+    """
+
+    def _row(self, better: int, worse: int, delta: float) -> ComparisonRow:
+        return ComparisonRow(
+            metric="ndcg@10",
+            baseline=0.6481,
+            candidate=0.6481 + delta,
+            delta=delta,
+            test="bootstrap cặp (10000)",
+            ci_low=0.0075,
+            ci_high=0.0478,
+            n_candidate_only=better,
+            n_baseline_only=worse,
+            n_queries=209,
+            min_increment=0.0068,
+        )
+
+    def test_the_measured_case(self) -> None:
+        row = self._row(better=10, worse=11, delta=0.0255)
+        assert row.direction_split
+        assert row.verdict == "TRÁI CHIỀU"
+
+    def test_counts_agreeing_with_delta_are_not_flagged(self) -> None:
+        row = self._row(better=21, worse=0, delta=0.0255)
+        assert not row.direction_split
+        assert row.verdict == "khác biệt thật"
+
+    def test_an_exact_tie_in_counts_carries_no_direction(self) -> None:
+        """10↔10 không nói gì về hướng, nên nó cũng phải bị gắn cờ."""
+        assert self._row(better=10, worse=10, delta=0.0255).direction_split
+
+    def test_it_is_a_separate_verdict_from_unreadable_intervals(self) -> None:
+        """`TRÁI CHIỀU` khác `KHÔNG KẾT LUẬN`: ở đây khoảng ĐỌC ĐƯỢC, nó nói hai điều."""
+        split = self._row(better=10, worse=11, delta=0.0255)
+        assert not split.ci_within_resolution
+        assert not split.mc_unstable
+        assert split.verdict == "TRÁI CHIỀU"
+
+    def test_a_noise_row_is_not_relabelled(self) -> None:
+        """Khoảng đã chứa 0 thì hai cờ này không được hỏi — thêm chữ, không thêm tin."""
+        row = ComparisonRow(
+            metric="ndcg@10",
+            baseline=0.5,
+            candidate=0.51,
+            delta=0.01,
+            test="bootstrap cặp (10000)",
+            ci_low=-0.02,
+            ci_high=0.04,
+            n_candidate_only=5,
+            n_baseline_only=9,
+            n_queries=209,
+            min_increment=0.0068,
+        )
+        assert row.direction_split, "cờ vẫn mô tả đúng dữ liệu"
+        assert row.verdict == "trong ngưỡng nhiễu", "nhưng kết luận không đổi"
+
+
+class TestMonteCarloInstabilityIsADifferentLimitFromTheLattice:
+    """Biên đọc từ quá ít mẫu lại thì chính nó dao động qua 0.
+
+    Đo được ở `W2-08` trên `rc50 → rc100`, `ndcg@10`, α đã hiệu chỉnh cho 39 phép
+    kiểm (0,00128) và B = 10.000 → đuôi chỉ **6** mẫu. Sáu seed cho biên dưới nhận
+    cả dấu `+` lẫn `−`; ở B = 50.000 (đuôi 32) và B = 200.000 (đuôi 128) nó âm
+    nhất quán, tức khoảng thật sự **chứa** 0.
+
+    ⚠️ Và nó **ngược** ghi chú của `W2-08-prep` ("đừng chữa bằng cách tăng
+    iterations"). Ghi chú đó đúng cho ca metric nhị phân thưa; ca này là metric
+    liên tục và tăng `B` **đảo** kết luận. Hai giới hạn khác nhau, cùng một triệu
+    chứng — test này ghim rằng chúng là hai cờ khác nhau.
+    """
+
+    def test_a_bound_whose_own_jitter_spans_zero(self) -> None:
+        row = ComparisonRow(
+            metric="ndcg@10",
+            baseline=0.6481,
+            candidate=0.6736,
+            delta=0.0255,
+            test="bootstrap cặp (10000)",
+            ci_low=0.0003,
+            ci_high=0.0638,
+            ci_jitter=(-0.0008, 0.0005),
+            n_queries=209,
+            min_increment=0.0068,
+            alpha=0.05 / 39,
+            family_size=39,
+        )
+        assert row.mc_unstable
+        assert not row.ci_within_resolution, "0,0003 cách 0 gấp 9 lần bước lưới 3,2e-05"
+        assert row.verdict == "KHÔNG KẾT LUẬN"
+
+    def test_a_stable_bound_is_left_alone(self) -> None:
+        """Dẫn chứng `cross_lingual` của `W2-04`: biên −0,0193, dao động không chạm 0."""
+        row = ComparisonRow(
+            metric="map@20",
+            baseline=0.3,
+            candidate=0.22,
+            delta=-0.08,
+            test="bootstrap cặp (10000)",
+            ci_low=-0.1235,
+            ci_high=-0.0193,
+            ci_jitter=(-0.0201, -0.0186),
+            n_queries=43,
+            min_increment=0.0093,
+            alpha=0.05 / 90,
+            family_size=90,
+        )
+        assert not row.mc_unstable
+        assert row.verdict == "khác biệt thật"
+
+    def test_rows_without_a_bootstrap_have_no_jitter(self) -> None:
+        row = ComparisonRow(
+            metric="hit_rate@1",
+            baseline=0.5,
+            candidate=0.52,
+            delta=0.02,
+            test="McNemar exact",
+            p_value=0.125,
+            n_candidate_only=4,
+            n_queries=209,
+        )
+        assert row.ci_jitter is None
+        assert not row.mc_unstable
+
+    def test_tail_size_shrinks_with_the_corrected_alpha(self) -> None:
+        """Con số làm cờ này cần thiết: α/2 × B là bao nhiêu mẫu lại thật sự."""
+        assert int(DEFAULT_ALPHA / 2 * 10_000) == 250
+        assert int((DEFAULT_ALPHA / 39) / 2 * 10_000) == 6
+        assert 6 < MIN_TAIL_RESAMPLES <= 250
+
+    def test_resample_reports_its_own_tail_and_jitter(self) -> None:
+        diffs = [0.0] * 190 + [0.3] * 10 + [-0.25] * 9
+        bounds = bootstrap_resample(diffs, (DEFAULT_ALPHA,), iterations=2_000)[DEFAULT_ALPHA]
+        assert bounds.tail == int(DEFAULT_ALPHA / 2 * 2_000)
+        lo_lo, lo_hi = bounds.low_jitter
+        assert lo_lo <= bounds.low <= lo_hi, "biên phải nằm trong khoảng dao động của nó"
+        hi_lo, hi_hi = bounds.high_jitter
+        assert hi_lo <= bounds.high <= hi_hi
+
+    def test_near_jitter_picks_the_bound_that_decides(self) -> None:
+        bounds = BootstrapBounds(
+            low=0.0003,
+            high=0.0638,
+            low_jitter=(-0.0008, 0.0005),
+            high_jitter=(0.0600, 0.0670),
+            tail=6,
+        )
+        assert bounds.near_jitter() == (-0.0008, 0.0005)
+
+    def test_thin_wrapper_agrees_with_the_rich_call(self) -> None:
+        """`bootstrap_intervals` phải là lớp mỏng — hai đường không được lệch nhau."""
+        diffs = [0.0] * 180 + [0.5] * 15 + [-0.4] * 14
+        alphas = (DEFAULT_ALPHA, DEFAULT_ALPHA / 39)
+        thin = bootstrap_intervals(diffs, alphas, iterations=3_000)
+        rich = bootstrap_resample(diffs, alphas, iterations=3_000)
+        assert thin == {a: (b.low, b.high) for a, b in rich.items()}
+
+
+class TestEveryBootstrapRowKnowsItsOwnGranularity:
+    """`compare_runs` phải điền `min_increment` và `ci_jitter` cho MỌI hàng bootstrap.
+
+    Mặc định của hai trường đó là "chưa biết" (không gắn cờ), nên một hàng đi ra
+    khỏi `compare_runs` mà thiếu chúng là một hàng **im lặng tắt** hai cờ.
+    """
+
+    def test_bootstrap_rows_are_fully_populated(self) -> None:
+        base = _run("b", {"q1": 0.0, "q2": 0.5, "q3": 1.0, "q4": 0.25, "q5": 0.75})
+        cand = _run("c", {"q1": 0.5, "q2": 0.5, "q3": 0.5, "q4": 0.75, "q5": 0.25})
+        rows = compare_runs(base, cand, metrics=["mrr"])
+        (row,) = rows
+        assert row.test.startswith("bootstrap")
+        assert row.min_increment > 0.0
+        assert row.ci_jitter is not None
+        assert row.n_discordant > 0, "đếm câu phải có cho cả hàng bootstrap"
+
+    def test_mcnemar_rows_do_not_pretend_to_have_an_interval(self) -> None:
+        base = _run("b", {"q1": 0.0, "q2": 1.0, "q3": 0.0})
+        cand = _run("c", {"q1": 1.0, "q2": 1.0, "q3": 0.0})
+        (row,) = compare_runs(base, cand, metrics=["hit_rate@5"])
+        assert row.ci_jitter is None
+        assert row.p_value is not None

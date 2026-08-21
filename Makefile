@@ -150,11 +150,26 @@ LANG ?=
 
 .PHONY: eval-compare-by
 eval-compare-by:  ## So theo TỪNG nhóm, có hiệu chỉnh Bonferroni (BY=category|lang)
-	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) --by $(BY) 		--out plans/reports/compare/by$(BY)-$(BASE)-vs-$(CAND).md
+	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) --by $(BY) \
+		--out plans/reports/compare/by$(BY)-$(BASE)-vs-$(CAND).md
+
+# Bảng ablation N ô (W2-08). `RANK` phải nêu tường minh: thứ hạng đổi theo metric,
+# và một bảng không nói nó xếp theo cái gì là một bảng mời đọc sai người thắng.
+EXP_PREFIX ?= e1-
+RANK ?= ndcg@10
+RANK_SLUG ?= ndcg
+ABL_BASE ?= e1-baseline-dense
+
+.PHONY: ablation
+ablation:  ## Bảng ablation 14 ô + tập tương đương, có p/CI từng dòng (W2-08)
+	$(PY) python -m pipeline.eval.ablation --prefix $(EXP_PREFIX) \
+		--baseline $(ABL_BASE) --rank-by $(RANK) \
+		--out plans/reports/compare/ablation-exp-001-$(RANK_SLUG).md
 
 .PHONY: eval-compare-subset
 eval-compare-subset:  ## So trên MỘT nhóm đã nêu trước, không hiệu chỉnh (CAT=… LANG=…)
-	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) 		$(if $(CAT),--category $(CAT)) $(if $(LANG),--lang $(LANG))
+	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
+		$(if $(CAT),--category $(CAT)) $(if $(LANG),--lang $(LANG))
 
 .PHONY: backfill-payload
 backfill-payload:  ## Vá payload phẳng + payload index của collection ĐÃ build (W2-06)

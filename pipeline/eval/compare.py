@@ -41,9 +41,13 @@ from pathlib import Path
 __all__ = [
     "BINARY_METRICS",
     "GROUP_DIMENSIONS",
+    "MIN_TAIL_RESAMPLES",
+    "RESOLUTION_FLAGS",
+    "BootstrapBounds",
     "ComparisonRow",
     "RunScores",
     "bootstrap_intervals",
+    "bootstrap_resample",
     "compare_by_group",
     "compare_runs",
     "format_grouped_table",
@@ -89,6 +93,29 @@ BINARY_METRICS = frozenset({"precision@1"})
 DEFAULT_BOOTSTRAP = 10_000
 DEFAULT_SEED = 20260820
 DEFAULT_ALPHA = 0.05
+
+#: Tên ba cờ nói "phép so này chạm giới hạn phân giải của dữ liệu, không phải
+#: giới hạn của hệ thống được đo". Gom lại thành một hằng số để bảng nào in
+#: chú giải cũng in đủ cả ba — thiếu một cái là bảng mời người đọc kết luận sai
+#: theo đúng hướng mà cái đó canh.
+RESOLUTION_FLAGS = (
+    "underpowered",
+    "ci_within_resolution",
+    "direction_split",
+    "mc_unstable",
+)
+
+#: Số mẫu lại tối thiểu trong đuôi để một biên phân vị đọc được.
+#:
+#: Biên dưới của khoảng `alpha` là phần tử thứ `alpha/2 * B` của dãy đã sắp. Với
+#: `alpha = 0,05` và `B = 10.000` thì đó là phần tử thứ 250 — đọc được. Với
+#: `alpha` đã hiệu chỉnh Bonferroni cho 39 phép kiểm (0,00128) thì đó là phần tử
+#: thứ **6**, và một quyết định kiến trúc dựa vào 6 mẫu lại là dựa vào nhiễu.
+#:
+#: Con số 30 chọn từ đo thật ở `W2-08` (`rc50 → rc100`, 6 seed × 3 mức `B`):
+#: đuôi 6 mẫu → **biên dưới đổi dấu theo seed**; đuôi 32 → dấu ổn định; đuôi 128
+#: → sd của biên tụt còn 1/5. Xem `ComparisonRow.mc_unstable`.
+MIN_TAIL_RESAMPLES = 30
 
 #: Chiều chia nhóm hợp lệ — đúng hai trường mà `QueryScore` mang theo từng câu.
 #: Không nhận chiều tuỳ ý: chia theo một trường không có trong file sẽ cho **một
@@ -185,14 +212,148 @@ class ComparisonRow:
     family_size: int = 1
     """Số phép kiểm trong họ. `> 1` nghĩa là `alpha` đã bị chia — xem `compare_by_group`."""
 
+    min_increment: float = 0.0
+    """|hiệu| khác 0 **nhỏ nhất** trên một câu — độ hạt của metric, đo từ dữ liệu.
+
+    Mặc định `0,0` nghĩa **"chưa biết"**, và khi chưa biết thì `grid_step` bằng 0
+    nên `ci_within_resolution` **không bật**. Đó là chủ ý: `compare_runs` luôn
+    điền trường này cho mọi hàng bootstrap (có test ghim), nên mặc định chỉ gặp ở
+    hàng dựng tay.
+
+    ⚠️ Bản đầu mặc định `1,0` ("coi như nhị phân") và nó làm một test đã có đổi
+    kết luận: một khoảng `[−0,1630, −0,0054]` của `ndcg@10` trên 43 câu bị dán
+    `KHÔNG KẾT LUẬN` vì `1/43 = 0,0233 > 0,0054`, trong khi độ hạt thật của
+    `ndcg@10` ở đó là `0,0068/43 = 0,00016`. Một cờ **đoán** ngưỡng của chính nó
+    là một cờ bật theo phỏng đoán — mà đó đúng là loại lỗi cờ này được dựng để
+    bắt.
+    """
+
+    ci_jitter: tuple[float, float] | None = None
+    """Khoảng dao động của **biên gần 0 nhất**, do chính vị trí phân vị gây ra.
+
+    Xem `mc_unstable`. `None` với hàng không đi đường bootstrap.
+    """
+
     @property
     def n_discordant(self) -> int:
         """Số câu **đổi chiều** — thứ duy nhất McNemar dùng."""
         return self.n_baseline_only + self.n_candidate_only
 
     @property
-    def ci_touches_zero(self) -> bool:
-        """CI có **một biên đúng bằng 0** — biên giới, không phải kết luận âm.
+    def grid_step(self) -> float:
+        """Bước phân giải của trung bình: hiệu **nhỏ nhất một câu tạo ra được**, chia `n`.
+
+        Mức chênh nhỏ nhất có thể tồn tại giữa hai lần chạy là "đúng một câu đổi,
+        đổi ít nhất có thể" — tức `min_increment / n`.
+
+        ⚠️ Bản đầu của tôi dùng `1/n` cho mọi metric, và nó **sai theo hướng dương
+        giả**. `1/n` đúng cho metric nhị phân (một câu đổi thì đổi cả 1,0), nhưng
+        `precision@20` nhận giá trị bội của 1/20 nên bước thật của nó nhỏ hơn **20
+        lần**. Áp `1/n` lên nó thì mọi hiệu nhỏ hơn 0,0048 bị dán "dưới một bước
+        lưới" — đo được: luật `1/n` làm **13/14** file `compare/` đã công bố đổi
+        kết luận, và phần lớn là `precision@k`/`recall@k` bị gắn cờ oan.
+
+        Hàng McNemar không đi qua đây (nó dùng `p_value`), nên `min_increment` chỉ
+        cần đúng cho hàng bootstrap — và `compare_runs` đo nó từ chính các hiệu.
+        """
+        if not self.n_queries:
+            return 0.0
+        return self.min_increment / self.n_queries
+
+    @property
+    def sign_p(self) -> float | None:
+        """`p` của kiểm định dấu trên các câu có hiệu khác 0.
+
+        Với hàng McNemar thì đây **chính là** `p_value` (cùng một phép kiểm, cùng
+        hai con số đếm). Với hàng bootstrap thì nó là một phép kiểm thứ hai trên
+        cùng dữ liệu, và giá trị của nó nằm ở chỗ nó **bỏ qua độ lớn**: bootstrap
+        đọc "trung bình hiệu khác 0", kiểm định dấu đọc "số câu tốt hơn nhiều hơn
+        số câu xấu đi". Hai câu đó có thể trái nhau một cách hợp lệ (thắng ít câu
+        nhưng thắng đậm), nên nó **không** dùng để phủ quyết bootstrap — xem
+        `direction_split` để biết chỗ duy nhất nó được dùng.
+        """
+        if not self.comparable:
+            return None
+        return mcnemar_exact(self.n_baseline_only, self.n_candidate_only)
+
+    @property
+    def identical(self) -> bool:
+        """Không một câu nào khác nhau — hai lần chạy **trùng khớp** trên metric này.
+
+        Phải là một kết luận riêng, không được gộp vào "trong ngưỡng nhiễu" hay
+        "KHÔNG KẾT LUẬN": 0 câu khác nhau trên 209 câu là hàng **chắc chắn nhất**
+        trong bảng, không phải hàng mơ hồ nhất. Đo được ở `W2-08`: `recall@5` giữa
+        `rrf k=0` và `rrf k=1` có `0/209` câu khác nhau và `Δ = 0`, và luật cũ dán
+        nó là `KHÔNG KẾT LUẬN` vì CI là `[0, 0]` nên "có một biên đúng 0".
+        """
+        return self.comparable and self.n_discordant == 0 and self.delta == 0.0
+
+    @property
+    def direction_split(self) -> bool:
+        """Trung bình nói một hướng, **đếm câu** nói hướng ngược lại (hoặc không nói gì).
+
+        Đo được ở `W2-08` trên đúng cặp quyết định người thắng của cả bảng
+        ablation. `rerank_candidates` 50 → 100, `ndcg@10`: `Δ = +0,0255` và
+        CI99,87% `[+0,0003, +0,0638]` loại 0, tức "khác biệt thật". Nhưng đếm câu
+        là **+10 tốt hơn / −11 xấu đi**: *nhiều câu bị làm hỏng hơn số câu được
+        sửa*. Trung bình dương vì mấy câu thắng thắng đậm hơn mấy câu thua thua.
+
+        Đó **có thể** là một kết quả thật (thắng ít câu nhưng thắng đậm là chuyện
+        hợp lệ), nên cờ này không nói "sai" — nó nói **"đừng đọc dòng này thành
+        hệ thống tốt hơn"**. Với một quyết định kiến trúc trả bằng 1,91× độ trễ
+        thì một hiệu ứng mà đa số câu đi ngược hướng không đủ để chi tiền.
+
+        Vì thế nó có kết luận **riêng** là `TRÁI CHIỀU`, không dùng chung
+        `KHÔNG KẾT LUẬN` với hai cờ về giới hạn đọc số. Ở đây khoảng tin cậy
+        *đọc được* hẳn hoi — nó đọc ra hai điều đối nhau, và đó là thông tin.
+
+        `<= 0` chứ không `< 0`: đếm hoà đúng bằng nhau (10↔10) mang **không**
+        thông tin nào về hướng, nên nó cũng phải bị gắn cờ.
+        """
+        if not self.comparable or self.delta == 0.0 or self.n_discordant == 0:
+            return False
+        majority = self.n_candidate_only - self.n_baseline_only
+        return majority * self.delta <= 0
+
+    @property
+    def mc_unstable(self) -> bool:
+        """Biên gần 0 nhất **không giữ được dấu** khi xét dao động của chính nó.
+
+        Số mẫu lại nằm dưới biên dưới là một biến ngẫu nhiên nhị thức `B(B, α/2)`,
+        nên độ lệch chuẩn của nó là `sqrt(tail)`. Đọc lại biên ở hai vị trí
+        `tail ± sqrt(tail)` của **đúng dãy đã sắp đó** cho khoảng dao động của
+        biên, **không tốn thêm một lần lấy mẫu nào**. Nếu khoảng ấy chứa 0 thì
+        việc CI "loại 0" là chuyện của số mẫu lại, không phải của dữ liệu.
+
+        ## Vì sao cần cờ này khi đã có `ci_within_resolution`
+
+        Hai cờ bắt hai giới hạn khác nhau, và ca quyết định người thắng của bảng
+        ablation `W2-08` chỉ bị bắt bởi cờ này:
+
+        `rerank_candidates` 50 → 100, `ndcg@10`, α=0,00128, B=10.000 → đuôi **6
+        mẫu**. Đo 6 seed: biên dưới nhận cả dấu `+` lẫn `−`. Ở B=50.000 (đuôi 32)
+        và B=200.000 (đuôi 128) nó **âm nhất quán**, tức CI thật sự **chứa** 0.
+        Kết luận "khác biệt thật" ở B=10.000 là một tạo tác Monte Carlo, và nó là
+        thứ đã chọn ra cấu hình thắng cho cả bảng.
+
+        Bước lưới của `ndcg@10` là `0,0068/209 = 3,2e-05`, còn biên là `+0,0003` —
+        **gấp 9 lần** bước lưới, nên `ci_within_resolution` để nó đi qua. Đúng: đây
+        không phải giới hạn phân giải của dữ liệu, mà là giới hạn số mẫu lại.
+
+        ⚠️ Và nó **ngược** với ghi chú của `W2-08-prep` ("đừng chữa bằng cách tăng
+        iterations"). Ghi chú đó đúng cho ca nó đo — metric nhị phân thưa, phân bố
+        nằm trên lưới, tăng `B` chứng minh được là không đổi gì. Ca này là metric
+        liên tục và tăng `B` **đảo kết luận**. Hai giới hạn khác nhau, cùng một
+        triệu chứng "biên sát 0", và cách phân biệt là `min_increment`.
+        """
+        if self.ci_jitter is None:
+            return False
+        lo, hi = self.ci_jitter
+        return lo <= 0.0 <= hi
+
+    @property
+    def ci_within_resolution(self) -> bool:
+        """CI có một biên **gần 0 hơn một bước lưới** — biên giới, không phải kết luận.
 
         Đo được ở `W2-08-prep`, và nó không phải chuyện lẻ: trong bảng chia nhóm
         `bgem3 → bgem3-rrf-k1-c20`, **4/4** dòng `recall@5` có một biên ghim đúng
@@ -209,10 +370,33 @@ class ComparisonRow:
         Kết luận đúng của một hàng như thế **không** phải "không có khác biệt" mà
         là "không kết luận được": việc khoảng chứa 0 phụ thuộc vào đúng một bước
         phân giải của dữ liệu.
+
+        ## Vì sao luật là `< 1/n` chứ không phải `== 0` (sửa ở `W2-08`)
+
+        Bản đầu của cờ này, viết ở `W2-08-prep`, kiểm **đúng** biên `== 0`. Nó bắt
+        được ca đã gặp lúc đó và bỏ lọt đúng ca quyết định người thắng của bảng
+        ablation `W2-08`: `rerank_candidates` 50 → 100 cho `ndcg@10` CI99,87%
+        `[+0,0003, +0,0638]` và `mrr` `[+0,0007, +0,0625]`. Biên `+0,0003` là
+        **1/16 của một bước lưới** (`1/209 = 0,0048`) — cùng hiện tượng y nguyên,
+        nhưng `+0,0003 != 0` nên luật cũ để nó đi qua thành "khác biệt thật", và
+        cấu hình thắng của cả bảng được quyết bởi con số đó.
+
+        Việc biên rơi *đúng* 0 hay *gần* 0 là chuyện của lưới, không phải chuyện
+        của hệ thống được đo. Một luật phân biệt hai ca đó đang phân biệt một tai
+        nạn số học.
+
+        ⚠️ Nhưng bước lưới **không** phải `1/n` cho mọi metric — xem `grid_step`.
+        Và ca `ndcg@10` nói trên hoá ra không thuộc cờ này mà thuộc `mc_unstable`:
+        biên `+0,0003` của nó cách 0 **gấp 9 lần** bước lưới `3,2e-05`. Hai giới
+        hạn khác nhau; đừng gộp.
+
+        Một luật, hai hướng: nó bắt cả ca **chứa 0 sát rìa** (đọc thành "không có
+        hiệu ứng" thì sai) và ca **loại 0 sát rìa** (đọc thành "có hiệu ứng" thì
+        sai). Cả hai đều là "kết luận đang dựa vào ít hơn một bước phân giải".
         """
         if not self.comparable or self.ci_low is None or self.ci_high is None:
             return False
-        return self.ci_low == 0.0 or self.ci_high == 0.0
+        return min(abs(self.ci_low), abs(self.ci_high)) < self.grid_step
 
     @property
     def underpowered(self) -> bool:
@@ -229,6 +413,20 @@ class ComparisonRow:
         Không có cờ này thì "trong ngưỡng nhiễu" của `table_lookup` đọc như *bằng
         chứng không có hiệu ứng*, trong khi nó là *bằng chứng không có lực kiểm
         định* — hai chuyện trái ngược nhau dẫn tới cùng một dòng chữ.
+
+        ## ⚠️ Cờ này CỐ Ý không áp cho hàng bootstrap
+
+        `p_value is None` (hàng bootstrap) trả `False`, và đó là một quyết định,
+        không phải một chỗ chưa làm. `min_achievable_p` là **trần của kiểm định
+        dấu** — một phép kiểm chỉ đếm hướng. Bootstrap dùng cả **độ lớn**, nên nó
+        có lực hơn hẳn trên cùng số câu, và áp trần của phép kiểm yếu hơn lên nó
+        sẽ **xoá những kết quả thật**: đo được ở `W2-08`, `recall@5` của
+        `rc50 → rc100` có 10 câu khác nhau (trần dấu 0,00195 ≥ α=0,00128) nhưng
+        `+9/−1` là một hướng rất rõ.
+
+        Hai cờ dành cho hàng bootstrap — `ci_within_resolution` và
+        `direction_split` — đọc **khoảng đã quan sát được**, không đọc một cái trần
+        giả định. Đó là chỗ khác nhau, và nó là lý do có ba cờ chứ không phải một.
         """
         if not self.comparable or self.p_value is None:
             return False
@@ -236,19 +434,42 @@ class ComparisonRow:
 
     @property
     def verdict(self) -> str:
+        """Kết luận một hàng. **Thứ tự các nhánh là nội dung**, không phải hình thức.
+
+        Từ chặt tới lỏng: không so được → trùng khớp → không đủ lực → có/không có
+        khác biệt. Mỗi nhánh trước loại bỏ một cách đọc sai của nhánh sau, nên đổi
+        thứ tự là đổi kết luận: `identical` phải đứng trước `underpowered` vì
+        "0 câu đổi chiều" vừa là trùng khớp hoàn toàn *vừa* thoả trần
+        `min_achievable_p(0) = 1 >= alpha`, và nhánh nào chạy trước thì thắng.
+        """
         if not self.comparable:
             return "KHÔNG SO ĐƯỢC"
+        if self.identical:
+            return "TRÙNG KHỚP"
         if self.underpowered:
             return "KHÔNG ĐỦ LỰC"
         if self.p_value is not None:
             return "khác biệt thật" if self.p_value < self.alpha else "trong ngưỡng nhiễu"
         if self.ci_low is not None and self.ci_high is not None:
-            if (self.ci_low > 0 and self.ci_high > 0) or (self.ci_low < 0 and self.ci_high < 0):
+            excludes_zero = (self.ci_low > 0 and self.ci_high > 0) or (
+                self.ci_low < 0 and self.ci_high < 0
+            )
+            # Hai cờ này chỉ được hỏi ở đây, khi khoảng đang **tuyên bố một
+            # hướng**. Hỏi chúng ở nhánh "chứa 0" thì thành gắn cờ cho một hàng
+            # vốn đã không kết luận gì — thêm chữ, không thêm thông tin.
+            unreadable = self.ci_within_resolution or self.mc_unstable
+            if excludes_zero and not (unreadable or self.direction_split):
                 return "khác biệt thật"
-            # Biên đúng 0 = biên giới của lưới rời rạc, không phải bằng chứng âm.
-            # Xem `ci_touches_zero`. Gộp nó vào "trong ngưỡng nhiễu" là chỗ mà một
-            # giới hạn phân giải bị đọc thành một kết luận.
-            return "KHÔNG KẾT LUẬN" if self.ci_touches_zero else "trong ngưỡng nhiễu"
+            # Hai chuyện khác nhau, hai chữ khác nhau. `KHÔNG KẾT LUẬN` = *không
+            # đọc được* khoảng này. `TRÁI CHIỀU` = đọc được, và nó nói hai điều
+            # đối nhau: trung bình lên mà đa số câu bị làm hỏng. Gộp lại thì mất
+            # đúng phần thông tin đáng giá nhất — xem `direction_split`.
+            if excludes_zero:
+                return "KHÔNG KẾT LUẬN" if unreadable else "TRÁI CHIỀU"
+            # Biên sát 0 = biên giới của lưới rời rạc, không phải bằng chứng âm.
+            # Xem `ci_within_resolution`. Gộp nó vào "trong ngưỡng nhiễu" là chỗ
+            # mà một giới hạn phân giải bị đọc thành một kết luận.
+            return "KHÔNG KẾT LUẬN" if self.ci_within_resolution else "trong ngưỡng nhiễu"
         return "—"
 
 
@@ -326,14 +547,30 @@ def min_achievable_p(n_discordant: int) -> float:
     return min(1.0, 2.0 / float(2**n_discordant))
 
 
-def bootstrap_intervals(
+@dataclass(frozen=True)
+class BootstrapBounds:
+    """Một khoảng tin cậy **kèm mức dao động của chính hai biên nó**."""
+
+    low: float
+    high: float
+    low_jitter: tuple[float, float]
+    high_jitter: tuple[float, float]
+    tail: int
+    """Số mẫu lại nằm dưới biên dưới. Xem `MIN_TAIL_RESAMPLES`."""
+
+    def near_jitter(self) -> tuple[float, float]:
+        """Dao động của biên **gần 0 nhất** — biên quyết định khoảng có loại 0 hay không."""
+        return self.low_jitter if abs(self.low) <= abs(self.high) else self.high_jitter
+
+
+def bootstrap_resample(
     diffs: Sequence[float],
     alphas: Sequence[float],
     *,
     iterations: int = DEFAULT_BOOTSTRAP,
     seed: int = DEFAULT_SEED,
-) -> dict[float, tuple[float, float]]:
-    """Nhiều khoảng tin cậy từ **một** lần lấy mẫu lại.
+) -> dict[float, BootstrapBounds]:
+    """Nhiều khoảng tin cậy từ **một** lần lấy mẫu lại, kèm dao động của từng biên.
 
     Bảng chia nhóm cần cả khoảng 95% (để đọc) và khoảng đã hiệu chỉnh Bonferroni
     (để kết luận). Gọi `paired_bootstrap` hai lần sẽ lấy mẫu lại hai lần — gấp đôi
@@ -343,21 +580,65 @@ def bootstrap_intervals(
 
     Seed cố định để hai lần chạy công cụ cho cùng con số — một khoảng tin cậy nhảy
     nhót mỗi lần gọi thì không dùng để quyết định được.
+
+    ## Dao động của biên, tính từ đúng dãy đã sắp — không tốn thêm lần lấy mẫu nào
+
+    Số mẫu lại nằm dưới biên dưới là `B(B, alpha/2)`, độ lệch chuẩn `sqrt(tail)`.
+    Đọc lại biên ở `tail ± sqrt(tail)` cho khoảng dao động của nó. Nếu khoảng ấy
+    chứa 0 thì việc khoảng tin cậy loại 0 là chuyện của số mẫu lại, không phải của
+    dữ liệu — xem `ComparisonRow.mc_unstable`, và xem con số đã đo ở `W2-08` nơi
+    một cấu hình thắng được quyết định bởi **6** mẫu lại trên 10.000.
     """
     if not diffs:
-        return {alpha: (0.0, 0.0) for alpha in alphas}
+        flat = (0.0, 0.0)
+        return {alpha: BootstrapBounds(0.0, 0.0, flat, flat, 0) for alpha in alphas}
     rng = random.Random(seed)
     n = len(diffs)
     means: list[float] = []
     for _ in range(iterations):
         means.append(sum(diffs[rng.randrange(n)] for _ in range(n)) / n)
     means.sort()
-    out: dict[float, tuple[float, float]] = {}
+
+    def at(index: int) -> float:
+        return means[max(0, min(iterations - 1, index))]
+
+    out: dict[float, BootstrapBounds] = {}
     for alpha in alphas:
-        lo = means[int(alpha / 2 * iterations)]
-        hi = means[min(iterations - 1, int((1 - alpha / 2) * iterations))]
-        out[alpha] = (lo, hi)
+        lo_i = int(alpha / 2 * iterations)
+        hi_i = int((1 - alpha / 2) * iterations)
+        # Hai đuôi đối xứng: số mẫu **dưới** biên dưới và số mẫu **trên** biên trên
+        # đều là `lo_i`, nên độ lệch chuẩn của cả hai vị trí là `sqrt(lo_i)`. Một
+        # `spread` dùng cho cả hai — tính riêng cho từng biên là chỗ để hai biên
+        # lệch luật mà không ai thấy.
+        spread = max(1, round(math.sqrt(max(lo_i, 1))))
+        out[alpha] = BootstrapBounds(
+            low=at(lo_i),
+            high=at(hi_i),
+            low_jitter=(at(lo_i - spread), at(lo_i + spread)),
+            high_jitter=(at(hi_i - spread), at(hi_i + spread)),
+            tail=lo_i,
+        )
     return out
+
+
+def bootstrap_intervals(
+    diffs: Sequence[float],
+    alphas: Sequence[float],
+    *,
+    iterations: int = DEFAULT_BOOTSTRAP,
+    seed: int = DEFAULT_SEED,
+) -> dict[float, tuple[float, float]]:
+    """Chỉ hai biên, không kèm dao động. Lớp mỏng của `bootstrap_resample`.
+
+    Giữ chữ ký từ `W2-08-prep` vì mọi con số đã công bố đi qua nó, và giữ nó là
+    **lớp mỏng** để hai đường không thể cho hai kết quả khác nhau (có test ghim).
+    """
+    return {
+        alpha: (bounds.low, bounds.high)
+        for alpha, bounds in bootstrap_resample(
+            diffs, alphas, iterations=iterations, seed=seed
+        ).items()
+    }
 
 
 def paired_bootstrap(
@@ -508,6 +789,13 @@ def compare_runs(
             continue
         mean_b = sum(a for a, _ in pairs) / len(pairs)
         mean_c = sum(b for _, b in pairs) / len(pairs)
+        # Đếm câu mỗi bên thắng — **một** chỗ duy nhất, dùng cho cả hai đường kiểm
+        # định. Trước `W2-08` chỉ đường McNemar đếm, nên hàng bootstrap không có
+        # cách nào biết trung bình của nó đến từ 10 câu hay 137 câu; `Δ = +0,0255`
+        # của `ndcg@10` trông y như nhau ở cả hai. Tính riêng cho từng đường thì
+        # hai con số ấy lệch nhau được mà không ai thấy.
+        n_base_better = sum(1 for a, b in pairs if a > b)
+        n_cand_better = sum(1 for a, b in pairs if b > a)
 
         if labels_differ and metric.startswith(CARDINALITY_SENSITIVE):
             rows.append(
@@ -531,8 +819,6 @@ def compare_runs(
             continue
 
         if metric.startswith(BINARY_PREFIXES) or metric in BINARY_METRICS:
-            b_only = sum(1 for a, b in pairs if a > b)
-            c_only = sum(1 for a, b in pairs if b > a)
             rows.append(
                 ComparisonRow(
                     metric=metric,
@@ -540,9 +826,9 @@ def compare_runs(
                     candidate=mean_c,
                     delta=mean_c - mean_b,
                     test="McNemar exact",
-                    p_value=mcnemar_exact(b_only, c_only),
-                    n_baseline_only=b_only,
-                    n_candidate_only=c_only,
+                    p_value=mcnemar_exact(n_base_better, n_cand_better),
+                    n_baseline_only=n_base_better,
+                    n_candidate_only=n_cand_better,
                     n_queries=len(pairs),
                     alpha=alpha,
                     family_size=family_size,
@@ -553,14 +839,16 @@ def compare_runs(
         diffs = [b - a for a, b in pairs]
         # Một lần lấy mẫu lại, hai phân vị: khoảng 95% để **đọc**, khoảng đã hiệu
         # chỉnh để **kết luận**. Khi `family_size == 1` thì hai cái là một.
-        intervals = bootstrap_intervals(
+        intervals = bootstrap_resample(
             diffs, (DEFAULT_ALPHA, alpha), iterations=iterations, seed=seed
         )
-        lo, hi = intervals[alpha]
+        bounds = intervals[alpha]
+        lo, hi = bounds.low, bounds.high
+        nonzero = [abs(d) for d in diffs if d != 0.0]
         note = ""
         if family_size > 1:
-            raw_lo, raw_hi = intervals[DEFAULT_ALPHA]
-            note = f"CI95 thô [{raw_lo:+.4f}, {raw_hi:+.4f}]"
+            raw = intervals[DEFAULT_ALPHA]
+            note = f"CI95 thô [{raw.low:+.4f}, {raw.high:+.4f}]"
         rows.append(
             ComparisonRow(
                 metric=metric,
@@ -570,6 +858,10 @@ def compare_runs(
                 test=f"bootstrap cặp ({iterations})",
                 ci_low=lo,
                 ci_high=hi,
+                ci_jitter=bounds.near_jitter(),
+                min_increment=min(nonzero) if nonzero else 0.0,
+                n_baseline_only=n_base_better,
+                n_candidate_only=n_cand_better,
                 n_queries=len(pairs),
                 alpha=alpha,
                 family_size=family_size,
@@ -652,9 +944,16 @@ def compare_by_group(
 
 
 def _detail(row: ComparisonRow) -> str:
-    """Ô "kiểm định" của một hàng — chỗ duy nhất quyết định người đọc thấy gì."""
+    """Ô "kiểm định" của một hàng — chỗ duy nhất quyết định người đọc thấy gì.
+
+    Nguyên tắc: mỗi cờ phải in ra **con số làm nó bật**, không chỉ in tên nó.
+    "KHÔNG ĐỦ LỰC" một mình là một lời khẳng định phải tin; "trần `p` = 0,125" là
+    một con số kiểm lại được bằng giấy bút.
+    """
     if not row.comparable:
         return f"⚠️ {row.note}"
+    if row.identical:
+        return f"**0/{row.n_queries} câu khác nhau** — hai lần chạy cho kết quả trùng khớp"
     if row.p_value is not None:
         text = f"p={row.p_value:.4g} · {row.n_baseline_only}↔{row.n_candidate_only} câu đổi chiều"
         if row.underpowered:
@@ -666,11 +965,35 @@ def _detail(row: ComparisonRow) -> str:
         return text
     label = "CI95" if row.family_size == 1 else f"CI{100 * (1 - row.alpha):.4g}%"
     text = f"{label} [{row.ci_low:+.4f}, {row.ci_high:+.4f}]"
+    # Đếm câu đi kèm **mọi** hàng bootstrap, không chỉ hàng bị gắn cờ: nó là thứ
+    # cho biết trung bình này đến từ 10 câu hay 137 câu, và người đọc cần nó để
+    # tự thấy hàng nào mỏng trước khi công cụ nói ra.
+    text += f" · {row.n_baseline_only}↔{row.n_candidate_only} câu khác nhau"
+    sign = row.sign_p
+    if sign is not None:
+        text += f" (p dấu={sign:.4g})"
     if row.note:
         text += f" · {row.note}"
-    if row.ci_touches_zero:
-        step = 1.0 / row.n_queries if row.n_queries else 0.0
-        text += f" · **biên đúng 0** (bước lưới 1/{row.n_queries} = {step:.4f})"
+    if row.ci_within_resolution:
+        near = min(abs(row.ci_low or 0.0), abs(row.ci_high or 0.0))
+        # In cả `min_increment`, không chỉ `n`: bước lưới là `min_increment/n`, và
+        # bản đầu in "< 1/209" cho một metric có bước 0,2/209 — một thông điệp tự
+        # nhận là đang so với một con số khác con số nó thật sự so.
+        text += (
+            f" · **biên cách 0 dưới một bước lưới** ({near:.5f} < "
+            f"{row.min_increment:.4g}/{row.n_queries} = {row.grid_step:.5f})"
+        )
+    if row.direction_split:
+        text += (
+            f" · **đếm câu đi ngược Δ** ({row.n_candidate_only} câu tốt hơn vs "
+            f"{row.n_baseline_only} câu xấu đi, mà Δ = {row.delta:+.4f})"
+        )
+    if row.mc_unstable and row.ci_jitter is not None:
+        jlo, jhi = row.ci_jitter
+        text += (
+            f" · **biên không ổn định**: chính nó dao động [{jlo:+.4f}, {jhi:+.4f}] "
+            "nên việc khoảng loại 0 là chuyện của số mẫu lại, không phải của dữ liệu"
+        )
     return text
 
 
@@ -714,7 +1037,9 @@ def format_grouped_table(
     alpha = first[0].alpha if first else DEFAULT_ALPHA
     total = sum(len(rows) for rows in groups.values())
     every = [row for rows in groups.values() for row in rows]
-    boundary = sum(1 for row in every if row.ci_touches_zero)
+    boundary = sum(
+        1 for row in every if row.ci_within_resolution or row.direction_split or row.mc_unstable
+    )
     powerless = sum(1 for row in every if row.underpowered)
 
     out = [
@@ -743,11 +1068,22 @@ def format_grouped_table(
         '"không có khác biệt".',
         "- `KHÔNG SO ĐƯỢC` = phân bố nhãn hai bên khác nhau nên mẫu số của metric khác "
         "nhau (`G2`/`TD-11`).",
-        "- `KHÔNG KẾT LUẬN` = khoảng tin cậy có **một biên đúng bằng 0**. Với metric "
-        "rời rạc thưa, phân bố bootstrap nằm trên lưới bước `1/n` và phân vị cực đoan "
-        'rơi đúng lên 0 — nên việc khoảng "chứa 0" phụ thuộc đúng một bước phân '
-        "giải. Đã đo: đổi seed dịch biên **đúng một bước lưới**, và tăng 10.000 → "
-        "50.000 iterations **không đổi gì**, nên đừng chữa bằng cách tăng iterations.",
+        "- `KHÔNG KẾT LUẬN` = một trong hai chuyện. (a) Khoảng tin cậy có **một biên "
+        "gần 0 hơn một bước lưới `1/n`**: với metric rời rạc thưa, phân bố bootstrap "
+        "nằm trên lưới bước `1/n`, nên việc khoảng chứa hay loại 0 phụ thuộc đúng một "
+        "bước phân giải. Đã đo: đổi seed dịch biên **đúng một bước lưới**, và tăng "
+        "10.000 → 50.000 iterations **không đổi gì** — đừng chữa bằng cách tăng "
+        "iterations. (b) **Đếm câu đi ngược `Δ`**: khoảng nói một hướng mà số câu tốt "
+        "(b) **Biên không ổn định**: biên gần 0 nhất được đọc từ quá ít mẫu lại nên "
+        "chính nó dao động qua 0. Đã đo ở `W2-08`: α đã hiệu chỉnh cho 39 phép kiểm "
+        "để lại **6** mẫu lại trong đuôi của 10.000, và ở đó biên dưới **đổi dấu "
+        "theo seed**; tăng lên 50.000 thì nó âm nhất quán, tức khoảng thật sự chứa 0.",
+        "- `TRÁI CHIỀU` = khoảng tin cậy đọc được **và** nó nói hai điều đối nhau: "
+        "trung bình đi một hướng, còn **số câu** thì đi hướng ngược lại (thắng ít câu "
+        "nhưng thắng đậm). Không phải lỗi, nhưng đừng đọc thành `hệ thống tốt hơn` — "
+        "nhất là khi đổi lấy độ trễ.",
+        "- `TRÙNG KHỚP` = **0 câu khác nhau**. Đây là hàng chắc chắn nhất trong bảng, "
+        "không phải hàng mơ hồ nhất — đừng đọc nó cùng nhóm với các cờ trên.",
         "",
     ]
     if powerless or boundary:

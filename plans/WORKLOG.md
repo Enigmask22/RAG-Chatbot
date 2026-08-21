@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-21 (cuối file)** — `W2-08-prep` xong: `compare.py` có `--by category|lang` (quét, **có** hiệu chỉnh Bonferroni) và `--category X` (một giả thuyết nêu trước, không hiệu chỉnh); `scripts/category_compare.py` **đã xoá**. ⭐ Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh cho cả 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực trích cạnh một CI có nghĩa — đã sửa. ⭐ Hai cờ mới `KHÔNG ĐỦ LỰC` (trần `p` của McNemar là `2/2ⁿ`; `table_lookup` 4 câu là vĩnh viễn không đo được) và `KHÔNG KẾT LUẬN` (biên CI đúng 0 — lỗi do chính bản hiệu chỉnh của tôi tạo ra, phải đo mới thấy). Việc tiếp theo: `W2-08`.
+> **Phiên mới nhất: 2026-08-22 (cuối file)** — `W2-08` xong: bảng ablation **14 ô** có `p`/CI từng dòng (`make ablation`). ⭐ Câu "cấu hình nào thắng" là một **phép chọn cực đại**, nên câu trả lời là một **tập** — bốn rổ: 2 không phân biệt được · 3 tranh chấp · 8 kém ở mọi metric · 1 không so được. ⭐⭐ **Người thắng từng do 6 mẫu lại trên 10.000 quyết định** (α đã hiệu chỉnh để lại đúng 6 mẫu trong đuôi; đo 6 seed thì `ndcg@10` đổi dấu, và ở B=50.000 thì khoảng **chứa 0**) — và điều đó **ngược** ghi chú tôi tự viết ở `W2-08-prep`. ⚠️⚠️ Lỗi đắt nhất: `KHÔNG SO ĐƯỢC` đi cùng đường với "hoà", nên **ô tệ nhất bảng** thành thành viên rẻ nhất của tập thắng. ⚠️ Luật `1/n` của tôi sai và 13/14 file đã công bố nói ra. Việc tiếp theo: `W2-09`.
+>
+> Phiên trước: `W2-08-prep` xong: `compare.py` có `--by category|lang` (quét, **có** hiệu chỉnh Bonferroni) và `--category X` (một giả thuyết nêu trước, không hiệu chỉnh); `scripts/category_compare.py` **đã xoá**. ⭐ Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh cho cả 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực trích cạnh một CI có nghĩa — đã sửa. ⭐ Hai cờ mới `KHÔNG ĐỦ LỰC` (trần `p` của McNemar là `2/2ⁿ`; `table_lookup` 4 câu là vĩnh viễn không đo được) và `KHÔNG KẾT LUẬN` (biên CI đúng 0 — lỗi do chính bản hiệu chỉnh của tôi tạo ra, phải đo mới thấy). Việc tiếp theo: `W2-08`.
 >
 > Phiên trước: `W2-07` xong: experiment runner (YAML matrix → 14 ô → MLflow), resume theo `fingerprint` của ô, preflight bắt ngay một ô sắp ghi đè bằng chứng `W2-03`. Grid tái lập **5** con số đã công bố đúng từng chữ số. ⚠️ Lượt chạy đầu chạy trọn 14 ô mà **không ghi gì lên MLflow** (mlflow 3 bỏ file store) → URI không mở được giờ là lỗi preflight, và có `make exp-backfill` dựng lại view từ file báo cáo. Việc tiếp theo: `--category` cho `compare.py`, rồi `W2-08`.
 >
@@ -2021,6 +2023,145 @@ nào" là **có một script nói không**.
    `MatchAny(any=[])` ở `W2-06`.
    Cách chạy đúng: `uv run pytest > file 2>&1; echo "exit=$?"` rồi mới `tail`.
    Xác nhận lại sau khi `make up`: **986 unit + 157 integration/gpu = 1143, exit 0**.
+
+---
+
+## Phiên 2026-08-22 · `W2-08` — ablation 14 ô, và người thắng do 6 mẫu lại quyết định
+
+**Mục tiêu phiên:** DoD `W2-08` — ≥ 12 tổ hợp, xác định cấu hình thắng, `p`/CI từng dòng.
+
+```bash
+make ablation                                    # bảng 14 ô + tập tương đương
+make ablation RANK=hit_rate@1 RANK_SLUG=hit1     # đối chứng: đổi metric xếp hạng
+```
+
+### DoD đạt, nhưng câu hỏi của nó hỏi sai
+
+"Xác định được cấu hình thắng" nghe như một dòng. Nó là một **phép chọn cực đại
+trên 14 ước lượng nhiễu**: con số của cái thắng lệch lên có hệ thống, và `TD-11` đã
+đo ngưỡng phân giải của `golden_v1` là ~6 điểm trong khi ba ô đầu chênh **2,5
+điểm**. Nên câu trả lời là **bốn rổ**:
+
+| rổ | ô |
+|---|---:|
+| không phân biệt được với đỉnh bảng | **2** |
+| ba metric chính **không đồng ý** | **3** |
+| kém ở mọi metric so được | **8** |
+| không so được (nhãn khác) | **1** |
+
+### ⚠️⚠️ Lỗi đắt nhất, và nó là khuôn lỗi thứ ba của `W2`
+
+Bản đầu định nghĩa tập tương đương là "không bị đánh bại". `chunk550-dense` có nhãn
+khác nên **mọi** phép so bị *từ chối* — và "bị từ chối" đi vào cùng đường với
+"hoà". Nó vào tập thắng. Rồi vì nó dense thuần (46,1 ms) nó thành **thành viên rẻ
+nhất**, tức công cụ đề xuất ô có `ndcg@10 = 0,1215` thay cho ô có **0,6736**: **ô
+tệ nhất bảng làm khuyến nghị.**
+
+💡 Cùng khuôn `ensure_collection` tin thay vì kiểm (`W2-02`) và `MatchAny(any=[])`
+cho 0 kết quả mà không báo lỗi (`W2-06`): **một nhánh "không có thông tin" chảy vào
+cùng đường với nhánh "thông tin là bằng nhau".** Ba rổ → bốn rổ, có test hồi quy
+ghim đúng ca 46 ms.
+
+### ⭐⭐ Người thắng của cả bảng từng do **6 mẫu lại trên 10.000** quyết định
+
+Biên dưới của khoảng `α` là phần tử thứ `α/2 × B` của dãy đã sắp. Ở α = 0,05 đó là
+phần tử **250**. Ở α đã hiệu chỉnh cho 39 phép kiểm (0,00128) đó là phần tử **6**.
+
+Đo 6 seed × 3 mức `B` trên đúng cặp quyết định (`rc50 → rc100`):
+
+| metric | B=10.000 (đuôi 6) | B=50.000 (đuôi 32) | B=200.000 (đuôi 128) |
+|---|---|---|---|
+| `ndcg@10` | **dấu {+, −}** theo seed | {−} nhất quán | {−} nhất quán |
+| `recall@5` | **{+, −, 0}** | {−, 0} | {−, 0} |
+| `mrr` | {+}, sd 0,00022 | {+, 0} | {+}, sd 0,00008 |
+
+`ndcg@10` ở B = 10.000 cho "khác biệt thật"; ở 50.000 và 200.000 thì khoảng **chứa
+0**. Vá không tốn thêm một lần lấy mẫu nào: số mẫu dưới biên là `B(B, α/2)`, sd
+`sqrt(tail)`, nên đọc lại biên ở `tail ± sqrt(tail)` của **chính dãy đã sắp đó**.
+
+### ⚠️ Và nó NGƯỢC ghi chú tôi tự viết ở phiên trước
+
+`W2-08-prep` ghi *"đừng chữa bằng cách tăng iterations"*, kèm phép đo chứng minh
+10.000 → 50.000 không đổi gì. Ghi chú đó **đúng cho ca của nó**: metric nhị phân
+thưa, phân bố trên lưới `1/n`. Ca này là metric **liên tục** và tăng `B` **đảo**
+kết luận.
+
+💡 **Hai giới hạn khác nhau cho cùng một triệu chứng "biên sát 0", và thứ phân biệt
+chúng là độ hạt của metric.** Nếu tôi tin ghi chú của chính mình mà không đo lại thì
+kết luận sai vẫn đứng. Lần thứ hai trong `W2` một ghi chú đúng-cho-ca-của-nó bị áp
+sang ca khác.
+
+### ⚠️ Luật `1/n` của tôi sai, và 13/14 file đã công bố nói ra
+
+Bản đầu dùng bước lưới `1/n` cho **mọi** metric → **13/14** file `compare/` đổi kết
+luận, phần lớn là `precision@k`/`recall@k` bị gắn cờ oan. `1/n` chỉ đúng cho metric
+nhị phân; `precision@20` nhận bội của 1/20 nên bước thật nhỏ hơn **20 lần**. Luật
+đúng: `min_increment / n`, **đo từ dữ liệu**. Sau khi sửa: **6/14 file, 10 hàng**,
+kiểm từng hàng thì cả 10 đúng.
+
+Mặc định `min_increment` cũng phải sửa: `1,0` ("coi như nhị phân") làm chính dẫn
+chứng `cross_lingual` của `W2-04` bị dán `KHÔNG KẾT LUẬN`. **Một cờ đoán ngưỡng của
+chính nó là cờ bật theo phỏng đoán** — mà đó đúng là loại lỗi cờ này dựng để bắt.
+Mặc định giờ là `0,0` = "chưa biết" = không gắn cờ.
+
+### Kết quả
+
+* **Bậc thang pool có một bước phân giải được và một bước không.** 20 → 50 là
+  `hit_rate@5` **0↔18**, `p` = 7,6e-06. 50 → 100 thì `KHÔNG ĐỦ LỰC`/`TRÁI CHIỀU` và
+  tốn **1,91×**. Và chỗ bị gắn cờ nói đúng bản chất: **vùng phủ tăng sạch**
+  (`hit_rate@10` **0↔9**) còn **chất lượng xếp hạng thì không** (`nDCG`/`MAP` đếm
+  câu 10↔11 và 10↔12 — nhiều câu bị làm hỏng hơn số câu được sửa). Nên `rc100` vs
+  `rc50` là đánh đổi **vùng phủ vs chi phí**, không phải chất lượng vs chi phí.
+* ⚠️ **Giới hạn của bộ ba metric chính, phải nói ra**: cả ba đều là metric *xếp
+  hạng*, không cái nào đo vùng phủ — tức chúng loại trừ đúng chiều `rc100` thắng
+  sạch. Chọn trước khi xem số, nên không đổi; nhưng phải ghi ra.
+* **Tầng hybrid không đo được ở cả ba độ sâu pool** (0/24; `hit_rate@10` pool 20 cho
+  **10↔10, `p` = 1,0**) và không đắt hơn ở mức nào. `W2-05` tái lập.
+* **Chiều `chunk_size` không có `p`** → `TD-20`. Và chạy đúng cặp của `TD-11` cho
+  thấy `p = 0,711` đã công bố tồn tại được vì file của nó có **trước** hàng rào băm
+  `W2-03` — cùng phép so đó với file có băm thì bị **từ chối**. Hướng kết luận
+  không đổi, bằng chứng **yếu hơn** mức đã công bố.
+
+**Bốn con số đã công bố bị sửa**, cả bốn theo hướng sắc thêm: `W2-04` `k=1`
+3/15 → **2/15** · `W2-05` "13/15 trong ngưỡng nhiễu" → 13/15 *không đạt ý nghĩa*
+(12 nhiễu + 1 `KHÔNG KẾT LUẬN`) · `c50 → c100` `ndcg@10` → **`TRÁI CHIỀU`** ·
+`c=100` "tốt hơn ở mọi metric" → tốt hơn về **vùng phủ**.
+
+**Hai chốt kiểm soát giữ nguyên đúng từng chữ số**: `baseline → bgem3` **15/15**
+(tiêu đề `W2-01`) và `bgem3 → rr-c50` **15/15** (tiêu đề `W2-05`).
+
+### Dự đoán: 3/7 đúng
+
+Bốn lần sai, và **ba lần sai cùng một hướng: đánh giá quá cao độ phân giải của 209
+câu.** Ngược thiên lệch của `W2-05` (ở đó tôi đánh giá thấp cả chi phí lẫn lợi ích
+của cross-encoder). `D6` sai kiểu không đoán trước được: tôi cho là `chunk550` kém
+baseline *đo được*, thực tế là nó không so được **metric nào**.
+
+### Trạng thái
+
+**1187 test xanh** (1043 unit + 144 integration; 1143 → 1187 = +23 ablation + 21
+compare) · ruff + `mypy --strict` sạch · `W2` **9/10** · tổng **29/78**.
+
+⚠️ Con số "986 unit + 157 integration/gpu" ghi ở phiên trước **không tái lập được**
+— đếm lại bằng `pytest --co -q` cho 999 + 144 ở `HEAD`. Tổng 1143 thì đúng, cách
+chia thì sai.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration`.
+2. **`W2-09`** là hạng mục cuối của `W2`. Dữ liệu đủ hẳn: `make ablation` +
+   `make eval-compare-by`.
+3. ⚠️ **Ba quyết định `W2-08` cố ý để lại cho `W2-09`**: (a) bảng một-cặp **vẫn**
+   không hiệu chỉnh cho 15 metric — sửa thì viết lại `W2-01`…`W2-07`, không sửa thì
+   phải nói ra; (b) `MIN_TAIL_RESAMPLES = 30` chỉ để **giải thích** cờ, chưa để tự
+   nâng `B` — đọc được α = 0,00128 cần ~47.000 mẫu lại (~4,7× chi phí); (c) chốt
+   điểm vận hành `rc50` vs `rc100` cần biết bộ sinh có dùng được thêm bằng chứng
+   hay không, tức có thể thuộc `W4`.
+4. ⚠️ **`TD-20` trước khi quét lại `chunk_size`**, `TD-19` trước `TD-13`.
+5. ⚠️ Bẫy heredoc lặp **lần thứ năm** — lần này ăn mất dấu nối dòng `\\` trong
+   `Makefile`, làm một target thành một dòng dài (và nó đã làm thế với hai target
+   của `W2-08-prep` từ phiên trước mà không ai thấy). Cứ dùng Write ra scratchpad +
+   `uv run python <path>`.
 
 ---
 
