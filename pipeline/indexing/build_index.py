@@ -27,7 +27,7 @@ import logging
 import statistics
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,7 +44,7 @@ from rag_core.schemas import Chunk, Document
 from rag_core.settings import get_settings
 
 from .config import IndexConfig, load_index_config
-from .corpus_loader import load_documents
+from .corpus_loader import CorpusIntegrityError, load_documents
 
 if TYPE_CHECKING:
     from rag_core.retrieval.qdrant_store import QdrantDenseRetriever
@@ -59,6 +59,17 @@ class DocState(BaseModel):
 
     content_hash: str
     n_chunks: int = Field(ge=0)
+
+    chunk_hashes: list[str] = Field(default_factory=list)
+    """`content_hash` của từng chunk, **theo thứ tự** — nền của re-index tăng dần.
+
+    `W3-07`: sửa một trang trong tài liệu 100 trang đổi `Document.content_hash`,
+    nên tầng bỏ-qua-theo-tài-liệu không cứu được gì và cả tài liệu bị embed lại.
+    Nhớ hash từng chunk thì tra được chunk nào thật sự mới.
+
+    Rỗng = state ghi bởi phiên bản trước `W3-07`. Lúc đó không tra được gì và
+    tài liệu bị embed lại toàn bộ — đúng hành vi cũ, không phải lỗi.
+    """
 
 
 class IndexState(BaseModel):
@@ -117,6 +128,14 @@ class BuildReport:
     collection_count: int
     chars_in: int
     chars_out: int
+    embedding_provider: str = ""
+    """Tên **thật** của provider đã chạy. `embedding_model` ở trên ghi theo config;
+    hai giá trị lệch nhau nghĩa là index được dán nhãn sai — xem `build_index`."""
+    n_chunks_embedded: int = 0
+    """Số chunk thật sự đi qua model embedding. **Đây là con số DoD của `W3-07`
+    đếm** — `n_chunks_written` không phân biệt được embed mới với mượn lại."""
+    n_chunks_reused: int = 0
+    """Số chunk mượn lại vector của point đã có, nhờ `content_hash` không đổi."""
     vector_names: tuple[str, ...] = (DENSE_VECTOR_NAME,)
     """Named vector thật sự đã được ghi. Ghi lại vì `W2-02` làm collection có
     thể mang một hoặc hai loại vector, và một report chỉ nói "15.814 chunk" thì
@@ -127,6 +146,12 @@ class BuildReport:
     seconds: dict[str, float] = field(default_factory=dict)
     cache: dict[str, float] = field(default_factory=dict)
     created_at: str = ""
+
+    @property
+    def reuse_rate(self) -> float:
+        """Tỉ lệ chunk ghi ra mà **không** phải embed lại. 0 = build sạch."""
+        touched = self.n_chunks_embedded + self.n_chunks_reused
+        return self.n_chunks_reused / touched if touched else 0.0
 
     @property
     def context_inflation(self) -> float:
@@ -140,6 +165,7 @@ class BuildReport:
     def to_json(self) -> str:
         payload = asdict(self)
         payload["context_inflation"] = round(self.context_inflation, 4)
+        payload["reuse_rate"] = round(self.reuse_rate, 4)
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
     def log_summary(self) -> None:
@@ -165,6 +191,12 @@ class BuildReport:
             self.n_chunks_written,
             self.n_stale_points_deleted,
             self.collection_count,
+        )
+        logger.info(
+            "  embed            mới %d · mượn lại %d (%.1f%% khỏi phải embed)",
+            self.n_chunks_embedded,
+            self.n_chunks_reused,
+            self.reuse_rate * 100,
         )
         logger.info(
             "  named vector     %s%s",
@@ -261,6 +293,46 @@ def _chunk_length_stats(lengths: Sequence[int]) -> dict[str, float]:
     }
 
 
+def _reuse_map(doc_id: str, previous: DocState | None, chunks: Sequence[Chunk]) -> dict[str, str]:
+    """`chunk_id mới → chunk_id cũ có CÙNG nội dung`, để mượn lại vector (`W3-07`).
+
+    ## Vì sao khớp theo nội dung chứ không theo vị trí
+
+    `chunk_id` của dự án này là `{doc_id}::{index:05d}` — thuần vị trí (`TD-12`).
+    Sửa một dòng làm tài liệu dài ra vài chục ký tự là đủ để một chunk nào đó
+    phía sau đổi chỉ số, và so theo **vị trí** sẽ kết luận "tất cả đã đổi".
+
+    ⚠️ Nhưng khớp theo nội dung **không** cứu được mọi ca, và đây là chỗ dễ nói
+    quá lên. Splitter đóng gói **tham lam** theo thứ tự, nên chèn thêm chữ làm mọi
+    chunk phía sau *gói lại khác đi* — nội dung chúng thật sự khác, không phải chỉ
+    đổi chỉ số. Đo ở `W3-07` (chunk gói 3 câu, 300 câu):
+
+    | ca | mượn lại |
+    |---|---|
+    | sửa tại chỗ, không đổi ranh giới | ~99% |
+    | nối thêm vào cuối | ~98% |
+    | chèn ở giữa (150/300) | **51,5%** |
+    | chèn ở đầu (5/300) | **2,0%** |
+
+    Luật đúng là: *mượn lại được đúng phần đứng **trước** điểm sửa*. Muốn hơn thì
+    phải đổi sang chunking theo nội dung (ranh giới do hash cục bộ quyết định),
+    không phải tra hash tinh hơn — xem `TD-28`.
+
+    Chunk trùng nội dung trong cùng tài liệu (boilerplate lặp) lấy **lần xuất
+    hiện đầu** — vector giống nhau nên chọn cái nào cũng vậy.
+    """
+    if previous is None or not previous.chunk_hashes:
+        return {}
+    at: dict[str, int] = {}
+    for index, digest in enumerate(previous.chunk_hashes):
+        at.setdefault(digest, index)
+    return {
+        chunk.chunk_id: f"{doc_id}::{at[chunk.content_hash]:05d}"
+        for chunk in chunks
+        if chunk.content_hash in at
+    }
+
+
 def _stale_point_ids(doc_id: str, old_count: int, new_count: int) -> list[str]:
     """ID của các point thuộc chỉ số ≥ `new_count` — chunk của bản cũ, giờ thừa."""
     from rag_core.retrieval.qdrant_store import chunk_point_id
@@ -323,7 +395,34 @@ def build_index(
     allow_mixed: bool = False,
     verify_hash: bool = True,
     progress: bool = False,
+    embeddings: EmbeddingProvider | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
+    only_doc_ids: Sequence[str] | None = None,
 ) -> BuildReport:
+    """Corpus → chunk → embed → Qdrant.
+
+    `embeddings` cho phép **dùng lại** một provider đã nạp thay vì để hàm này tự
+    dựng. Cùng động cơ với `IndexSession` ở `W2-07`: nạp BGE-M3 là 2,2 GB, và một
+    grid build nhiều index sẽ trả cái giá đó mỗi ô. `W3-07` cũng dùng nó để đếm
+    số text thật sự đi qua model.
+
+    `only_doc_ids` giới hạn lượt chạy vào vài tài liệu — **và tắt bước gỡ tài
+    liệu vắng mặt**. Đây là chỗ dễ hỏng nhất của cả `W3-08`: bộ lọc corpus sẵn có
+    (`languages`/`doc_types`/`max_documents`) nói *tài liệu nào THUỘC index*, nên
+    tài liệu không khớp bị **xoá** khỏi collection — đúng hành vi của chúng. Còn
+    "index lại đúng tài liệu này" là một câu hoàn toàn khác, và nếu diễn đạt nó
+    bằng bộ lọc thì một lời gọi `POST /ingest {"doc_ids": ["x"]}` sẽ xoá 59 tài
+    liệu kia. Cùng lý do, `only_doc_ids` **không** đi vào `fingerprint`: nó là
+    phạm vi của một lượt chạy, không phải tính chất của index.
+
+    ⚠️ Chỗ hỏng đi kèm: `BuildReport.embedding_model` ghi tên **theo config**, nên
+    truyền vào một provider khác là dán nhãn sai cho cả index. Không chặn được
+    bằng cách so tên (`config.embedding_model` là `"hashing:64"` còn
+    `provider.name` là `"hashing-64d"`), và so bằng cách dựng provider của config
+    lên để đối chiếu thì đúng bằng việc nạp model — tức xoá sạch lý do có tham số
+    này. Nên report ghi thêm `embedding_provider` = tên **thật** của provider đã
+    chạy: không ngăn được nhầm, nhưng làm nó **đọc ra được** thay vì vô hình.
+    """
     started = time.perf_counter()
 
     t_load = time.perf_counter()
@@ -336,9 +435,18 @@ def build_index(
         verify_hash=verify_hash,
     )
     load_seconds = time.perf_counter() - t_load
+    if only_doc_ids is not None:
+        wanted = set(only_doc_ids)
+        missing = wanted - {doc.doc_id for doc in documents}
+        if missing:
+            raise CorpusIntegrityError(
+                f"không có trong manifest: {', '.join(sorted(missing))}"
+            )
+        documents = [doc for doc in documents if doc.doc_id in wanted]
     logger.info("Nạp %d tài liệu trong %.1fs", len(documents), load_seconds)
 
-    embeddings = config.build_embeddings()
+    if embeddings is None:
+        embeddings = config.build_embeddings()
     chunker = config.build_chunker(embeddings)
     # Khai báo tổng số tài liệu **trước** vòng lặp: chunker hybrid chọn nhánh
     # theo con số này, và nếu để nó tự suy từ lô 1 tài liệu thì luôn ra semantic.
@@ -367,9 +475,14 @@ def build_index(
     n_indexed = 0
     n_skipped = 0
     n_stale = 0
+    n_embedded = 0
+    n_reused = 0
 
     seen_doc_ids: set[str] = set()
-    for doc in _with_progress(documents, enabled=progress):
+    total_docs = len(documents)
+    if on_progress is not None:
+        on_progress(0, total_docs)
+    for position, doc in enumerate(_with_progress(documents, enabled=progress), start=1):
         seen_doc_ids.add(doc.doc_id)
         chars_in += len(doc.content)
         previous = state.documents.get(doc.doc_id)
@@ -386,16 +499,34 @@ def build_index(
         token_counts = _accumulate_tokens(token_counts, embeddings, chunks)
 
         t0 = time.perf_counter()
-        n_written += retriever.upsert(chunks, batch_size=config.upsert_batch_size)
+        written_stats = retriever.upsert_reusing(
+            chunks,
+            reuse=_reuse_map(doc.doc_id, previous, chunks),
+            batch_size=config.upsert_batch_size,
+        )
+        n_written += written_stats.written
+        n_embedded += written_stats.embedded
+        n_reused += written_stats.reused
         n_stale += _delete_stale(retriever, doc.doc_id, previous, len(chunks))
         upsert_seconds += time.perf_counter() - t0
 
-        state.documents[doc.doc_id] = DocState(content_hash=doc.content_hash, n_chunks=len(chunks))
+        state.documents[doc.doc_id] = DocState(
+            content_hash=doc.content_hash,
+            n_chunks=len(chunks),
+            chunk_hashes=[c.content_hash for c in chunks],
+        )
         n_indexed += 1
+        if on_progress is not None:
+            on_progress(position, total_docs)
 
     # Tài liệu đã rời manifest phải rời cả index — nếu không, index là hợp của
     # mọi lần chạy trong quá khứ chứ không phải ảnh của manifest hiện tại.
-    removed = [doc_id for doc_id in state.documents if doc_id not in seen_doc_ids]
+    #
+    # ⚠️ Trừ khi lượt này CỐ Ý chỉ chạy vài tài liệu: lúc đó "không thấy" nghĩa là
+    # "không xét tới", không phải "đã bị gỡ khỏi manifest".
+    removed: list[str] = []
+    if only_doc_ids is None:
+        removed = [doc_id for doc_id in state.documents if doc_id not in seen_doc_ids]
     for doc_id in removed:
         logger.info("Tài liệu %s không còn trong manifest — xoá khỏi collection", doc_id)
         retriever.delete_by_doc(doc_id)
@@ -431,6 +562,9 @@ def build_index(
         n_documents_skipped=n_skipped,
         n_documents_removed=len(removed),
         n_chunks_written=n_written,
+        embedding_provider=embeddings.name,
+        n_chunks_embedded=n_embedded,
+        n_chunks_reused=n_reused,
         n_stale_points_deleted=n_stale,
         collection_count=retriever.count(),
         chars_in=chars_in,

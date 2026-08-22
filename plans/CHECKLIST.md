@@ -400,9 +400,13 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 >
 > `W3` **5/9**. `W3-04` cần **GPU thuê** (`W0-05` chưa làm) và vLLM offline
 > batch; nhánh fallback DeepSeek API chạy được ở laptop nhưng tốn tiền thật.
-> `TD-22` **đã đóng** nên `W3-07` hết bị chặn; còn `W3-08` (arq) chạy được ngay
-> ở laptop. `W3-09` phải đứng **sau** `W3-04` vì DoD của nó hỏi thẳng contextual
-> chunking giảm retrieval failure bao nhiêu phần trăm.
+> `TD-22` và `W3-07` **đã xong**. Còn lại `W3-08` (arq) — chạy được ngay ở laptop,
+> Redis đã sẵn trong `docker-compose` và `settings.redis_url` đã có. `W3-04` anh
+> làm khi có GPU thuê; `W3-09` phải đứng **sau** `W3-04` vì DoD của nó hỏi thẳng
+> contextual chunking giảm retrieval failure bao nhiêu phần trăm.
+>
+> ✅ **`G3` tiêu chí "reprocess nhanh hơn full rebuild ≥ 10×" đã ĐẠT**: đo được
+> **179,3×** (`W3-07` §3).
 >
 > ⚠️ **`W3-05` vừa đổi cách phải thiết kế `W3-09`**: mở rộng sang parent làm prompt
 > nở **3,45×** và con số đó gần như không đổi theo `top_k` (3,35×–3,61× ở k=3…20).
@@ -698,8 +702,25 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · ⚠️ **Cố ý KHÔNG đổi `bgem3.yaml`**: bật chế độ token là 15.814 → 11.190 chunk, tức index khác và mọi con số `W2` không so được. Thuộc `W3-09`, vướng `TD-20` → **`TD-25`**
   · 💡 Chi phí: BGE-M3 **8,0×** (0,3 → 2,7 s cho 60 tài liệu), PhoBERT **41,3×** (0,6 → 23,5 s) vì trần 256 liên tục chạm. Tuyệt đối không đáng kể cạnh bước embed
   · Dự đoán ghi trước: **3/7 đúng**, 1 nửa đúng, **3 sai**
-- [ ] `W3-07` **Content-hash dedupe + incremental re-index**
-  · DoD: sửa 1 trang trong 100 trang → chỉ embed lại chunk bị ảnh hưởng · Test: `tests/integration/test_incremental_reindex.py` (đếm số lần gọi embed) · Evidence: log so sánh
+- [x] `W3-07` **Content-hash dedupe + incremental re-index** *(2026-08-22)*
+  · DoD: sửa 1 trang trong 100 trang → chỉ embed lại chunk bị ảnh hưởng · Test: **7** (`tests/integration/test_incremental_reindex.py`) · Evidence: `reports/tasks/w3-07-incremental-reindex.md`, `reports/probes/w3-07-incremental.json` · Lệnh: `make incr-probe`
+  · `QdrantDenseRetriever.upsert_reusing`\`fetch_vectors` + `UpsertStats` + `build_index._reuse_map` + `DocState.chunk_hashes` + `BuildReport.n_chunks_embedded`\`n_chunks_reused`\`reuse_rate`
+  · ⭐ **Corpus thật, sửa một dòng ở giữa tài liệu 990.826 byte (1.082 chunk): embed lại đúng 6 chunk** (0,55%), mượn lại 1.076. So với build sạch (15.814 chunk, 376,6 s): embed ít hơn **2.636×**, nhanh hơn **179,3×** → **`G3` tiêu chí "reprocess ≥ 10×" ĐẠT**. Lượt "không sửa gì" cho 0 embed, có mặt trong bảng để chứng minh con số trên không phải tầng `W1-08` đội lốt
+  · ⭐ **Không dựng cache vector — Qdrant ĐÃ là cache.** 15.814 × 1024 float32 = 65 MB cộng một vòng đời cache nữa (TTL/eviction/version) là cái giá của phản xạ đầu tiên. Vector đã nằm sẵn trong point cũ; chỉ thiếu đường đọc lại. Cùng khuôn với `W3-05` §2: trước khi thêm tầng lưu trữ, hỏi xem thứ mình cần đã nằm đâu chưa
+  · ⭐⭐ **Ranh giới thật, và nó chỉ hoà giải được sau khi đo hai lần.** Ca tổng hợp cho mượn lại **2,0%** khi chèn ở đầu, corpus thật cho **99,4%** — chênh lệch ấy nghĩa là tôi chưa hiểu cơ chế. Đo thẳng: `separators` là `("
+
+", "
+", ". ", " ", "")` **theo thứ tự ưu tiên**, nên mỗi `
+
+` là một **điểm đồng bộ lại**; thiệt hại bị chặn trong khoảng cách tới lần xuống dòng đoạn kế tiếp. Cùng văn bản, thêm `
+
+` mỗi 9 câu: **2,0% → 98,0%** → **`TD-28`**
+  · ⚠️⚠️ **Fixture đầu cho 99% ở MỌI ca — một con số đẹp mà vô nghĩa**: mỗi "trang" 146 ký tự vừa khít chunk 200, nên ranh giới do *nội dung* quyết định chứ không do độ dài tích luỹ, và chèn thêm chữ không dịch được gì. Lần **thứ ba** trong `W3` (sau `W3-01` §2 và `W3-05` §9), và lần này nó khó nghi ngờ hơn vì kết quả *có lợi*
+  · ⚠️ **Chệch ra một phát hiện: `chunk_size` có thể hoàn toàn vô tác dụng.** `chunk_size=200` cùng mặc định `min=200, max=1500` cho chunk trung bình **1.460 ký tự — gấp 7,3× con số đã khai**, im lặng. Không config sản phẩm nào dính nhưng **hai test tích hợp có sẵn thì có**. Sửa bằng **cảnh báo, không phải lỗi**: "cắt mịn rồi đóng gói tới `max_chunk_size`" là chiến lược hợp lệ và có test dùng đúng nó — cái sai là sự **im lặng**
+  · 💡 **Cố ý không làm dedupe liên tài liệu**: đo trên đúng 15.814 chunk baseline thì chỉ **30 hash lặp (81 chunk)**, **6 hash** trùng giữa các tài liệu, tổng tiết kiệm **51/15.814 = 0,32%** — và ba hash lặp nhiều nhất là chunk mở đầu bằng 70 dấu cách
+  · 💡 Test có **hai lớp đếm độc lập**: `BuildReport.n_chunks_embedded` (code tự báo) và `CountingEmbeddings` (bọc provider, đếm text thật đi qua). Một mình con số tự báo là biến đếm của chính đoạn code đang kiểm — bài học `W3-05` §3 trên một trục khác. Một test ghim **giới hạn** (chèn ở đầu ⇒ mượn lại < 10%) chứ không ghim thành công
+  · ⚠️ `IndexState` giờ mang 15.814 hash → file state ~1,1 MB, lớn tuyến tính theo số chunk
+  · Dự đoán ghi trước: **1 đúng rưỡi, 4 sai** — cái sai ở `E2` hoá ra là phát hiện chính
 - [ ] `W3-08` **Async ingestion worker (arq)** + job status
   · DoD: `POST /ingest` trả `job_id` < 200ms; `GET /ingest/{id}` có progress; retry khi worker chết · Test: `tests/integration/test_ingest_job.py` · Evidence: —
 - [ ] `W3-09` **Ablation #2 + report** `reports/tasks/exp-002-chunking.md` — 5 chiến lược chunking
@@ -708,7 +729,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 ### `G3` — Gate tuần 3 ⬜
 - [ ] Contextual/structure-aware chunking thắng hybrid cũ trên nDCG@10 (hoặc kết luận rõ là không, kèm số)
 - [ ] Ingest được ≥ 5 định dạng file, có test fixture cho từng loại
-- [ ] Reprocess sau sửa nhỏ nhanh hơn full rebuild ≥ 10× (có số đo)
+- [x] Reprocess sau sửa nhỏ nhanh hơn full rebuild ≥ 10× (có số đo) — **179,3×**; sửa một dòng ở tài liệu 1.082 chunk chỉ embed lại **6** chunk (`reports/tasks/w3-07-incremental-reindex.md` §3)
 
 ---
 
@@ -867,7 +888,16 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 | `TD-25` | **Chưa biết cắt theo token có cải thiện truy hồi hay không.** `W3-06` đo được rằng nó **san bằng kích thước chunk giữa hai ngôn ngữ** (chênh p50 EN↔VI: BGE-M3 14,4% → 4,7%; PhoBERT −22,3% → +2,4%), và đó là một **giả thuyết** về `cross_lingual`, chưa phải kết quả | Không lượt index nào được build lại ở `W3-06` — cố ý. Bật `size_unit='tokens'` trên `bgem3.yaml` là **15.814 → 11.190 chunk**, tức collection khác và mọi con số `W2` không so được nữa. ⚠️ Nặng hơn: đổi `chunk_size` là chiều mà `TD-20` đã chỉ ra **không kiểm định cặp được** — nhãn neo theo span (`TD-12`) nên đổi chunking là đổi cả **tập** nhãn, và hàng rào băm `relevant_digest` của `W2-03` từ chối cả 15 metric | Thuộc `W3-09` (ablation #2). Phải đi cùng `TD-20`: chỉ so được bằng `hit_rate@k`/`MRR` trên tập câu có nhãn không đổi, hoặc phải gán lại nhãn. Giả thuyết cần kiểm là **`cross_lingual`**, không phải metric tổng — vì cơ chế đo được là san bằng giữa hai ngôn ngữ, nên nếu nó có tác dụng thì phải thấy ở đúng nhóm đó (`make eval-compare-by BY=lang`) |
 | `TD-26` | **`ParentChildChunker` và `expand_to_parents` chưa nối vào đường nào đang chạy.** Chunker không nằm trong `CachedChunker`; assembly chưa có người gọi ở serving | Đo ở `W3-05`: hai index (`rag_pc256` 10.473 point, `rag_pc128` 22.924 point) build được và probe được, nhưng chỉ qua `build_index` + script. ⚠️ Với cache thì rủi ro **khác** `TD-24`: quan hệ cha-con là hàm thuần của `(nội dung, config)` nên khoá `(content_hash, config_hash, chunker_name)` đủ *về nguyên tắc* — điều chưa kiểm là `config_hash` có nuốt `parent_size_multiple` hay không, và nếu không thì hai cấu hình parent khác nhau dùng chung cache mà không ai biết. Đây **đúng** khuôn lỗi làm tròn `config_hash` của bản POC | Hai việc rời nhau: **(1)** đưa `ParentChildChunker` vào `CachedChunker` **sau khi** ghim một test rằng đổi `parent_size_multiple` là đổi `config_hash` (làm cùng `TD-24`(3) vì cùng một chỗ sửa); **(2)** `W4` gọi `expand_to_parents` ở tầng serving — và phải truyền **đúng** filter đã dùng cho lượt search, xem `w3-05-parent-child.md` §7: `filters` chỉ chắn đường lấy thêm anh em, không chắn các child đã trúng |
 | `TD-27` | **Ghim commit SHA của trọng số làm lần đổi ỒN ÀO, không ngăn được nó đổi.** `TD-22` ghi `docling-layout-heron@<sha>` vào vân tay, nên khi trọng số đổi thì `parse_fingerprint` lệch và người đọc biết thủ phạm. Nhưng docling vẫn tải theo `revision='main'`, nên lần `convert()` **tiếp theo** trên một máy sạch vẫn lấy về bản mới | Đo ở `TD-22` §4: `docling/datamodel/stage_model_specs.py:997-998` đặt `revision="main"` cho `docling-project/docling-layout-heron`; model bảng thì ghim `revision="v2.3.0"` (`table_structure_model.py:105`). Cache trên máy này: `refs/main` → `8f39ad3c0b4c`, `refs/v2.3.0` → `fc0f2d45e221`. ⚠️ Model bố cục quyết định thứ tự đọc trang PDF, tức thứ tự đoạn trong markdown — chính là thứ mọi offset span neo vào | Ba lối, chưa lối nào rẻ: **(a)** chờ docling cho truyền `revision` xuống `PdfFormatOption`; **(b)** tải trước trọng số theo SHA bằng `huggingface_hub` rồi trỏ docling vào thư mục local; **(c)** chấp nhận và dựa vào `text_sha256` — nó bắt được **hậu quả** kể cả khi không ngăn được **nguyên nhân**. Hôm nay (c) là đủ vì corpus 60/60 là `.txt`, không tài liệu nào chạm pipeline PDF |
-| `TD-28` | **Re-index tăng dần chỉ mượn lại được phần đứng TRƯỚC điểm sửa.** `W3-07` khớp chunk theo `content_hash` nên sửa tại chỗ gần như miễn phí, nhưng **chèn thêm chữ** làm splitter đóng gói lại mọi chunk phía sau — nội dung chúng thật sự khác, không phải chỉ đổi chỉ số | Đo ở `W3-07` §4 (300 câu, chunk gói 3 câu): sửa tại chỗ **~99%** mượn lại · nối thêm cuối **~98%** · chèn ở giữa (150/300) **51,5%** · chèn ở đầu (5/300) **2,0%**. Con số 51,5% chính là phần tài liệu đứng trước điểm chèn. ⚠️ Fixture đầu tiên cho **99% ở mọi ca** vì mỗi 'trang' vừa khít một chunk — ranh giới do nội dung quyết định chứ không do độ dài tích luỹ; đó là chế độ mà corpus thật KHÔNG ở trong (chunk 1000 ký tự ≈ 7 câu) | Lối ra không phải tra hash tinh hơn mà là **chunking theo nội dung**: ranh giới do một hàm hash cục bộ quyết định (FastCDC/Rabin fingerprint), nên chèn chữ chỉ ảnh hưởng vài chunk quanh điểm chèn. Đó là một **chiến lược chunking mới** (`ChunkingStrategy.CONTENT_DEFINED`), không phải tối ưu của `W3-07`, nên nó thuộc nhóm `W3-09` đo cùng các chiến lược khác. ⚠️ Đổi ranh giới chunk là đổi **tập** nhãn (`TD-20`), nên không kiểm định cặp được — cùng ràng buộc với `TD-25` |
+| `TD-28` | **Re-index tăng dần hỏng tới cuối tài liệu khi văn bản không có cấu trúc đoạn.** `W3-07` khớp chunk theo `content_hash`, nhưng chèn thêm chữ làm splitter đóng gói lại mọi chunk phía sau — nội dung chúng **thật sự** khác, không phải chỉ đổi chỉ số | Đo ở `W3-07` §4. Trên **corpus thật**: chèn 62 byte vào giữa tài liệu 990.826 byte → chỉ **6/1.082** chunk phải embed lại (0,55%). Trên văn bản **một mạch** (300 câu, không `
+
+`), chèn ở câu 5/300 → mượn lại **2,0%**. ⭐ Hoà giải được bằng cơ chế: `separators` là `("
+
+", "
+", ". ", " ", "")` **theo thứ tự ưu tiên**, nên mỗi `
+
+` là một **điểm đồng bộ lại** — thiệt hại bị chặn trong khoảng cách tới lần xuống dòng đoạn kế tiếp. Cùng văn bản, thêm `
+
+` mỗi 9 câu: **2,0% → 98,0%** | Loại tài liệu bị ảnh hưởng là loại **mất cấu trúc dòng**: đầu ra OCR, bảng chuyển thành văn xuôi, transcript không chấm câu — đúng vùng của `W3-02`/`TD-23`. Lối ra là **chunking theo nội dung** (`ChunkingStrategy.CONTENT_DEFINED`, ranh giới do hash cục bộ kiểu FastCDC/Rabin) để mọi vị trí đều là điểm đồng bộ tiềm năng. Là một **chiến lược chunking mới**, nên thuộc nhóm `W3-09` đo cùng các chiến lược khác. ⚠️ Đổi ranh giới chunk là đổi **tập** nhãn (`TD-20`) nên không kiểm định cặp được — cùng ràng buộc với `TD-25` |
 | `TD-18` | **Không có nhánh khớp đúng cho mã tài liệu.** `W2-03` đo được: 25/51 mã (project ID, trust fund ID) **không nhánh nào** tìm ra ở top-10. Nguyên nhân là vocab **subword** của BGE-M3: `P171645` → `['▁P','171','645']`, và `171`/`645` có mặt khắp 15.814 chunk tài liệu thống kê. Mã tìm được thì luôn có một mảnh subword tự nó là từ hiếm (`VIE-01` → `['▁','VIE','-01']`) | Ảnh hưởng **không** đo được trên `golden_v1` — 209 câu đều là câu hỏi tự nhiên, không có câu nào tra mã. Nhưng đây là loại truy vấn có thật trong sản phẩm (người dùng dán mã dự án vào hộp tìm kiếm), ⚠️ **`W2-05` đã phản chứng nửa sau của phát biểu này.** Reranker **sửa được phần lớn**: known-item hit@1 0,0980 → **0,5490**, hit@10 0,4706 → **0,6471**, và nó **thắng cả sparse** (0,3529 → 0,5490, McNemar `p = 0,0391`). Vì vocab subword phá việc **truy hồi** một mã (điểm sparse là tích vô hướng trên *túi* subword nên mất thông tin thứ tự/liền kề) nhưng **không** phá việc **nhận ra** nó — cross-encoder có attention trên cả cặp nên nó thấy các mảnh xuất hiện liền nhau, đúng thứ tự. Reranked tìm **33/51** mã vs 26/51 của hợp dense+sparse ở top-10. Nợ còn lại **thu hẹp thành 35% mã (18/51) không vào được pool 50** — đó mới là chỗ cần một nhánh khớp đúng. RRF (`W2-04`) thì đúng là không sửa được | Hai phương án, **đo cái rẻ trước**: (a) **filter payload khớp chuỗi** — Qdrant đã có `create_payload_index` từ `W1-07`, không cần build lại index; (b) **BM25 thô mức từ** (không phải subword) làm named vector sparse thứ hai — đây là chỗ cần `modifier=Modifier.IDF`, khác nhánh BGE-M3, nhưng phải đổi schema + build lại index. `scripts/known_item_probe.py` là phép đo sẵn có để so trước/sau (đã có nhánh `--rerank` từ `W2-05`, nên phép so bốn nhánh chạy được bằng một lệnh). **Ưu tiên đã hạ** sau `W2-05`: giá của việc trì hoãn không còn là 'không tra được mã' mà là '35% mã không tra được' |
 
 ---

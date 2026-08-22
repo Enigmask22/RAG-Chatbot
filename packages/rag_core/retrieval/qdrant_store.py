@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -46,6 +47,7 @@ __all__ = [
     "SPARSE_VECTOR_NAME",
     "MetadataFilter",
     "QdrantDenseRetriever",
+    "UpsertStats",
     "build_filter",
     "chunk_point_id",
     "points_to_chunks",
@@ -53,6 +55,21 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class UpsertStats:
+    """Kết quả một lượt ghi. `embedded` là con số mà DoD của `W3-07` đếm.
+
+    `written` là tổng point đã ghi; `embedded + reused` **không** bắt buộc bằng
+    nó và chỗ lệch là có ý nghĩa: một chunk khai reuse mà vector lấy không được
+    (point đã bị xoá) sẽ rơi về embed, nên nó rơi vào `embedded`.
+    """
+
+    written: int
+    embedded: int
+    reused: int
+
 
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
@@ -431,32 +448,100 @@ class QdrantDenseRetriever(Retriever):
             )
         return self.embeddings.embed_documents(texts), None
 
+    def fetch_vectors(self, chunk_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """`chunk_id` → dict named-vector đã lưu. ID không có thì vắng mặt trong kết quả.
+
+        Dùng cho re-index tăng dần (`W3-07`): một chunk có nội dung y hệt một
+        point đang nằm trong collection thì vector của nó **đã** được tính rồi, và
+        đọc lại rẻ hơn tính lại khoảng hai bậc độ lớn.
+
+        ⚠️ Cùng họ với `fetch_chunks`: lấy **theo id**, nên nó không đi qua tầng
+        filter. Ở đây vô hại vì người gọi là chính đường ghi (`build_index`), chứ
+        không phải đường phục vụ truy vấn của người dùng.
+        """
+        if not chunk_ids:
+            return {}
+        wanted = list(dict.fromkeys(chunk_ids))
+        points = self.client.retrieve(
+            collection_name=self.collection,
+            ids=[chunk_point_id(cid) for cid in wanted],
+            with_payload=["chunk_id"],
+            with_vectors=True,
+        )
+        found: dict[str, dict[str, Any]] = {}
+        for point in points:
+            chunk_id = (point.payload or {}).get("chunk_id")
+            vectors = point.vector
+            if chunk_id is None or not isinstance(vectors, dict):
+                continue  # pragma: no cover - point ghi bởi phiên bản vector vô danh
+            found[str(chunk_id)] = dict(vectors)
+        return found
+
     def upsert(self, chunks: Sequence[Chunk], *, batch_size: int = 128) -> int:
         """Ghi chunk vào collection. Gọi lại với cùng chunk thì không sinh bản trùng."""
+        return self.upsert_reusing(chunks, batch_size=batch_size).written
+
+    def upsert_reusing(
+        self,
+        chunks: Sequence[Chunk],
+        *,
+        reuse: Mapping[str, str] | None = None,
+        batch_size: int = 128,
+    ) -> UpsertStats:
+        """Như `upsert`, nhưng dùng lại vector của point đã có khi nội dung không đổi.
+
+        `reuse` ánh xạ `chunk_id mới → chunk_id cũ có CÙNG nội dung`. Người gọi
+        (`W3-07`) dựng bản đồ này từ `content_hash`; ở đây chỉ tin và tra.
+
+        Vector lấy không được (point đã bị xoá, hoặc collection vừa recreate) thì
+        **rơi về embed**, không phải lỗi — và được đếm vào `embedded`. Im lặng bỏ
+        qua chunk đó mới là hỏng: nó sẽ biến mất khỏi index.
+        """
         from qdrant_client import models
 
         if not chunks:
-            return 0
+            return UpsertStats(written=0, embedded=0, reused=0)
 
-        total = 0
+        cached = self.fetch_vectors(sorted(set((reuse or {}).values()))) if reuse else {}
+        borrowed: dict[str, dict[str, Any]] = {}
+        for chunk in chunks:
+            source = (reuse or {}).get(chunk.chunk_id)
+            if source is not None and source in cached:
+                borrowed[chunk.chunk_id] = cached[source]
+
+        written = embedded = 0
         for start in range(0, len(chunks), batch_size):
             batch = list(chunks[start : start + batch_size])
-            dense, sparse = self._embed_batch([c.content for c in batch])
-            # Thay cho `zip(strict=True)` của bản dense-only: lệch độ dài nghĩa là
-            # provider trả không đủ hàng, và indexing theo offset sẽ gán embedding
-            # cho sai chunk thay vì báo lỗi.
-            if len(dense) != len(batch) or (sparse is not None and len(sparse) != len(batch)):
-                raise RuntimeError(
-                    f"Provider trả {len(dense)} dense và "
-                    f"{'-' if sparse is None else len(sparse)} sparse cho {len(batch)} chunk"
-                )
+            fresh = [c for c in batch if c.chunk_id not in borrowed]
+            dense: Any = []
+            sparse: list[SparseVector] | None = None
+            if fresh:
+                dense, sparse = self._embed_batch([c.content for c in fresh])
+                # Thay cho `zip(strict=True)` của bản dense-only: lệch độ dài nghĩa là
+                # provider trả không đủ hàng, và indexing theo offset sẽ gán embedding
+                # cho sai chunk thay vì báo lỗi.
+                if len(dense) != len(fresh) or (sparse is not None and len(sparse) != len(fresh)):
+                    raise RuntimeError(
+                        f"Provider trả {len(dense)} dense và "
+                        f"{'-' if sparse is None else len(sparse)} sparse cho {len(fresh)} chunk"
+                    )
+                embedded += len(fresh)
+
+            at = {chunk.chunk_id: offset for offset, chunk in enumerate(fresh)}
             points: list[models.PointStruct] = []
-            for offset, chunk in enumerate(batch):
-                vector: dict[str, Any] = {
-                    DENSE_VECTOR_NAME: np.asarray(dense[offset], dtype=np.float32).tolist()
-                }
-                if sparse is not None:
-                    vector[SPARSE_VECTOR_NAME] = models.SparseVector(**sparse[offset].as_qdrant())
+            for chunk in batch:
+                stored = borrowed.get(chunk.chunk_id)
+                if stored is not None:
+                    vector: dict[str, Any] = stored
+                else:
+                    offset = at[chunk.chunk_id]
+                    vector = {
+                        DENSE_VECTOR_NAME: np.asarray(dense[offset], dtype=np.float32).tolist()
+                    }
+                    if sparse is not None:
+                        vector[SPARSE_VECTOR_NAME] = models.SparseVector(
+                            **sparse[offset].as_qdrant()
+                        )
                 points.append(
                     models.PointStruct(
                         id=chunk_point_id(chunk.chunk_id),
@@ -465,8 +550,8 @@ class QdrantDenseRetriever(Retriever):
                     )
                 )
             self.client.upsert(collection_name=self.collection, points=points, wait=True)
-            total += len(points)
-        return total
+            written += len(points)
+        return UpsertStats(written=written, embedded=embedded, reused=len(borrowed))
 
     @staticmethod
     def _payload(chunk: Chunk) -> dict[str, Any]:

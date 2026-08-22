@@ -1,0 +1,38 @@
+{
+  "config": "configs\\indexing\\bgem3.yaml",
+  "document_edited": "wb-618951468329964080",
+  "document_bytes": 990826,
+  "passes": [
+    {
+      "label": "sạch",
+      "documents_indexed": 60,
+      "chunks_written": 15814,
+      "chunks_embedded": 15814,
+      "chunks_reused": 0,
+      "seconds_embed": 376.6,
+      "seconds_total": 397.5
+    },
+    {
+      "label": "không sửa gì",
+      "documents_indexed": 0,
+      "chunks_written": 0,
+      "chunks_embedded": 0,
+      "chunks_reused": 0,
+      "seconds_embed": 0.0,
+      "seconds_total": 0.6
+    },
+    {
+      "label": "sửa một dòng",
+      "documents_indexed": 1,
+      "chunks_written": 1082,
+      "chunks_embedded": 6,
+      "chunks_reused": 1076,
+      "seconds_embed": 2.1,
+      "seconds_total": 2.8
+    }
+  ],
+  "untouched_pass_embedded": 0,
+  "embed_ratio": 2635.67,
+  "speedup": 179.33,
+  "g3_met": true
+}

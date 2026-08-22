@@ -35,6 +35,9 @@ __all__ = ["Chunker", "ChunkingConfig", "ChunkingStrategy"]
 
 logger = logging.getLogger(__name__)
 
+_WARNED_SIZES: set[tuple[str, int, int, int]] = set()
+"""Bộ ba kích thước đã cảnh báo — xem `ChunkingConfig._warn_if_chunk_size_is_decorative`."""
+
 
 class ChunkingStrategy(StrEnum):
     FIXED = "fixed"
@@ -137,7 +140,43 @@ class ChunkingConfig(BaseModel):
             raise ValueError("max_chunk_size không được nhỏ hơn chunk_size")
         if self.min_chunk_size >= self.max_chunk_size:
             raise ValueError("min_chunk_size phải nhỏ hơn max_chunk_size")
+        self._warn_if_chunk_size_is_decorative()
         return self
+
+    def _warn_if_chunk_size_is_decorative(self) -> None:
+        """`min_chunk_size >= chunk_size` ⇒ kích thước thật là `max_chunk_size`.
+
+        Splitter cho ra mảnh ≤ `chunk_size`, nên khi `min_chunk_size` bằng hoặc
+        lớn hơn con số đó thì gần như mảnh nào cũng bị `_enforce_size` coi là quá
+        ngắn — và gộp tới tận `max_chunk_size`.
+
+        Đo ở `W3-07`: `chunk_size=200` cùng mặc định `min=200, max=1500` cho chunk
+        trung bình **1.460 ký tự**, gấp **7,3×** con số đã khai; một corpus test
+        dựng "100 trang" theo cấu hình ấy chỉ ra **10** chunk thay vì ~73.
+
+        **Cảnh báo chứ không phải lỗi**, và ranh giới ấy có lý do: "cắt mịn rồi
+        đóng gói tới `max_chunk_size`" là một chiến lược hợp lệ, và có test trong
+        repo dùng đúng nó. Cái sai không phải cấu hình mà là **sự im lặng** — người
+        khai `chunk_size=200` rồi nhận về chunk 1.460 phải được nghe nói.
+
+        Cảnh báo một lần cho mỗi bộ ba: `Chunker._begin_sizing` `model_copy` lại
+        config cho **mỗi tài liệu**, nên không chặn thì log sẽ có 60 dòng giống hệt.
+        """
+        if self.min_chunk_size < self.chunk_size:
+            return
+        key = (self.size_unit, self.chunk_size, self.min_chunk_size, self.max_chunk_size)
+        if key in _WARNED_SIZES:
+            return
+        _WARNED_SIZES.add(key)
+        logger.warning(
+            "chunk_size=%d nhưng min_chunk_size=%d (≥ nó), nên gần như mảnh nào cũng "
+            "bị gộp: kích thước thật sẽ tiến tới max_chunk_size=%d chứ không phải %d. "
+            "Cố ý thì bỏ qua; không cố ý thì hạ min_chunk_size xuống.",
+            self.chunk_size,
+            self.min_chunk_size,
+            self.max_chunk_size,
+            self.chunk_size,
+        )
 
     @property
     def config_hash(self) -> str:

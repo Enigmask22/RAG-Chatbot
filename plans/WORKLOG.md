@@ -4,7 +4,11 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (8) (cuối file)** — `TD-22` **đóng**, `W3-07` hết bị chặn. Manifest ghim `text_sha256` + `parse_fingerprint`; `iter_documents` parse qua đúng loader chung rồi đối chiếu. ⭐⭐ Nợ sâu hơn **hai tầng** so với lúc ghi: (1) vân tay `W3-01` ghim **tên gói ô dù** — `export_to_markdown` sống trong `docling-core`, gói mà `docling==2.121.0` thả tự do `>=2.91,<3.0`; (2) ngay cả ghim đủ version gói vẫn chưa đủ, vì **trọng số model bố cục tải theo `revision='main'`** (model bảng thì ghim `v2.3.0`) → ghim commit SHA đã phân giải, nhưng đó chỉ làm lần đổi *ồn ào* chứ không *ngăn* → `TD-27`. ⭐ Đo: `text_sha256 == sha256` **60/60** (hai cột mới hôm nay hoàn toàn thừa — và đó đúng là thứ hết hạn khi có parser); nối loader **không đổi gì** (14.284.300 ký tự y nguyên); dựng lại chế độ hỏng bằng cách chép **nguyên byte** sang `.md` → sha256 trùng khít, **−21,6% văn bản**. ⚠️ Ba assert đầu tôi viết là vô nghĩa (tautology, `or True`) — cùng hình dạng với `W3-05` §3, hai phiên liền.
+> **Phiên mới nhất: 2026-08-22 (9) (cuối file)** — `W3-07` xong, `W3` **6/9**, và `G3` được một tiêu chí. Re-index tăng dần ở mức **chunk**: nhớ `content_hash` từng chunk, mượn lại vector của point cũ. ⭐ Corpus thật, sửa một dòng ở tài liệu 1.082 chunk → embed lại **6** chunk, nhanh hơn **179,3×** → `G3` "reprocess ≥ 10×" **ĐẠT**. ⭐ **Không dựng cache vector — Qdrant đã là cache**; chỉ thiếu đường đọc lại (`fetch_vectors`). ⭐⭐ Ca tổng hợp cho 2,0% mượn lại còn corpus thật cho 99,4%; chênh lệch ấy nghĩa là chưa hiểu cơ chế, và chỗ hoà giải là phát hiện: `separators` có **thứ tự ưu tiên** nên mỗi `
+
+` là một **điểm đồng bộ lại** — cùng văn bản thêm xuống dòng đoạn: **2,0% → 98,0%** → `TD-28`. ⚠️ Fixture đầu cho 99% ở **mọi** ca (lần thứ ba trong `W3`, và lần này khó nghi ngờ hơn vì kết quả có lợi). ⚠️ Phát hiện chệch ra: `chunk_size=200` cùng `min_chunk_size` mặc định 200 cho chunk **1.460 ký tự, gấp 7,3×**, im lặng.
+>
+> Phiên trước: **2026-08-22 (8)** — `TD-22` **đóng**, `W3-07` hết bị chặn. Manifest ghim `text_sha256` + `parse_fingerprint`; `iter_documents` parse qua đúng loader chung rồi đối chiếu. ⭐⭐ Nợ sâu hơn **hai tầng** so với lúc ghi: (1) vân tay `W3-01` ghim **tên gói ô dù** — `export_to_markdown` sống trong `docling-core`, gói mà `docling==2.121.0` thả tự do `>=2.91,<3.0`; (2) ngay cả ghim đủ version gói vẫn chưa đủ, vì **trọng số model bố cục tải theo `revision='main'`** (model bảng thì ghim `v2.3.0`) → ghim commit SHA đã phân giải, nhưng đó chỉ làm lần đổi *ồn ào* chứ không *ngăn* → `TD-27`. ⭐ Đo: `text_sha256 == sha256` **60/60** (hai cột mới hôm nay hoàn toàn thừa — và đó đúng là thứ hết hạn khi có parser); nối loader **không đổi gì** (14.284.300 ký tự y nguyên); dựng lại chế độ hỏng bằng cách chép **nguyên byte** sang `.md` → sha256 trùng khít, **−21,6% văn bản**. ⚠️ Ba assert đầu tôi viết là vô nghĩa (tautology, `or True`) — cùng hình dạng với `W3-05` §3, hai phiên liền.
 >
 > Phiên trước: **2026-08-22 (7)** — `W3-05` xong, `W3` **5/9**. Small-to-big (`chunking/parent_child.py` + `retrieval/context.py`), hai index thật: `rag_pc256` 10.473 point, `rag_pc128` 22.924 point. ✅ Cả ba vế DoD đạt. ⭐ **Parent KHÔNG phải một point** — nó là *tập* các child, nên 0 field payload mới, 0 field `MetadataFilter`, 0 backfill, 0 con số `W2` bị đổi; và parent không thể lọt vào kết quả tìm kiếm vì nó không nằm trong đó. ⚠️⚠️ **Protocol khớp với một method KHÔNG TỒN TẠI, 27 test vẫn xanh**: gọi `get_by_ids`, lớp thật có `fetch_chunks`, fake trong test cũng khai sai y hệt → *một Protocol cấu trúc không ràng buộc được gì nếu cả hai bên đối chiếu đều do test dựng ra*. Khuôn để bịt đã có sẵn ở `W3-06` mà tôi không dùng lại. ⭐⭐ **Độ nở ngữ cảnh là chỉ số ĐÁNH LỪA**: chia đôi child làm nó gấp đôi (3,45× → 6,98×) trong khi prompt thật không đổi (9.471 → 9.519 token) — prompt = *số parent* × *cỡ parent*, child không có trong công thức. Hệ quả: **child nhỏ hơn không đắt hơn**. ⚠️ `chunk_size=256` token **không phải "small"** (child 256 tok > chunk baseline 218 tok) → thêm `pc128`.
 >
@@ -2848,5 +2852,85 @@ uv run pytest tests/unit/test_parse_pin.py
 
 Việc tiếp theo: **`W3-07`** (content-hash dedupe + incremental re-index), rồi
 **`W3-08`**. `W3-04` chờ GPU thuê; `W3-09` chờ `W3-04`.
+
+---
+
+## Phiên 2026-08-22 (9) · `W3-07` — re-index tăng dần
+
+**Mục tiêu:** `W3-07` (nợ `TD-22` đã đóng ở phiên trước nên hết chặn).
+
+**Kết quả:** xong. `W3` **6/9**. `G3` được một tiêu chí. 7 test tích hợp mới.
+
+### DoD, đo trên corpus thật
+
+Chép corpus sang thư mục tạm, sửa **một dòng** ở giữa tài liệu dài nhất
+(990.826 byte, 1.082 chunk), build ba lượt:
+
+| lượt | embed | mượn lại | giây embed |
+|---|---:|---:|---:|
+| sạch | 15.814 | 0 | 376,6 |
+| không sửa gì | 0 | 0 | 0,0 |
+| **sửa một dòng** | **6** | **1.076** | **2,1** |
+
+Embed ít hơn **2.636×**, nhanh hơn **179,3×** → `G3` "reprocess ≥ 10×" **đạt**.
+
+### Không dựng cache vector — Qdrant đã là cache
+
+Phản xạ đầu là một cache `(model, content_hash) → vector`: 65 MB trên đĩa cộng
+một vòng đời cache nữa phải bảo trì. Nhưng vector **đã nằm trong point cũ**; chỉ
+thiếu đường đọc lại. `fetch_vectors` + `upsert_reusing` + `DocState.chunk_hashes`
+là đủ — không file mới, không schema mới, không backfill.
+
+### ⭐⭐ Hai con số mâu thuẫn, và chỗ hoà giải là phát hiện
+
+Ca tổng hợp: chèn một câu ở vị trí 5/300 → mượn lại **2,0%**. Corpus thật: chèn
+62 byte vào giữa → **99,4%**. Chênh lệch ấy nghĩa là tôi chưa hiểu cơ chế, nên
+không được viết báo cáo cho tới khi hiểu.
+
+Đo thẳng vào nghi ngờ — cùng văn bản, cùng điểm chèn, chỉ khác có `\n\n` hay
+không:
+
+| văn bản | mượn lại |
+|---|---:|
+| một mạch, không `\n\n` | **2,0%** |
+| `\n\n` mỗi 9 câu | **98,0%** |
+| `\n\n` mỗi 3 câu | **98,0%** |
+
+`separators` là `("\n\n", "\n", ". ", " ", "")` **theo thứ tự ưu tiên**, nên mỗi
+`\n\n` là một **điểm đồng bộ lại**: thiệt hại của một lần chèn bị chặn trong
+khoảng cách tới lần xuống dòng đoạn kế tiếp. Điều đó nói ra loại tài liệu mà kỹ
+thuật này không giúp được — đầu ra OCR mất cấu trúc dòng, bảng chuyển thành văn
+xuôi, transcript không chấm câu. → `TD-28`.
+
+### ⚠️ Hai lỗi của tôi trong phiên
+
+**Fixture đầu cho 99% ở MỌI ca.** Mỗi "trang" 146 ký tự vừa khít chunk 200, nên
+ranh giới do nội dung quyết định và chèn thêm chữ không dịch được gì. Lần **thứ
+ba** trong `W3` (sau `W3-01` §2, `W3-05` §9) — và lần này khó nghi ngờ hơn vì
+con số *có lợi*.
+
+**`chunk_size` có thể hoàn toàn vô tác dụng.** Truy vì sao "100 trang" chỉ ra 10
+chunk: `min_chunk_size` mặc định **bằng đúng** `chunk_size=200` tôi khai, nên mọi
+mảnh đều bị coi là quá ngắn và gộp tới `max_chunk_size=1500` — chunk trung bình
+**1.460 ký tự, gấp 7,3×** con số đã khai, im lặng. Sửa bằng **cảnh báo chứ không
+phải lỗi**: "cắt mịn rồi đóng gói to" là chiến lược hợp lệ và có test dùng đúng
+nó (guard cứng làm đỏ 9 test); cái sai là sự im lặng.
+
+### Cố ý không làm
+
+Dedupe liên tài liệu: đo trên 15.814 chunk baseline thì chỉ **51 chunk (0,32%)**
+trùng nội dung, 6 hash trùng giữa các tài liệu, và ba hash lặp nhiều nhất là
+chunk mở đầu bằng 70 dấu cách. Không đáng một tầng tra cứu.
+
+### Lệnh để tiếp tục
+
+```bash
+make incr-probe                 # sửa một dòng trong corpus thật, đo lại
+uv run pytest tests/integration/test_incremental_reindex.py
+```
+
+Việc tiếp theo: **`W3-08`** (async ingestion worker, arq). Redis đã sẵn trong
+`docker-compose` và `settings.redis_url` đã có; thiếu extra `fastapi`/`arq`.
+`W3-04` anh làm khi có GPU; `W3-09` chờ `W3-04`.
 
 ---
