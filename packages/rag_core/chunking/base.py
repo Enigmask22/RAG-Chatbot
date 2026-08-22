@@ -19,17 +19,21 @@ Port từ `legacy/enhanced_chunking.py` của bản POC, với ba thay đổi c�
 from __future__ import annotations
 
 import hashlib
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..schemas import Chunk, Document
 from .pieces import TextPiece, merge_pieces, shift
+from .tokens import TokenCounter, TokenSizingUnavailable, calibrate_density, fit_to_budget
 
 __all__ = ["Chunker", "ChunkingConfig", "ChunkingStrategy"]
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkingStrategy(StrEnum):
@@ -46,14 +50,29 @@ class ChunkingConfig(BaseModel):
 
     strategy: ChunkingStrategy = ChunkingStrategy.HYBRID
 
+    size_unit: Literal["chars", "tokens"] = "chars"
+    """Đơn vị của `chunk_size`/`chunk_overlap`/`min_chunk_size`/`max_chunk_size`.
+
+    Mặc định `chars` để mọi config đã công bố giữ nguyên kết quả. Đổi sang
+    `tokens` là **đổi bộ chunk**, tức đổi index và mọi con số baseline — phải là
+    lựa chọn có ý thức, không phải mặc định thừa hưởng (cùng lý lẽ với
+    `neighbor_context_chars`).
+
+    Ở chế độ `tokens`, chunker bắt buộc phải có bộ đếm token (`token_counter`,
+    thường chính là `EmbeddingProvider`); thiếu thì **ném lỗi** chứ không lặng lẽ
+    rơi về đếm ký tự — xem `tokens.TokenSizingUnavailable`. Ngân sách bên trong
+    vẫn quy về ký tự bằng mật độ đo trên chính tài liệu đó, nhưng **trần token là
+    bảo đảm cứng**: mảnh nào còn vượt sẽ bị cắt lại. Xem docstring `tokens.py`.
+    """
+
     # --- fixed / recursive ---
-    chunk_size: int = Field(default=1000, ge=50)
+    chunk_size: int = Field(default=1000, ge=1)
     chunk_overlap: int = Field(default=100, ge=0)
     separators: tuple[str, ...] = ("\n\n", "\n", ". ", " ", "")
 
     # --- ràng buộc kích thước, áp cho mọi chiến lược ---
     min_chunk_size: int = Field(default=200, ge=0)
-    max_chunk_size: int = Field(default=1500, ge=50)
+    max_chunk_size: int = Field(default=1500, ge=1)
 
     # --- semantic ---
     semantic_buffer_size: int = Field(default=1, ge=0)
@@ -89,6 +108,18 @@ class ChunkingConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_sizes(self) -> ChunkingConfig:
+        # Cận dưới 50 vốn là cận dưới tính bằng KÝ TỰ — `W3-06` mới lộ ra điều
+        # đó, khi `chunk_size=48` **token** (một ngân sách hoàn toàn hợp lý với
+        # BGE-M3) bị chặn bởi một ràng buộc chưa từng nói nó đo bằng gì.
+        if self.size_unit == "chars" and (self.chunk_size < 50 or self.max_chunk_size < 50):
+            raise ValueError("với size_unit='chars', chunk_size và max_chunk_size phải ≥ 50 ký tự")
+        if self.size_unit == "tokens" and self.neighbor_context_chars > 0:
+            raise ValueError(
+                "size_unit='tokens' và neighbor_context_chars > 0 mâu thuẫn nhau: "
+                "ngữ cảnh hàng xóm CỐ Ý vượt max_chunk_size (nó là phần đệm chép "
+                "từ chunk bên cạnh), nên nó phá đúng cái trần cứng mà chế độ token "
+                "dựng lên. Chọn một trong hai."
+            )
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk_overlap phải nhỏ hơn chunk_size, nếu không sẽ lặp vô hạn")
         if self.max_chunk_size < self.chunk_size:
@@ -114,9 +145,30 @@ class Chunker(ABC):
 
     strategy: ClassVar[ChunkingStrategy]
 
-    def __init__(self, config: ChunkingConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ChunkingConfig | None = None,
+        *,
+        token_counter: TokenCounter | None = None,
+    ) -> None:
         self.config = config or ChunkingConfig()
         self._planned_documents: int | None = None
+        self._token_counter = token_counter
+        self._sizing = self.config
+        self._warned_limit = False
+
+    @property
+    def sizing(self) -> ChunkingConfig:
+        """Config **đã quy về ký tự** cho tài liệu đang chunk.
+
+        Bằng chính `self.config` ở chế độ `chars`. Ở chế độ `tokens` nó là bản
+        sao có `chunk_size`/`min`/`max` đã nhân với mật độ `ký tự/token` đo trên
+        tài liệu đó — nên mọi chỗ trong chunker phải đọc `self.sizing`, không đọc
+        `self.config`, nếu không sẽ trộn hai đơn vị.
+
+        `self.config` vẫn là thứ khai báo, và vẫn là thứ đi vào `config_hash`.
+        """
+        return self._sizing
 
     @property
     def name(self) -> str:
@@ -191,8 +243,77 @@ class Chunker(ABC):
         một mảnh nhỏ vào mảnh liền trước qua ranh giới section thì chunk sinh ra
         mang `section_path` của section cũ mà nội dung thuộc section mới.
         """
-        pieces = [p for p in self.split_pieces(doc.content) if p.text.strip()]
-        return self._enforce_size(pieces)
+        limit = self._begin_sizing(doc.content)
+        try:
+            pieces = [p for p in self.split_pieces(doc.content) if p.text.strip()]
+            pieces = self._enforce_size(pieces)
+            if limit is None:
+                return pieces
+            return [p for _, p in self._fit_tokens(pieces, limit)]
+        finally:
+            self._end_sizing()
+
+    # ---------------------------------------------------- kích thước theo token
+
+    def _begin_sizing(self, text: str) -> int | None:
+        """Đặt `self.sizing` cho tài liệu này; trả trần token, `None` nếu đếm ký tự.
+
+        Người gọi **phải** gọi `_end_sizing` trong `finally`: `self._sizing` là
+        trạng thái theo từng tài liệu, để sót lại là tài liệu sau bị chunk bằng
+        mật độ của tài liệu trước — sai âm thầm, đúng khuôn `TD-12`.
+        """
+        self._sizing = self.config
+        if self.config.size_unit != "tokens":
+            return None
+
+        counter = self._token_counter
+        if counter is None:
+            raise TokenSizingUnavailable(
+                "size_unit='tokens' nhưng chunker không có `token_counter`. "
+                "Truyền `EmbeddingProvider` vào (`build_chunker(config, embeddings)`)."
+            )
+
+        density = calibrate_density(text, counter)
+        model_limit = counter.max_sequence_tokens
+        limit = self.config.max_chunk_size
+        if model_limit is not None and model_limit < limit:
+            # Cảnh báo một lần cho mỗi chunker: nó là tính chất của cấu hình, không
+            # phải của tài liệu, nên in lại ở mỗi tài liệu chỉ làm ngập log.
+            if not self._warned_limit:
+                self._warned_limit = True
+                logger.warning(
+                    "max_chunk_size=%d token vượt cửa sổ của model (%d) — dùng %d làm trần",
+                    limit,
+                    model_limit,
+                    model_limit,
+                )
+            limit = model_limit
+
+        self._sizing = self.config.model_copy(
+            update={
+                "size_unit": "chars",
+                "chunk_size": max(50, round(self.config.chunk_size * density)),
+                "chunk_overlap": max(0, round(self.config.chunk_overlap * density)),
+                "min_chunk_size": max(0, round(self.config.min_chunk_size * density)),
+                "max_chunk_size": max(50, round(limit * density)),
+            }
+        )
+        return limit
+
+    def _end_sizing(self) -> None:
+        self._sizing = self.config
+
+    def _fit_tokens(self, pieces: list[TextPiece], limit: int) -> list[tuple[int, TextPiece]]:
+        """Bảo đảm cứng: không mảnh nào vượt `limit` token."""
+        counter = self._token_counter
+        assert counter is not None  # `_begin_sizing` đã kiểm
+        return fit_to_budget(
+            pieces,
+            limit=limit,
+            counter=counter,
+            separators=self.sizing.separators,
+            chunk_overlap=self.sizing.chunk_overlap,
+        )
 
     def _section_path_for(self, doc: Document, index: int) -> list[str]:
         """Đường dẫn heading của mảnh thứ `index`. Rỗng với chunker không nhìn cấu trúc.
@@ -217,23 +338,23 @@ class Chunker(ABC):
 
         out: list[TextPiece] = []
         for piece in pieces:
-            if len(piece.text) > self.config.max_chunk_size:
+            if len(piece.text) > self.sizing.max_chunk_size:
                 out.extend(
                     shift(
                         split_recursive_pieces(
                             piece.text,
-                            separators=list(self.config.separators),
-                            chunk_size=self.config.chunk_size,
-                            chunk_overlap=self.config.chunk_overlap,
+                            separators=list(self.sizing.separators),
+                            chunk_size=self.sizing.chunk_size,
+                            chunk_overlap=self.sizing.chunk_overlap,
                         ),
                         piece.start,
                     )
                 )
                 continue
 
-            if len(piece.text) < self.config.min_chunk_size and out:
+            if len(piece.text) < self.sizing.min_chunk_size and out:
                 merged = merge_pieces([out[-1], piece], "\n")
-                if len(merged.text) <= self.config.max_chunk_size:
+                if len(merged.text) <= self.sizing.max_chunk_size:
                     out[-1] = merged
                     continue
 

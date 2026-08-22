@@ -67,7 +67,9 @@ class SemanticChunker(Chunker):
         embeddings: EmbeddingProvider,
         config: ChunkingConfig | None = None,
     ) -> None:
-        super().__init__(config)
+        # `EmbeddingProvider` thoả sẵn giao thức `TokenCounter`, nên chunker nào
+        # có model embedding thì đo được kích thước theo token (`W3-06`).
+        super().__init__(config, token_counter=embeddings)
         self.embeddings = embeddings
 
     @property

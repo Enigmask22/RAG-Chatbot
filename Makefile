@@ -250,6 +250,11 @@ SCAN ?= tests/fixtures/loaders/scanned-page.pdf
 scan-probe:  ## In mật độ text layer từng trang của một PDF (W3-02)
 	$(PY) python -m rag_core.loaders.scan $(SCAN) --per-page
 
+TOKENS ?= 256
+.PHONY: token-probe
+token-probe:  ## So chunk_size theo ký tự vs theo token trên corpus thật (W3-06)
+	$(PY) python scripts/token_sizing_probe.py --tokens $(TOKENS)
+
 STRUCT ?= tests/fixtures/loaders/chuong-i.docx
 .PHONY: structure-probe
 structure-probe:  ## Đo StructureChunker trên một tài liệu thật (W3-03)

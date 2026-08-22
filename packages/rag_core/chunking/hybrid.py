@@ -34,8 +34,8 @@ class HybridChunker(Chunker):
         embeddings: EmbeddingProvider | None = None,
         config: ChunkingConfig | None = None,
     ) -> None:
-        super().__init__(config)
-        self._fixed = FixedSizeChunker(self.config)
+        super().__init__(config, token_counter=embeddings)
+        self._fixed = FixedSizeChunker(self.config, token_counter=embeddings)
         self._semantic = SemanticChunker(embeddings, self.config) if embeddings else None
         self.last_strategy_used: str = "fixed"
 

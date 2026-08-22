@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (5) (cuối file)** — `W3-03` xong, `W3` **3/9**. Structure-aware chunker (`chunking/structure.py`). ✅ Cả hai vế DoD đạt, và "đúng" định nghĩa mạnh hơn DoD: **nhất quán với `section_path_at` trên 1061 chunk của hai báo cáo World Bank thật, 0 chunk nói dối**. ⭐ **Gộp mảnh ngắn qua ranh giới section làm `section_path` nói dối** — cùng khuôn lỗi bản POC gộp qua ranh giới *tài liệu*; lối ra là **hạ đường dẫn xuống tổ tiên chung** (giá: 6,0% chunk). ⭐ **PDF thật chỉ cho MỘT cấp heading** (128 và 83 heading, tất cả cấp 1) và **corpus 0/60 tài liệu có cấu trúc** → `TD-24`. ⚠️ **Lỗi `break` của `W3-01` lộ ra**: 6 heading hỏng làm sai **575/587 chunk** ở `wb1`, 0% ở `wb2`. ⚠️ Tự bẫy hai lần: **vị trí cắt ≠ vị trí hỏi** (486/587 chunk lệch một section), và **script kiểm chứng lặp lại đúng lỗi nó đi kiểm**.
+> **Phiên mới nhất: 2026-08-22 (6) (cuối file)** — `W3-06` xong, `W3` **4/9**. Kích thước chunk tính bằng token (`chunking/tokens.py`). ✅ **DoD đã đạt SẴN**: BGE-M3 0/15.814 chunk bị cắt, dư **11,2×** — đã có số từ `W2-01`. ⭐ **Ký tự không phải đơn vị mang đi được**: đổi tokenizer là đổi số token của cùng một chunk tới **47%**, và chiều lệch EN↔VI **đảo dấu** giữa hai model. ⭐ Giá trị thật là **san bằng kích thước giữa hai ngôn ngữ** (PhoBERT: −22,3% → +2,4%), không phải tránh bị cắt. ⚠️⚠️ **Chép quy tắc p05 của `truncation.py` là SAI** vì ở đây có bước kiểm lại (hụt 17% ngân sách). ⚠️⚠️ **Lỗi trộn đơn vị của chính tôi, 28 test xanh không thấy** — test kiểm *trần*, không kiểm *đích*.
+>
+> Phiên trước: **2026-08-22 (5)** — `W3-03` xong, `W3` **3/9**. Structure-aware chunker (`chunking/structure.py`). ✅ Cả hai vế DoD đạt, và "đúng" định nghĩa mạnh hơn DoD: **nhất quán với `section_path_at` trên 1061 chunk của hai báo cáo World Bank thật, 0 chunk nói dối**. ⭐ **Gộp mảnh ngắn qua ranh giới section làm `section_path` nói dối** — cùng khuôn lỗi bản POC gộp qua ranh giới *tài liệu*; lối ra là **hạ đường dẫn xuống tổ tiên chung** (giá: 6,0% chunk). ⭐ **PDF thật chỉ cho MỘT cấp heading** (128 và 83 heading, tất cả cấp 1) và **corpus 0/60 tài liệu có cấu trúc** → `TD-24`. ⚠️ **Lỗi `break` của `W3-01` lộ ra**: 6 heading hỏng làm sai **575/587 chunk** ở `wb1`, 0% ở `wb2`. ⚠️ Tự bẫy hai lần: **vị trí cắt ≠ vị trí hỏi** (486/587 chunk lệch một section), và **script kiểm chứng lặp lại đúng lỗi nó đi kiểm**.
 >
 > Phiên trước: **2026-08-22 (4)** — `W3-02` xong, `W3` **2/9**. Phát hiện scan (`scan.py`) + cổng OCR (`ocr.py`). ⭐⭐ **Máy OCR đi kèm docling đọc tiếng Anh nguyên văn và trả RÁC cho tiếng Việt** — cả hai model (`ch`, `latin`), cùng một ảnh, cùng một lần chạy. Nên với corpus tiếng Việt **bật OCR còn tệ hơn tắt**, và loader **từ chối** thay vì trả rác → `TD-23`. ⭐ Ngưỡng đo từ PDF World Bank thật: **báo cáo born-digital thật vẫn có trang trống** (1/129 · 4/112) nên luật "một trang trống ⇒ scan" sẽ đẩy 100% báo cáo vào OCR. ⚠️ **Đính chính `W3-01`**: 70,56 s là cold start, cận biên thật **0,35 s/trang** — lý do `W3-02` tồn tại không phải chi phí mà là đúng/sai.
 >
@@ -2602,5 +2604,79 @@ uv run pytest tests/unit/test_structure_chunker.py
 Việc tiếp theo: **`W3-04`** (Contextual Retrieval — cần GPU thuê `W0-05`), hoặc
 đảo lên `W3-05`/`W3-06`. Đọc `TD-24` trước: `W3-06` không đo được cho tới khi
 corpus có tài liệu mang cấu trúc.
+
+---
+
+## Phiên 2026-08-22 (6) · `W3-06` — Token-based sizing
+
+**Mục tiêu phiên:** `W3-06` — DoD là *không chunk nào vượt max token của model*.
+
+### Đã làm
+
+* `packages/rag_core/chunking/tokens.py` — `TokenCounter` (Protocol) ·
+  `calibrate_density` · `fit_to_budget` · `TokenSizingUnavailable`
+* `ChunkingConfig.size_unit = "chars" | "tokens"` + `Chunker.sizing` (config đã
+  quy về ký tự cho **tài liệu hiện tại**) + `Chunker(token_counter=…)`
+* `scripts/token_sizing_probe.py` + `make token-probe`
+* +34 unit (`tests/unit/test_token_sizing.py`)
+
+### Ba thứ đáng nhớ
+
+1. ✅ **DoD đã đạt sẵn, và đã có số từ `W2-01`.** `truncation-bgem3.json`:
+   **0/15.814** chunk bị cắt, token max **734** trên cửa sổ **8192** — dư
+   **11,2×**. Nên hạng mục này không phải "làm cho hết bị cắt"; câu hỏi thật là
+   *`chunk_size` bằng ký tự có phải cái núm dùng được không*.
+
+2. ⭐ **Không, và vì hai lẽ.** Cùng một bộ 15.814 chunk: đổi tokenizer là đổi số
+   token tới **47%** (p50 EN 313 với PhoBERT vs 212 với BGE-M3). Và **chiều lệch
+   giữa hai ngôn ngữ đảo dấu** — BGE-M3 cho EN 5,83 ký tự/token vs VI 5,41;
+   PhoBERT cho EN 4,09 vs VI 5,33. "Tiếng Việt tốn token hơn" là tính chất của
+   **cặp (model, ngôn ngữ)**.
+   💡 Nên giá trị của token sizing là **san bằng hai nửa corpus**, không phải
+   tránh bị cắt: chênh p50 EN↔VI với PhoBERT đi từ **−22,3% xuống +2,4%**.
+
+3. ⚠️⚠️ **Chép lại một lập luận ĐÚNG sang ngữ cảnh khác thì thành sai.**
+   `truncation.py` dùng phân vị 5 cho mật độ ký tự/token, có lý do đã ghi: nó
+   *gợi ý* một ngân sách mà **không ai kiểm lại**. Ở đây `fit_to_budget` kiểm
+   chính xác, nên chừa biên không mua được gì mà làm `chunk_size=256` thật ra có
+   nghĩa là **213** (−17%). Đổi sang trung bình: **261** (+2%), cả hai đều 0
+   vượt trần.
+
+### Hai chỗ tự bẫy mình
+
+4. ⚠️⚠️ **Lỗi trộn đơn vị, và 28 test xanh không thấy.** Tôi viết docstring
+   `sizing` dặn "mọi chỗ phải đọc `self.sizing`, không đọc `self.config`" rồi để
+   `FixedSizeChunker`/`StructureChunker` đọc `self.config` — **12 chỗ**, nhận 256
+   **token** dùng như 256 **ký tự**. Cả 28 test đều kiểm **trần**, mà trần do một
+   đường code khác (`_fit_tokens`) bảo đảm; không test nào kiểm **đích**. Corpus
+   thật mới lộ: chunk tiếng Việt p50 = **71 token** thay vì 256.
+   💡 Đã thêm test kiểm đích (p50 phải trong `[0,5×; 1,2×]` ngân sách) và một test
+   **quét chính source** tìm `self.config.<kích thước>`. Cấy lại lỗi thì 4 test đỏ.
+
+5. ⚠️ **Probe đầu tiên đo một corpus không tồn tại.** `Path.read_text()` trên
+   Windows chuẩn hoá CRLF → LF: 14.075.359 ký tự và **18.038 chunk** thay vì
+   14.284.300 và **15.814**. Chỉ phát hiện được vì lệch `index-baseline.json`.
+   Đọc byte rồi decode thì tái lập `truncation-baseline.json` **từng chữ số**.
+   ⚠️ Đây đúng cái ví dụ tôi dùng làm test cho guard `_usable_structure` ở
+   `W3-03` một hạng mục trước — viết được phép kiểm cho một chế độ hỏng không có
+   nghĩa là nhận ra nó khi nó xảy ra với mình.
+
+### Cố ý không làm
+
+Không đổi `configs/indexing/bgem3.yaml` sang chế độ token: bật lên là
+**15.814 → 11.190 chunk**, tức index khác và mọi con số `W2` không so được. Và
+đổi `chunk_size` là chiều mà `TD-20` đã chỉ ra không kiểm định cặp được. →
+`TD-25`, thuộc `W3-09`.
+
+### Lệnh để tiếp tục
+
+```bash
+make token-probe                  # bảng ký tự vs token, cả hai model
+make token-probe TOKENS=512
+uv run pytest tests/unit/test_token_sizing.py
+```
+
+Việc tiếp theo: **`W3-05`** (parent-child) — không cần GPU, không cần key, không
+vướng corpus.
 
 ---

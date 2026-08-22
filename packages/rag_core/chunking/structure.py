@@ -53,6 +53,7 @@ from ..schemas import Chunk, Document, DocumentMetadata
 from .base import Chunker, ChunkingConfig, ChunkingStrategy
 from .fixed import split_recursive_pieces
 from .pieces import TextPiece, merge_pieces, shift
+from .tokens import TokenCounter
 
 __all__ = ["StructureChunker", "common_ancestor", "section_boundaries"]
 
@@ -115,8 +116,13 @@ class StructureChunker(Chunker):
 
     strategy: ClassVar[ChunkingStrategy] = ChunkingStrategy.STRUCTURE
 
-    def __init__(self, config: ChunkingConfig | None = None) -> None:
-        super().__init__(config)
+    def __init__(
+        self,
+        config: ChunkingConfig | None = None,
+        *,
+        token_counter: TokenCounter | None = None,
+    ) -> None:
+        super().__init__(config, token_counter=token_counter)
         self._structures: dict[str, LoadedDocument] = {}
         self.documents_without_structure = 0
         self.documents_with_mismatched_text = 0
@@ -151,9 +157,9 @@ class StructureChunker(Chunker):
         """
         return split_recursive_pieces(
             text,
-            separators=list(self.config.separators),
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
+            separators=list(self.sizing.separators),
+            chunk_size=self.sizing.chunk_size,
+            chunk_overlap=self.sizing.chunk_overlap,
         )
 
     def _prepare_pieces(self, doc: Document) -> list[TextPiece]:
@@ -163,8 +169,19 @@ class StructureChunker(Chunker):
             self._paths = [[] for _ in pieces]
             return pieces
 
-        pieces, self._paths = self._split_sections(doc.content, structure)
-        return pieces
+        limit = self._begin_sizing(doc.content)
+        try:
+            pieces, paths = self._split_sections(doc.content, structure)
+            if limit is None:
+                self._paths = paths
+                return pieces
+            # Trần token cắt một mảnh thành nhiều mảnh, nên `paths` phải giãn
+            # theo — cả ba mảnh con thừa kế `section_path` của mảnh mẹ.
+            fitted = self._fit_tokens(pieces, limit)
+            self._paths = [paths[source] for source, _ in fitted]
+            return [piece for _, piece in fitted]
+        finally:
+            self._end_sizing()
 
     def _usable_structure(self, doc: Document) -> LoadedDocument | None:
         """Cấu trúc dùng được cho tài liệu này, hoặc `None` kèm lý do đã đếm.
@@ -224,13 +241,13 @@ class StructureChunker(Chunker):
 
     def _section_pieces(self, body: str) -> list[TextPiece]:
         """Ép kích thước **bên trong** một section. Span tính từ đầu `body`."""
-        if len(body) <= self.config.max_chunk_size:
+        if len(body) <= self.sizing.max_chunk_size:
             return [TextPiece(body, 0, len(body))]
         return split_recursive_pieces(
             body,
-            separators=list(self.config.separators),
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
+            separators=list(self.sizing.separators),
+            chunk_size=self.sizing.chunk_size,
+            chunk_overlap=self.sizing.chunk_overlap,
         )
 
     def _merge_into_previous(
@@ -243,11 +260,11 @@ class StructureChunker(Chunker):
         """Gộp mảnh quá ngắn vào mảnh trước, hạ `section_path` xuống tổ tiên chung."""
         if not self.config.structure_merge_short_sections:
             return False
-        if len(piece.text) >= self.config.min_chunk_size or not out:
+        if len(piece.text) >= self.sizing.min_chunk_size or not out:
             return False
 
         merged = merge_pieces([out[-1], piece], "\n")
-        if len(merged.text) > self.config.max_chunk_size:
+        if len(merged.text) > self.sizing.max_chunk_size:
             return False
 
         out[-1] = merged

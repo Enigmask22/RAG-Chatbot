@@ -7,6 +7,7 @@ from .fixed import FixedSizeChunker, split_recursive
 from .hybrid import HybridChunker
 from .semantic import SemanticChunker, split_sentences
 from .structure import StructureChunker, common_ancestor, section_boundaries
+from .tokens import TokenCounter, TokenSizingUnavailable, calibrate_density, fit_to_budget
 
 __all__ = [
     "CacheStats",
@@ -19,8 +20,12 @@ __all__ = [
     "SQLiteChunkCache",
     "SemanticChunker",
     "StructureChunker",
+    "TokenCounter",
+    "TokenSizingUnavailable",
     "build_chunker",
+    "calibrate_density",
     "common_ancestor",
+    "fit_to_budget",
     "section_boundaries",
     "split_recursive",
     "split_sentences",
@@ -34,9 +39,9 @@ def build_chunker(
     """Factory theo `config.strategy` — điểm duy nhất map config sang chunker."""
     cfg = config or ChunkingConfig()
     if cfg.strategy is ChunkingStrategy.FIXED:
-        return FixedSizeChunker(cfg)
+        return FixedSizeChunker(cfg, token_counter=embeddings)
     if cfg.strategy is ChunkingStrategy.STRUCTURE:
-        return StructureChunker(cfg)
+        return StructureChunker(cfg, token_counter=embeddings)
     if cfg.strategy is ChunkingStrategy.SEMANTIC:
         if embeddings is None:
             raise ValueError("strategy=semantic bắt buộc phải có EmbeddingProvider")

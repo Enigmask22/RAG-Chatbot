@@ -174,7 +174,7 @@ class FixedSizeChunker(Chunker):
     def split_pieces(self, text: str) -> list[TextPiece]:
         return split_recursive_pieces(
             text,
-            separators=list(self.config.separators),
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
+            separators=list(self.sizing.separators),
+            chunk_size=self.sizing.chunk_size,
+            chunk_overlap=self.sizing.chunk_overlap,
         )
