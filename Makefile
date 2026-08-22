@@ -241,6 +241,14 @@ eval-rerank:  ## Eval reranked trên cấu hình THẮNG của W2-04 (BUNDLE=bge
 		--index-config $(INDEX_CONFIG) --run-name $(RUN) --retrieval-mode reranked \
 		--rerank-base hybrid --rrf-k 1 --candidate-k 20 $(RERANK_ARGS)
 
+.PHONY: loader-fixtures
+loader-fixtures:  ## Sinh lại 6 fixture cho loader (W3-01) — idempotent
+	$(PY) python scripts/make_loader_fixtures.py
+
+.PHONY: loader-probe
+loader-probe:  ## Cho corpus qua docling và đếm xem span golden còn sống bao nhiêu (W3-01)
+	$(PY) python scripts/loader_probe.py
+
 .PHONY: filter-probe
 filter-probe:  ## Đo giá của metadata filter theo độ chọn lọc (W2-06)
 	$(PY) python scripts/filter_probe.py --config $(INDEX_CONFIG) --mode $(MODE) \

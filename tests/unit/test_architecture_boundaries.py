@@ -74,7 +74,7 @@ def test_rag_core_stays_dependency_light() -> None:
     đầu file làm `make test` chậm đi hàng chục giây và buộc CI phải cài GPU stack
     chỉ để chạy unit test.
     """
-    heavy = {"torch", "sentence_transformers", "qdrant_client", "transformers"}
+    heavy = {"torch", "sentence_transformers", "qdrant_client", "transformers", "docling"}
     imports = _imported_roots(_REPO_ROOT / "packages" / "rag_core")
 
     # Import trong `if TYPE_CHECKING:` không tính — chúng không chạy lúc runtime.

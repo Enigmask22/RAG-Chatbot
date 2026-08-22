@@ -43,6 +43,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-08-prep` `--category`/`--lang` | [`tasks/w2-08-prep-compare-groups.md`](tasks/w2-08-prep-compare-groups.md) | — | `bycategory-*`, `bylang-*` | — | Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực |
 | `W2-08` ablation | [`tasks/w2-08-ablation.md`](tasks/w2-08-ablation.md) | `e1-*` (**14 ô**) | `ablation-exp-001-ndcg` | — | **Cấu hình thắng là một TẬP, không một dòng**; và người thắng từng do **6 mẫu lại trên 10.000** quyết định |
 | `W2-09` tổng kết exp-001 | [`tasks/exp-001-retrieval.md`](tasks/exp-001-retrieval.md) | `e1-*` | `cmp-e1-*` · `bycategory-e1-*` · `contrast-category-exp-001` · `contrast-lang-exp-001` | — | **15/15 metric**, `hit_rate@5` **0↔120 câu**; và **câu "category nào cải thiện nhiều nhất" KHÔNG có câu trả lời** — cả 6 nhóm hoà |
+| `W3-01` Docling loader | [`tasks/w3-01-docling-loader.md`](tasks/w3-01-docling-loader.md) | — | — | — | 6 định dạng, cả hai vế DoD đạt; và **chèn parser vào giữa byte và `Document.content` giết sạch golden set — 0/280 span sống sót** (`TD-22`) |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -81,6 +82,8 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make known-item` | `probes/w2-03-known-item.json` |
 | `make rerank-probe` | `probes/w2-05-rerank-probe.json` |
 | `make filter-probe` | `probes/w2-06-filter-probe.json` |
+| `make loader-fixtures` | `tests/fixtures/loaders/*` (6 file, idempotent) |
+| `make loader-probe` | — (in ra stdout: đồng nhất byte · dòng còn nguyên · span golden sống) |
 | `make exp` | `runs/<run_prefix>-*` × 3 file mỗi ô + `.cache/experiments/<name>.json` + MLflow |
 | `make exp-dry` | — (chỉ in bảng grid + preflight) |
 | `make exp-backfill` | MLflow, **đọc từ** `runs/` — không chạy eval |

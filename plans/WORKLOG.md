@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (2) (cuối file)** — `W2-09` xong, **`W2` đóng 10/10**. ⭐ Bảng delta baseline → đỉnh bảng **15/15 metric**, `ndcg@10` ×4,2, `hit_rate@5` **0↔120 câu**. ⭐⭐ **Câu thứ hai của DoD — "category nào cải thiện nhiều nhất" — KHÔNG có câu trả lời**: nó so `Δ_A` với `Δ_B` mà mọi bảng đã công bố chỉ kiểm `Δ ≠ 0`; dựng `contrast.py` (bootstrap **không cặp**) thì **cả 6 nhóm hoà, 0/5 phân giải được**, và **vẫn hoà khi bỏ hiệu chỉnh** — giới hạn của dữ liệu, không của ngưỡng. Cần **~440 câu**. ⚠️ **Hàng rào thứ tư**: số nhãn/câu đổi **giữa các nhóm**, nên `ndcg@10` không xếp hạng nhóm được. ⭐ **Bậc đổi embedding model chiếm phần lớn nhất ở cả 6/6 category**. ⭐⭐ Quyết định (b): **luật nâng `B` hiển nhiên cho câu trả lời SAI** — `MIN_TAIL_RESAMPLES` 30 → **128**. Việc tiếp theo: `G2` rồi `W3`.
+> **Phiên mới nhất: 2026-08-22 (3) (cuối file)** — `W3-01` xong, `W3` **1/9**. Loader 6 định dạng (`rag_core.loaders`). ✅ Cả hai vế DoD đạt. ⭐ **Fixture "sạch" đo cái generator của tôi, không đo docling** — PDF hai cột toàn dòng ngắn bằng nhau cho kết quả **không đơn điệu** (4 ✗ · 12 ✓ · 24 ✗ · 40 ✓); đổi sang cột văn xuôi so le thì 4/4 đúng. ⭐⭐ **Chèn parser vào giữa byte và `Document.content` giết sạch golden set: 0/60 tài liệu đồng nhất byte, 0/280 span sống sót** — mà văn bản chỉ ngắn đi 8,85%, vì chữ không mất, **dòng bị dồn**. → `TD-22`. `.txt` **không** đi qua docling, và đó là điều kiện để mọi con số `W2` còn giá trị.
+>
+> Phiên trước: **2026-08-22 (2)** — `W2-09` xong, **`W2` đóng 10/10**. ⭐ Bảng delta baseline → đỉnh bảng **15/15 metric**, `ndcg@10` ×4,2, `hit_rate@5` **0↔120 câu**. ⭐⭐ **Câu thứ hai của DoD — "category nào cải thiện nhiều nhất" — KHÔNG có câu trả lời**: nó so `Δ_A` với `Δ_B` mà mọi bảng đã công bố chỉ kiểm `Δ ≠ 0`; dựng `contrast.py` (bootstrap **không cặp**) thì **cả 6 nhóm hoà, 0/5 phân giải được**, và **vẫn hoà khi bỏ hiệu chỉnh** — giới hạn của dữ liệu, không của ngưỡng. Cần **~440 câu**. ⚠️ **Hàng rào thứ tư**: số nhãn/câu đổi **giữa các nhóm**, nên `ndcg@10` không xếp hạng nhóm được. ⭐ **Bậc đổi embedding model chiếm phần lớn nhất ở cả 6/6 category**. ⭐⭐ Quyết định (b): **luật nâng `B` hiển nhiên cho câu trả lời SAI** — `MIN_TAIL_RESAMPLES` 30 → **128**. Việc tiếp theo: `G2` rồi `W3`.
 >
 > Phiên trước: `W2-08` xong: bảng ablation **14 ô** có `p`/CI từng dòng (`make ablation`). ⭐ Câu "cấu hình nào thắng" là một **phép chọn cực đại**, nên câu trả lời là một **tập** — bốn rổ: 2 không phân biệt được · 3 tranh chấp · 8 kém ở mọi metric · 1 không so được. ⭐⭐ **Người thắng từng do 6 mẫu lại trên 10.000 quyết định** (α đã hiệu chỉnh để lại đúng 6 mẫu trong đuôi; đo 6 seed thì `ndcg@10` đổi dấu, và ở B=50.000 thì khoảng **chứa 0**) — và điều đó **ngược** ghi chú tôi tự viết ở `W2-08-prep`. ⚠️⚠️ Lỗi đắt nhất: `KHÔNG SO ĐƯỢC` đi cùng đường với "hoà", nên **ô tệ nhất bảng** thành thành viên rẻ nhất của tập thắng. ⚠️ Luật `1/n` của tôi sai và 13/14 file đã công bố nói ra. Việc tiếp theo: `W2-09`.
 >
@@ -2358,3 +2360,77 @@ bằng một phép đo mà tôi chưa chạy lần nào.
 
 ---
 
+## Phiên 2026-08-22 (3) · `W3-01` — Docling loader
+
+**Mục tiêu phiên:** `W3-01` — loader 6 định dạng + heading hierarchy, DoD là *PDF
+2 cột đọc đúng reading order* và *bảng giữ được cấu trúc*.
+
+### Đã làm
+
+* `packages/rag_core/loaders/` — 4 module:
+  * `base.py` — `LoadedDocument` · `Heading` · `ParseFingerprint` · `section_path_at()`
+  * `plain.py` — `.txt`, **hàm đồng nhất**, không strip/normalise gì
+  * `docling_backend.py` — lazy import, `_normalise_depth`, `do_ocr=False`
+  * `__init__.py` — bảng định tuyến theo đuôi file
+* `scripts/make_loader_fixtures.py` + `make loader-fixtures` — sinh 6 fixture, idempotent
+* `scripts/loader_probe.py` + `make loader-probe` — đo corpus trước/sau
+* `tests/unit/test_loaders.py` — 63 test; `test_architecture_boundaries.py` thêm `docling`
+* `pyproject.toml` — extra `ingestion` (`docling>=2.121,<3`)
+
+### Ba thứ đáng nhớ
+
+1. ⭐ **Fixture được dựng cho "sạch" là fixture nằm ngoài phân bố.** PDF hai cột
+   bản đầu — mỗi cột 4 dòng ngắn bằng nhau, cách đều — làm docling đọc **sai**
+   thứ tự. Quét theo số dòng: **4 ✗ · 12 ✓ · 24 ✗ · 40 ✓**, và ở `n=24` cột phải
+   bị phân loại thành `table`. Không đơn điệu ⇒ không phải thư viện hỏng, mà là
+   trang nằm ngoài phân bố huấn luyện của model bố cục. Cột văn xuôi có độ dài
+   dòng so le: **4/4** biến thể đúng.
+   💡 Nếu bản đầu tình cờ rơi vào `n=12` thì tôi đã có test xanh, DoD ✅, và một
+   kết luận không có cơ sở nào — **và không nhìn output nào phát hiện ra được**,
+   vì thứ đo nhầm là do chính tôi dựng ra.
+
+2. ⭐⭐ **0/280 span golden sống sót, và cơ chế không phải cái tôi đoán.** Tôi
+   đoán đúng "0/60 đồng nhất byte" (D1) rồi tưởng đã hiểu lý do. Ba con số:
+   độ dài còn **91,15%**, dòng còn nguyên **2,70%**, span sống **0/280**. Chữ
+   **không mất** — dòng bị **dồn** thành đoạn (+ code fence, bỏ `\r`), nên mọi
+   offset phía sau trượt. `sha256` vẫn khớp manifest, không test nào đỏ, mọi
+   `chunk_id` vẫn tồn tại → `TD-22`, làm **trước** `W3-07`.
+
+3. ⚠️ **Cùng một tài liệu 3 cấp heading ra ba cách đánh số.** `.docx` cho
+   `section_header` level 1/2/3; `.md`/`.html` cho `title` rồi level 1/2; `.pptx`
+   ba `title`; `.xlsx` không có heading nào. Tin thẳng `item.level` thì cùng một
+   heading là **cấp 3 khi tới từ DOCX và cấp 2 khi tới từ HTML** →
+   `_normalise_depth`. `W3-03` phải đọc §4 của report trước khi bắt đầu.
+
+### Ba chỗ tự bẫy mình
+
+4. `SequenceMatcher.ratio()` trên hai chuỗi 500 KB **không chạy xong** (bậc hai),
+   không phải chạy chậm — treo 60 tài liệu. Đổi sang tỉ lệ dòng còn nguyên đếm
+   bằng `Counter`; chính con số đó mới lộ ra cơ chế "dồn dòng" ở (2). Nếu
+   `SequenceMatcher` chạy xong thì nó cho ~0,9 và tôi đã kết luận "gần như không
+   đổi" — sai hoàn toàn.
+5. Đặt `book.properties.modified` **trước** khi save là không đủ: openpyxl ghi đè
+   bằng giờ hiện tại ngay trong lúc serialize (6 tiến trình → 3 chuỗi byte).
+   Phải sửa `docProps/core.xml` **sau** khi save.
+6. Test đầu của tôi tìm `b"(for several sentences"` trong PDF, mà văn bản wrap ở
+   34 ký tự nên chuỗi ấy không bao giờ là đầu dòng. Đỏ ngay lần chạy đầu — đúng
+   kiểu lỗi mà test nên bắt, chỉ là nó bắt chính tôi.
+7. ⚠️ `.gitignore` có `*.pdf` nên fixture PDF **không vào repo**: clone sạch thì
+   `test_fixture_exists` đỏ, còn trên máy tôi mọi thứ xanh. Bắt bằng
+   `git add -A --dry-run`, không bằng test. Thêm `!tests/fixtures/loaders/*.pdf`.
+
+**Kiểm chứng:** 1277 test — 1276 passed, 1 skipped, exit 0, 377,42 s ·
+`make lint` sạch (ruff + `mypy` 119 file).
+
+### Lệnh để tiếp tục
+
+```bash
+make loader-fixtures    # sinh lại 6 fixture (idempotent)
+make loader-probe       # 0/60 đồng nhất byte · 0/280 span sống
+uv run pytest tests/unit/test_loaders.py
+```
+
+Việc tiếp theo: **`W3-02`** (OCR fallback — thừa hưởng số 70,56 s vs 0,12–0,77 s)
+hoặc **`TD-22`** (ghim `text_sha256` vào manifest, chặn `W3-07`).
+
+---

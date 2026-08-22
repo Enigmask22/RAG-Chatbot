@@ -28,6 +28,12 @@ pipeline = [
     "pyyaml>=6.0",
     "tqdm>=4.66",
 ]
+# Parse tài liệu (W3-01). Nặng — kéo theo torchvision + opencv + rapidocr — nên
+# **không** nằm trong `pipeline`: `rag_core.loaders` import docling lazy và
+# đường `.txt`/`.md` chạy được khi thiếu nó hoàn toàn.
+ingestion = [
+    "docling>=2.121,<3",
+]
 # Client cho API tương thích OpenAI (DeepSeek, OpenRouter). Cố ý không dùng SDK
 # `openai`: chỉ cần đúng một endpoint, và cần kiểm soát chính xác phần retry +
 # đọc `prompt_cache_hit_tokens` mà schema chuẩn không có.

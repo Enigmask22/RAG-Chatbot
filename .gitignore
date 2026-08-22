@@ -23,6 +23,10 @@ chroma_db/
 .chunking_cache/
 uploads/
 *.pdf
+# Trừ fixture của loader (`W3-01`): 2 KB, tự sinh bằng `make loader-fixtures`,
+# và `tests/unit/test_loaders.py` đỏ nếu thiếu nó. Quy tắc `*.pdf` ở trên là để
+# chặn tài liệu tải về, không phải để chặn fixture.
+!tests/fixtures/loaders/*.pdf
 
 # Cache & artifact của pipeline
 .cache/
