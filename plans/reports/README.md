@@ -11,7 +11,7 @@ tay hay không*.
 |---|---|---|---|
 | [`tasks/`](tasks/) | Tường thuật một hạng mục `Wx-xx`: câu hỏi, dự đoán ghi trước, số đo, kết luận, cái gì sai | Tôi viết | ✅ đây là chỗ duy nhất |
 | [`runs/`](runs/) | Output của **một lần chạy eval**: `<run>-retrieval.json` + `.md` + `<run>-per-query.jsonl` | `pipeline.eval.retrieval_eval` | ❌ sửa là làm hỏng bằng chứng |
-| [`compare/`](compare/) | `cmp-<base>-vs-<cand>.md` (một cặp) · `by<chiều>-*.md` (chia nhóm, có hiệu chỉnh) · `ablation-*.md` (**N ô** + tập tương đương) | `pipeline.eval.compare`, `pipeline.eval.ablation` | ❌ |
+| [`compare/`](compare/) | `cmp-<base>-vs-<cand>.md` (một cặp) · `by<chiều>-*.md` (chia nhóm, có hiệu chỉnh) · `ablation-*.md` (**N ô** + tập tương đương) · `contrast-<chiều>-*.md` (**nhóm nào cải thiện nhiều nhất**) | `pipeline.eval.compare`, `pipeline.eval.ablation`, `pipeline.eval.contrast` | ❌ |
 | [`probes/`](probes/) | Output script đo lẻ + report build index | `scripts/*_probe.py`, `pipeline.indexing.*` | ❌ |
 | [`goldenset/`](goldenset/) | Provenance + checksum của tập nhãn | `pipeline.goldenset.*` | ❌ |
 
@@ -42,6 +42,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-07` experiment runner | [`tasks/w2-07-experiment-runner.md`](tasks/w2-07-experiment-runner.md) | `e1-*` (**14 ô**) | — | — | Resume khoá vào **`fingerprint` của ô**; grid tái lập **5** con số đã công bố đúng từng chữ số; MLflow hỏng **hai** lần |
 | `W2-08-prep` `--category`/`--lang` | [`tasks/w2-08-prep-compare-groups.md`](tasks/w2-08-prep-compare-groups.md) | — | `bycategory-*`, `bylang-*` | — | Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực |
 | `W2-08` ablation | [`tasks/w2-08-ablation.md`](tasks/w2-08-ablation.md) | `e1-*` (**14 ô**) | `ablation-exp-001-ndcg` | — | **Cấu hình thắng là một TẬP, không một dòng**; và người thắng từng do **6 mẫu lại trên 10.000** quyết định |
+| `W2-09` tổng kết exp-001 | [`tasks/exp-001-retrieval.md`](tasks/exp-001-retrieval.md) | `e1-*` | `cmp-e1-*` · `bycategory-e1-*` · `contrast-category-exp-001` · `contrast-lang-exp-001` | — | **15/15 metric**, `hit_rate@5` **0↔120 câu**; và **câu "category nào cải thiện nhiều nhất" KHÔNG có câu trả lời** — cả 6 nhóm hoà |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -88,6 +89,7 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make eval-compare-by` | `compare/by<BY>-<BASE>-vs-<CAND>.md` (có hiệu chỉnh Bonferroni) |
 | `make eval-compare-subset` | *không ghi file* — in ra stdout (một nhóm nêu trước, không hiệu chỉnh) |
 | `make ablation` | `compare/ablation-exp-001-<RANK_SLUG>.md` — **N ô** kèm tập tương đương (hiệu chỉnh trên `(số ô − 1) × số metric`) |
+| `make contrast` | `compare/contrast-<BY>-exp-001.md` — **nhóm nào cải thiện nhiều nhất**, bootstrap **không cặp** (hiệu chỉnh trên `số nhóm − 1`) |
 
 Mặc định trong code cũng trỏ vào đây: `retrieval_eval.py --out-dir` và
 `compare.py --dir` đều là `plans/reports/runs`.

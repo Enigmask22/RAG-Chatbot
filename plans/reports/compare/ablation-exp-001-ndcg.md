@@ -63,7 +63,7 @@ Những ô sau bị **một phần** metric chính nói là kém đỉnh bảng,
 | run | cấu hình | metric nói kém | metric không kết luận | p95 ms | so đỉnh bảng |
 |---|---|---|---|---:|---:|
 | `e1-rr-bgem3-reranked-onhybrid-rc20` | bge-m3 · reranked · base=hybrid · rerank_candidates=20 · chunk=1000 | `ndcg@10`, `mrr` | `hit_rate@1 (trong ngưỡng nhiễu)` | 276.5 | **4.21× rẻ hơn** |
-| `e1-rr-bgem3-reranked-onhybrid-rc50` | bge-m3 · reranked · base=hybrid · rerank_candidates=50 · chunk=1000 | `mrr` | `ndcg@10 (TRÁI CHIỀU)`, `hit_rate@1 (KHÔNG ĐỦ LỰC)` | 608.9 | **1.91× rẻ hơn** |
+| `e1-rr-bgem3-reranked-onhybrid-rc50` | bge-m3 · reranked · base=hybrid · rerank_candidates=50 · chunk=1000 | `mrr` | `ndcg@10 (trong ngưỡng nhiễu)`, `hit_rate@1 (KHÔNG ĐỦ LỰC)` | 608.9 | **1.91× rẻ hơn** |
 | `e1-rr-bgem3-reranked-ondense-rc50` | bge-m3 · reranked · base=dense · rerank_candidates=50 · chunk=1000 | `ndcg@10`, `mrr` | `hit_rate@1 (KHÔNG ĐỦ LỰC)` | 618.5 | **1.88× rẻ hơn** |
 
 ### Không so được (nhãn khác nhau)
@@ -74,101 +74,127 @@ Những ô sau bị **một phần** metric chính nói là kém đỉnh bảng,
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rr-bgem3-reranked-ondense-rc100`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rr-bgem3-reranked-ondense-rc100 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.6624 | -0.0113 | 209 | CI99.87% [-0.0472, +0.0153] · 9↔11 câu khác nhau (p dấu=0.8238) · CI95 thô [-0.0313, +0.0063] · **đếm câu đi ngược Δ** (11 câu tốt hơn vs 9 câu xấu đi, mà Δ = -0.0113) | trong ngưỡng nhiễu |
+| `ndcg@10` | 0.6736 | 0.6624 | -0.0113 | 209 | CI99.87% [-0.0450, +0.0156] · 9↔11 câu khác nhau (p dấu=0.8238) · CI95 thô [-0.0308, +0.0058] · **đếm câu đi ngược Δ** (11 câu tốt hơn vs 9 câu xấu đi, mà Δ = -0.0113) | trong ngưỡng nhiễu |
 | `hit_rate@1` | 0.5789 | 0.5742 | -0.0048 | 209 | p=1 · 3↔2 câu đổi chiều · **trần `p` = 0.0625** ở α=0.001282 | KHÔNG ĐỦ LỰC |
-| `mrr` | 0.6694 | 0.6595 | -0.0099 | 209 | CI99.87% [-0.0497, +0.0223] · 8↔7 câu khác nhau (p dấu=1) · CI95 thô [-0.0310, +0.0096] | trong ngưỡng nhiễu |
+| `mrr` | 0.6694 | 0.6595 | -0.0099 | 209 | CI99.87% [-0.0461, +0.0220] · 8↔7 câu khác nhau (p dấu=1) · CI95 thô [-0.0309, +0.0093] | trong ngưỡng nhiễu |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rr-bgem3-reranked-onhybrid-rc50`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rr-bgem3-reranked-onhybrid-rc50 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.6481 | -0.0255 | 209 | CI99.87% [-0.0638, -0.0003] · 10↔11 câu khác nhau (p dấu=1) · CI95 thô [-0.0478, -0.0075] · **đếm câu đi ngược Δ** (11 câu tốt hơn vs 10 câu xấu đi, mà Δ = -0.0255) | TRÁI CHIỀU |
+| `ndcg@10` | 0.6736 | 0.6481 | -0.0255 | 209 | CI99.87% [-0.0647, +0.0004] · 10↔11 câu khác nhau (p dấu=1) · CI95 thô [-0.0477, -0.0073] · **đếm câu đi ngược Δ** (11 câu tốt hơn vs 10 câu xấu đi, mà Δ = -0.0255) | trong ngưỡng nhiễu |
 | `hit_rate@1` | 0.5789 | 0.5598 | -0.0191 | 209 | p=0.125 · 4↔0 câu đổi chiều · **trần `p` = 0.125** ở α=0.001282 | KHÔNG ĐỦ LỰC |
-| `mrr` | 0.6694 | 0.6440 | -0.0254 | 209 | CI99.87% [-0.0625, -0.0007] · 10↔6 câu khác nhau (p dấu=0.4545) · CI95 thô [-0.0471, -0.0079] | khác biệt thật |
+| `mrr` | 0.6694 | 0.6440 | -0.0254 | 209 | CI99.87% [-0.0640, -0.0002] · 10↔6 câu khác nhau (p dấu=0.4545) · CI95 thô [-0.0472, -0.0076] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rr-bgem3-reranked-ondense-rc50`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rr-bgem3-reranked-ondense-rc50 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.6268 | -0.0469 | 209 | CI99.87% [-0.0981, -0.0098] · 17↔11 câu khác nhau (p dấu=0.3449) · CI95 thô [-0.0750, -0.0219] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.6268 | -0.0469 | 209 | CI99.87% [-0.0973, -0.0085] · 17↔11 câu khác nhau (p dấu=0.3449) · CI95 thô [-0.0757, -0.0216] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.5455 | -0.0335 | 209 | p=0.03906 · 8↔1 câu đổi chiều · **trần `p` = 0.003906** ở α=0.001282 | KHÔNG ĐỦ LỰC |
-| `mrr` | 0.6694 | 0.6265 | -0.0429 | 209 | CI99.87% [-0.0937, -0.0060] · 15↔7 câu khác nhau (p dấu=0.1338) · CI95 thô [-0.0715, -0.0178] | khác biệt thật |
+| `mrr` | 0.6694 | 0.6265 | -0.0429 | 209 | CI99.87% [-0.0940, -0.0045] · 15↔7 câu khác nhau (p dấu=0.1338) · CI95 thô [-0.0720, -0.0174] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rr-bgem3-reranked-onhybrid-rc20`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rr-bgem3-reranked-onhybrid-rc20 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.5823 | -0.0913 | 209 | CI99.87% [-0.1522, -0.0390] · 35↔13 câu khác nhau (p dấu=0.002088) · CI95 thô [-0.1281, -0.0576] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.5823 | -0.0913 | 209 | CI99.87% [-0.1543, -0.0385] · 35↔13 câu khác nhau (p dấu=0.002088) · CI95 thô [-0.1280, -0.0576] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.5263 | -0.0526 | 209 | p=0.007385 · 13↔2 câu đổi chiều | trong ngưỡng nhiễu |
-| `mrr` | 0.6694 | 0.5902 | -0.0792 | 209 | CI99.87% [-0.1395, -0.0273] · 32↔7 câu khác nhau (p dấu=7.025e-05) · CI95 thô [-0.1155, -0.0463] | khác biệt thật |
+| `mrr` | 0.6694 | 0.5902 | -0.0792 | 209 | CI99.87% [-0.1419, -0.0274] · 32↔7 câu khác nhau (p dấu=7.025e-05) · CI95 thô [-0.1155, -0.0461] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rr-bgem3-reranked-ondense-rc20`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rr-bgem3-reranked-ondense-rc20 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.5676 | -0.1060 | 209 | CI99.87% [-0.1761, -0.0468] · 38↔16 câu khác nhau (p dấu=0.003838) · CI95 thô [-0.1454, -0.0694] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.5676 | -0.1060 | 209 | CI99.87% [-0.1747, -0.0487] · 38↔16 câu khác nhau (p dấu=0.003838) · CI95 thô [-0.1459, -0.0692] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.5072 | -0.0718 | 209 | p=0.0002747 · 16↔1 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.5756 | -0.0938 | 209 | CI99.87% [-0.1621, -0.0392] · 32↔6 câu khác nhau (p dấu=2.434e-05) · CI95 thô [-0.1324, -0.0580] | khác biệt thật |
+| `mrr` | 0.6694 | 0.5756 | -0.0938 | 209 | CI99.87% [-0.1623, -0.0375] · 32↔6 câu khác nhau (p dấu=2.434e-05) · CI95 thô [-0.1331, -0.0578] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rrf-bgem3-hybrid-k0`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rrf-bgem3-hybrid-k0 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.4582 | -0.2155 | 209 | CI99.87% [-0.2909, -0.1438] · 100↔14 câu khác nhau (p dấu=3.488e-17) · CI95 thô [-0.2619, -0.1703] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.4582 | -0.2155 | 209 | CI99.87% [-0.2934, -0.1428] · 100↔14 câu khác nhau (p dấu=3.488e-17) · CI95 thô [-0.2620, -0.1709] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.3493 | -0.2297 | 209 | p=2.43e-10 · 55↔7 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.4481 | -0.2213 | 209 | CI99.87% [-0.3074, -0.1399] · 86↔11 câu khác nhau (p dấu=1.434e-15) · CI95 thô [-0.2733, -0.1701] | khác biệt thật |
+| `mrr` | 0.6694 | 0.4481 | -0.2213 | 209 | CI99.87% [-0.3079, -0.1390] · 86↔11 câu khác nhau (p dấu=1.434e-15) · CI95 thô [-0.2737, -0.1703] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rrf-bgem3-hybrid-k1`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rrf-bgem3-hybrid-k1 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.4563 | -0.2173 | 209 | CI99.87% [-0.2927, -0.1432] · 100↔14 câu khác nhau (p dấu=3.488e-17) · CI95 thô [-0.2639, -0.1722] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.4563 | -0.2173 | 209 | CI99.87% [-0.2959, -0.1441] · 100↔14 câu khác nhau (p dấu=3.488e-17) · CI95 thô [-0.2641, -0.1725] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.3397 | -0.2392 | 209 | p=7.638e-11 · 57↔7 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.4436 | -0.2257 | 209 | CI99.87% [-0.3121, -0.1412] · 88↔11 câu khác nhau (p dấu=4.53e-16) · CI95 thô [-0.2780, -0.1748] | khác biệt thật |
+| `mrr` | 0.6694 | 0.4436 | -0.2257 | 209 | CI99.87% [-0.3126, -0.1434] · 88↔11 câu khác nhau (p dấu=4.53e-16) · CI95 thô [-0.2784, -0.1748] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rrf-bgem3-hybrid-k2`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rrf-bgem3-hybrid-k2 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.4521 | -0.2216 | 209 | CI99.87% [-0.2977, -0.1474] · 101↔13 câu khác nhau (p dấu=4.774e-18) · CI95 thô [-0.2680, -0.1761] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.4521 | -0.2216 | 209 | CI99.87% [-0.3001, -0.1481] · 101↔13 câu khác nhau (p dấu=4.774e-18) · CI95 thô [-0.2682, -0.1768] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.3301 | -0.2488 | 209 | p=2.383e-11 · 59↔7 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.4362 | -0.2332 | 209 | CI99.87% [-0.3188, -0.1516] · 91↔11 câu khác nhau (p dấu=7.967e-17) · CI95 thô [-0.2856, -0.1822] | khác biệt thật |
+| `mrr` | 0.6694 | 0.4362 | -0.2332 | 209 | CI99.87% [-0.3199, -0.1506] · 91↔11 câu khác nhau (p dấu=7.967e-17) · CI95 thô [-0.2858, -0.1823] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-bgem3-dense`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-bgem3-dense | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.4442 | -0.2295 | 209 | CI99.87% [-0.3066, -0.1549] · 110↔18 câu khác nhau (p dấu=2.654e-17) · CI95 thô [-0.2766, -0.1829] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.4442 | -0.2295 | 209 | CI99.87% [-0.3084, -0.1550] · 110↔18 câu khác nhau (p dấu=2.654e-17) · CI95 thô [-0.2768, -0.1838] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.3397 | -0.2392 | 209 | p=3.914e-10 · 59↔9 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.4394 | -0.2300 | 209 | CI99.87% [-0.3166, -0.1421] · 90↔15 câu khác nhau (p dấu=3.276e-14) · CI95 thô [-0.2831, -0.1778] | khác biệt thật |
+| `mrr` | 0.6694 | 0.4394 | -0.2300 | 209 | CI99.87% [-0.3184, -0.1443] · 90↔15 câu khác nhau (p dấu=3.276e-14) · CI95 thô [-0.2837, -0.1777] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-rrf-bgem3-hybrid-k60`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-rrf-bgem3-hybrid-k60 | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.4313 | -0.2423 | 209 | CI99.87% [-0.3176, -0.1662] · 106↔12 câu khác nhau (p dấu=5.775e-20) · CI95 thô [-0.2901, -0.1956] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.4313 | -0.2423 | 209 | CI99.87% [-0.3223, -0.1680] · 106↔12 câu khác nhau (p dấu=5.775e-20) · CI95 thô [-0.2898, -0.1963] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.3014 | -0.2775 | 209 | p=2.443e-13 · 64↔6 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.4080 | -0.2614 | 209 | CI99.87% [-0.3460, -0.1772] · 97↔11 câu khác nhau (p dấu=2.391e-18) · CI95 thô [-0.3145, -0.2094] | khác biệt thật |
+| `mrr` | 0.6694 | 0.4080 | -0.2614 | 209 | CI99.87% [-0.3491, -0.1780] · 97↔11 câu khác nhau (p dấu=2.391e-18) · CI95 thô [-0.3143, -0.2101] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-bgem3-sparse`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-bgem3-sparse | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.3733 | -0.3003 | 209 | CI99.87% [-0.3891, -0.2175] · 108↔11 câu khác nhau (p dấu=3.524e-21) · CI95 thô [-0.3549, -0.2449] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.3733 | -0.3003 | 209 | CI99.87% [-0.3907, -0.2152] · 108↔11 câu khác nhau (p dấu=3.524e-21) · CI95 thô [-0.3548, -0.2471] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.2919 | -0.2871 | 209 | p=7.256e-14 · 66↔6 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.3623 | -0.3071 | 209 | CI99.87% [-0.4014, -0.2153] · 100↔10 câu khác nhau (p dấu=8.01e-20) · CI95 thô [-0.3660, -0.2464] | khác biệt thật |
+| `mrr` | 0.6694 | 0.3623 | -0.3071 | 209 | CI99.87% [-0.4047, -0.2128] · 100↔10 câu khác nhau (p dấu=8.01e-20) · CI95 thô [-0.3664, -0.2487] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-baseline-dense`
 
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
+
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-baseline-dense | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|
-| `ndcg@10` | 0.6736 | 0.1621 | -0.5115 | 209 | CI99.87% [-0.6016, -0.4154] · 153↔8 câu khác nhau (p dấu=6.77e-36) · CI95 thô [-0.5684, -0.4538] | khác biệt thật |
+| `ndcg@10` | 0.6736 | 0.1621 | -0.5115 | 209 | CI99.87% [-0.6076, -0.4175] · 153↔8 câu khác nhau (p dấu=6.77e-36) · CI95 thô [-0.5688, -0.4539] | khác biệt thật |
 | `hit_rate@1` | 0.5789 | 0.1196 | -0.4593 | 209 | p=1.981e-22 · 104↔8 câu đổi chiều | khác biệt thật |
-| `mrr` | 0.6694 | 0.1660 | -0.5034 | 209 | CI99.87% [-0.6003, -0.3993] · 143↔9 câu khác nhau (p dấu=3.502e-32) · CI95 thô [-0.5652, -0.4386] | khác biệt thật |
+| `mrr` | 0.6694 | 0.1660 | -0.5034 | 209 | CI99.87% [-0.6079, -0.3982] · 143↔9 câu khác nhau (p dấu=3.502e-32) · CI95 thô [-0.5664, -0.4394] | khác biệt thật |
 
 #### `e1-rr-bgem3-reranked-onhybrid-rc100` → `e1-chunk550-dense`
+
+> Đã hiệu chỉnh Bonferroni cho **39** phép kiểm: α = 0.0012821.
 
 | metric | e1-rr-bgem3-reranked-onhybrid-rc100 | e1-chunk550-dense | Δ | n | kiểm định | kết luận |
 |---|---:|---:|---:|---:|---|---|

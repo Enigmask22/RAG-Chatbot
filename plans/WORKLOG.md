@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (cuối file)** — `W2-08` xong: bảng ablation **14 ô** có `p`/CI từng dòng (`make ablation`). ⭐ Câu "cấu hình nào thắng" là một **phép chọn cực đại**, nên câu trả lời là một **tập** — bốn rổ: 2 không phân biệt được · 3 tranh chấp · 8 kém ở mọi metric · 1 không so được. ⭐⭐ **Người thắng từng do 6 mẫu lại trên 10.000 quyết định** (α đã hiệu chỉnh để lại đúng 6 mẫu trong đuôi; đo 6 seed thì `ndcg@10` đổi dấu, và ở B=50.000 thì khoảng **chứa 0**) — và điều đó **ngược** ghi chú tôi tự viết ở `W2-08-prep`. ⚠️⚠️ Lỗi đắt nhất: `KHÔNG SO ĐƯỢC` đi cùng đường với "hoà", nên **ô tệ nhất bảng** thành thành viên rẻ nhất của tập thắng. ⚠️ Luật `1/n` của tôi sai và 13/14 file đã công bố nói ra. Việc tiếp theo: `W2-09`.
+> **Phiên mới nhất: 2026-08-22 (2) (cuối file)** — `W2-09` xong, **`W2` đóng 10/10**. ⭐ Bảng delta baseline → đỉnh bảng **15/15 metric**, `ndcg@10` ×4,2, `hit_rate@5` **0↔120 câu**. ⭐⭐ **Câu thứ hai của DoD — "category nào cải thiện nhiều nhất" — KHÔNG có câu trả lời**: nó so `Δ_A` với `Δ_B` mà mọi bảng đã công bố chỉ kiểm `Δ ≠ 0`; dựng `contrast.py` (bootstrap **không cặp**) thì **cả 6 nhóm hoà, 0/5 phân giải được**, và **vẫn hoà khi bỏ hiệu chỉnh** — giới hạn của dữ liệu, không của ngưỡng. Cần **~440 câu**. ⚠️ **Hàng rào thứ tư**: số nhãn/câu đổi **giữa các nhóm**, nên `ndcg@10` không xếp hạng nhóm được. ⭐ **Bậc đổi embedding model chiếm phần lớn nhất ở cả 6/6 category**. ⭐⭐ Quyết định (b): **luật nâng `B` hiển nhiên cho câu trả lời SAI** — `MIN_TAIL_RESAMPLES` 30 → **128**. Việc tiếp theo: `G2` rồi `W3`.
+>
+> Phiên trước: `W2-08` xong: bảng ablation **14 ô** có `p`/CI từng dòng (`make ablation`). ⭐ Câu "cấu hình nào thắng" là một **phép chọn cực đại**, nên câu trả lời là một **tập** — bốn rổ: 2 không phân biệt được · 3 tranh chấp · 8 kém ở mọi metric · 1 không so được. ⭐⭐ **Người thắng từng do 6 mẫu lại trên 10.000 quyết định** (α đã hiệu chỉnh để lại đúng 6 mẫu trong đuôi; đo 6 seed thì `ndcg@10` đổi dấu, và ở B=50.000 thì khoảng **chứa 0**) — và điều đó **ngược** ghi chú tôi tự viết ở `W2-08-prep`. ⚠️⚠️ Lỗi đắt nhất: `KHÔNG SO ĐƯỢC` đi cùng đường với "hoà", nên **ô tệ nhất bảng** thành thành viên rẻ nhất của tập thắng. ⚠️ Luật `1/n` của tôi sai và 13/14 file đã công bố nói ra. Việc tiếp theo: `W2-09`.
 >
 > Phiên trước: `W2-08-prep` xong: `compare.py` có `--by category|lang` (quét, **có** hiệu chỉnh Bonferroni) và `--category X` (một giả thuyết nêu trước, không hiệu chỉnh); `scripts/category_compare.py` **đã xoá**. ⭐ Phát hiện `cross_lingual` của `W2-04` **sống sót** hiệu chỉnh cho cả 90 phép kiểm, nhưng **cả ba dẫn chứng đã công bố** là `p` không có lực trích cạnh một CI có nghĩa — đã sửa. ⭐ Hai cờ mới `KHÔNG ĐỦ LỰC` (trần `p` của McNemar là `2/2ⁿ`; `table_lookup` 4 câu là vĩnh viễn không đo được) và `KHÔNG KẾT LUẬN` (biên CI đúng 0 — lỗi do chính bản hiệu chỉnh của tôi tạo ra, phải đo mới thấy). Việc tiếp theo: `W2-08`.
 >
@@ -2162,6 +2164,197 @@ chia thì sai.
    `Makefile`, làm một target thành một dòng dài (và nó đã làm thế với hai target
    của `W2-08-prep` từ phiên trước mà không ai thấy). Cứ dùng Write ra scratchpad +
    `uv run python <path>`.
+
+---
+
+## Phiên 2026-08-22 (2) · `W2-09` — `W2` đóng, và câu thứ hai của DoD không có câu trả lời
+
+**Mục tiêu phiên:** DoD `W2-09` — bảng delta + ≥ 2 nhận xét về *category nào cải
+thiện nhiều nhất*. Kèm ba quyết định `W2-08` cố ý để lại.
+
+```bash
+make eval-compare BASE=e1-baseline-dense CAND=e1-rr-bgem3-reranked-onhybrid-rc100
+make eval-compare-by BASE=e1-baseline-dense CAND=e1-rr-bgem3-reranked-onhybrid-rc100
+make contrast                      # mới: nhóm nào cải thiện nhiều nhất
+make contrast BY=lang
+```
+
+### Nửa đầu DoD: sạch
+
+`e1-baseline-dense` → đỉnh bảng, **15/15 metric có ý nghĩa**, `p` từ 1,98e-22 tới
+5,88e-39. `ndcg@10` 0,1621 → 0,6736 (**×4,2**). Con số đáng nhớ: `hit_rate@5`
+**0↔120** — 120 câu được sửa, **0 câu bị làm hỏng**, tức 57% bộ đo đổi từ trượt
+sang trúng mà không mất câu nào. Đây là bảng duy nhất của cả `W2` mà hiệu chỉnh đa
+so sánh không cần bàn.
+
+### ⭐⭐ Nửa sau: câu hỏi không có câu trả lời, và phải dựng công cụ mới mới biết
+
+"Category nào cải thiện **nhiều nhất**" so `Δ_A` với `Δ_B`. Mọi bảng đã công bố —
+kể cả `compare_by_group` dựng riêng cho DoD này ở `W2-08-prep` — chỉ kiểm
+`Δ ≠ 0`. **Không hàng nào trong cả `W2` trả lời câu ấy.**
+
+`pipeline/eval/contrast.py`, và nó khác `ablation.py` ở đúng một chỗ đổi cả phép
+kiểm: hai **cấu hình** đo trên cùng bộ câu → bootstrap **cặp**; hai **nhóm** là hai
+tập câu **rời nhau** → bootstrap **không cặp**. Dùng nhầm phép cặp ở đây là ghép
+câu nhóm này với câu nhóm kia, tức bịa ra một tương quan không tồn tại.
+
+Kết quả trên `hit_rate@5`:
+
+| hạng | nhóm | n | Δ | vs đỉnh bảng |
+|---:|---|---:|---:|---|
+| 1 | `cross_lingual` | 43 | +0,6512 | *(đỉnh bảng)* |
+| 2 | `aggregation` | 26 | +0,6154 | CI99% [−0,2728, +0,3444] |
+| 6 | `multi_hop` | 34 | +0,5000 | CI99% [−0,1306, +0,4378] |
+
+**Cả 6 nhóm hoà. 0/5 phép so phân giải được.** Lặp lại y hệt trên `hit_rate@1` và
+`mrr`.
+
+### Đối chứng bắt buộc — và nó là chỗ kết luận này có giá trị
+
+Nếu "hoà 6/6" chỉ là hệ quả của Bonferroni thì đó là kết luận của công cụ, không
+phải của bộ đo. Đo lại ở α **thô** 0,05: **vẫn 5/5 hoà**, cả ba metric. Khoảng cách
+xa nhất giữa hai category (+0,1512) chỉ bằng **0,70×** nửa bề rộng CI95 **chưa**
+hiệu chỉnh.
+
+💡 **Ngưỡng phân giải giữa hai nhóm: ~±0,22 tuyệt đối** (43 câu vs 34 câu). `TD-11`
+đo ~6 điểm cho cả 209 câu, nên **chia 209 câu thành 6 nhóm rồi so các nhóm với nhau
+tốn ~3,6× độ phân giải**. Cần golden set **~440 câu** mới tách được khoảng cách hiện
+tại — con số định lượng đầu tiên cho `TD-13`.
+
+### ⚠️ Hàng rào thứ tư, canh một trục ba hàng rào cũ không nhìn
+
+Ba hàng rào của `compare.py` đều canh trục *"hai lần chạy"*. Không cái nào thấy:
+
+    factoid      1,0147 nhãn/câu
+    aggregation  2,4231 nhãn/câu
+
+Trong **một** nhóm thì hai lần chạy dùng đúng bộ nhãn ấy nên hàng rào băm `W2-03`
+im lặng — **đúng**, nó nhìn trục khác. Nhưng so `Δ recall@5` của `factoid` với của
+`aggregation` là so hai thang đo.
+
+Nó lộ ra ngay trong dữ liệu, không cần lập luận: `aggregation` hạng **2**/6 theo
+`hit_rate@5` và hạng **5**/6 theo `ndcg@10` — nhóm bị xê dịch nhiều nhất đúng là
+nhóm nhiều nhãn nhất.
+
+⚠️ Hệ quả: **`ndcg@10` — tiêu chí đầu của `G2` — không xếp hạng được giữa các
+nhóm.** Dự đoán D2 của tôi đúng con số và **sai loại câu hỏi**.
+
+### Hai nhận xét mà DoD đòi
+
+1. **`cross_lingual` là nhóm duy nhất có một bậc làm nó TỆ ĐI**: bậc hybrid cho
+   `ndcg@10` **−0,0831** CI95 [−0,1279, −0,0396], **17 câu tệ đi vs 1 câu tốt lên**
+   (`mrr` và `map@20` là **19↔1**).
+   Phát hiện `W2-04` tái lập nguyên vẹn, lần này ở bậc *giữa* của chính đường tới
+   đỉnh bảng.
+2. ⭐ **Bậc đổi embedding model chiếm phần lớn nhất ở cả 6/6 category** (45–88%).
+   Hybrid + reranker + pool sâu cộng lại vẫn nhỏ hơn. Ngược dự đoán D7.
+
+### ⭐⭐ Quyết định (b): luật hiển nhiên cho câu trả lời SAI
+
+Đo bằng thứ thật sự quan trọng — **số thành viên tập thắng**, không phải bề rộng
+một khoảng:
+
+| `B` | đuôi | tập thắng |
+|---:|---:|---:|
+| 10.000 | 5 | **2 ô** ← đã công bố |
+| 50.000 | 31 | **3 ô** ⚠️ |
+| 200.000 | 127 | **2 ô** |
+| 400.000 | 255 | **2 ô** |
+
+Luật "nâng `B` cho tới khi đuôi đủ 30" đưa `B` tới ~48.400 — **đúng vùng bất ổn** —
+và cho câu trả lời mà `B` mặc định đã trả lời đúng. **Nâng nửa vời tệ hơn không
+nâng.**
+
+Hàng gây chuyện là `mrr` của `rc50`: biên gần như đứng yên (−0,0007 → −0,0002), thứ
+đổi là **dải dao động của chính nó**, và ở 50.000 dải ấy vắt qua 0.
+
+💡 **Chỗ `W2-08` chọn sai hằng số, nói cho chính xác:** nó đo ba mức đuôi (6/32/128)
+với tiêu chí *"**dấu** của biên có ổn định không"*, và ở đuôi 32 dấu **đúng là** ổn
+định. Nhưng thứ quyết định một ô nằm rổ nào không phải dấu của biên — mà là **dải
+dao động** của nó có chứa 0 hay không. **Hai đại lượng ổn định ở hai tốc độ khác
+nhau, và tôi chọn hằng số bằng cái ổn định nhanh hơn.**
+
+`MIN_TAIL_RESAMPLES` **30 → 128** · `resolve_iterations` có trần
+`MAX_BOOTSTRAP = 200.000` · **chỉ nâng khi người gọi để nguyên mặc định** (một `B`
+nêu tường minh là lựa chọn có chủ đích — tự nâng nó làm chính phép quét đo `B` mất
+khả năng đo, tức bảng ngay trên sẽ không đo được).
+
+✅ **Kiểm chứng: 0/15 file `compare/` đổi kết luận.** Bảng chia nhóm **thật sự** nâng
+— log ghi **60 lần** `B: 10.000 → 200.000` ở α=0,000556 nơi đuôi cũ chỉ có **2
+mẫu**. Ba phát hiện `cross_lingual` của `W2-08-prep` từng đọc từ đuôi 2 mẫu và
+**sống sót nguyên vẹn** ở 200.000.
+
+⚠️ **Bảng ablation thì đổi đúng một hàng**: `ndcg@10` của `rc50`, CI99,87%
+[−0,0638, **−0,0003**] → [−0,0647, **+0,0004**], tức `TRÁI CHIỀU` →
+`trong ngưỡng nhiễu`. **Không bất ngờ** — `W2-08` §5 đã đo được đúng chuyện đó và
+ghi vào report, nhưng bảng mặc định vẫn chạy ở 10.000 nên nó **mâu thuẫn với phép
+đo của chính nó**; giờ hai chỗ khớp. Tập thắng vẫn **2 ô**, `rc50` vẫn ở rổ tranh
+chấp (nhờ `mrr`).
+
+### Quyết định (a): không hiệu chỉnh — vì tiền đề của câu hỏi sai
+
+"Kỳ vọng 0,75 dương giả mỗi bảng" tính bằng `15 × 0,05`, tức coi 15 metric là độc
+lập. Chưa ai kiểm tiền đề đó. Đo (Li & Ji trên ma trận tương quan của hiệu từng câu):
+
+| cặp | `n_eff` | `\|r\|` tb | trị riêng đầu |
+|---|---:|---:|---:|
+| `baseline → bgem3` | 5,0 | 0,666 | 10,42 |
+| `bgem3 → bgem3-rrf` | 7,0 | 0,454 | 7,72 |
+| `rc50 → rc100` | **4,0** | **0,833** | **12,69** |
+
+⭐ Cặp bị hiệu chỉnh cắn đau nhất đúng là cặp tương quan chặt nhất — một chiều giải
+thích **85%** phương sai. Con số đúng là **0,35**, không phải 0,75.
+
+Nếu hiệu chỉnh thật thì mất **33 hàng/6 file** (`m=15`) hoặc 26 (`m=7`) — nhưng
+**hai chốt kiểm soát không đổi ở cả hai mức**. Thay vào đó **mọi bảng giờ tự in
+ngân sách dương giả của nó ngay dòng đầu**.
+
+💡 Vì sao đặt trong bảng chứ không trong docstring: `W2-08-prep` đã ghi lựa chọn ấy
+vào docstring `compare_by_group` — nơi người đọc bảng không bao giờ tới. Cả ba lần
+trích sai đã công bố đều là **rút một hàng thuận nhất trong 15 hàng ra trích**.
+
+### Quyết định (c): `rc50`, điều kiện lật lại nêu trước
+
+Ở `B` hội tụ, `rc50` ở rổ **tranh chấp** (1/3 metric chính nói `rc100` hơn, 1/3
+nhiễu, 1/3 không có lực). Ưu thế ~2,5 điểm `ndcg@10` ≈ **5 câu**/209, giá **+555
+ms** = 16% ngân sách 3500 ms. ⚠️ Nhưng pool sâu đóng góp **39%** mức cải thiện của
+`cross_lingual` và **35%** của `adversarial` — nếu `W4-13` cho thấy bộ sinh dùng
+được ngữ cảnh dưới hạng 5 thì `rc100` đáng 1,91×.
+
+### ⚠️ Một target Makefile chưa từng chạy được
+
+`make eval-compare-subset CAT=… LANG=…` hỏng từ ngày viết (`W2-08-prep`): `LANG` là
+**biến môi trường chuẩn**, make thừa kế nó, nên `LANG ?=` không bao giờ có tác dụng
+và `--lang` luôn nhận `en_US.UTF-8`. Đổi thành `QLANG`. Chỉ lộ ra hôm nay vì đây là
+lần đầu target ấy được gọi thật — cùng họ với `make eval EXP=exp_001` của `G2` (một
+target chưa bao giờ tồn tại, tìm ra ở `W2-07`).
+
+### Trạng thái
+
+**1214 test** (1070 unit + 144 integration; +17 contrast, +10 compare) · ruff +
+mypy sạch trên 114 file · **`W2` 10/10 ✅** · tổng **30/78**.
+
+### Dự đoán: 4/7 đúng
+
+Ba lần sai **không** cùng hướng như `W2-08` (ở đó cả bốn là đánh giá quá cao độ
+phân giải). D5 và D7 sai vì tôi **suy từ cấu trúc mà chưa từng đo cấu trúc**: cho
+rằng 15 metric gần độc lập, và cho rằng reranker là bậc lớn nhất. Cả hai kiểm được
+bằng một phép đo mà tôi chưa chạy lần nào.
+
+### Nếu phiên sau bắt đầu từ đây
+
+1. `make lint && make test` · `make up && make test-integration`.
+2. **`G2`** còn đúng một tiêu chí chưa đánh dấu được: "p95 không vượt 3500 ms" là
+   ngưỡng **end-to-end** mà phần sinh chưa đo lần nào → `W4-13`.
+3. ⚠️ **`TD-21` (mới)**: `contrast.py` mới có `category`/`lang`. Chiều đáng giá nhất
+   cho `W4` là **document/tenant** (`TD-18`), mà `RunScores` chưa mang trường đó —
+   và đọc `W2-09` §2 trước: chia theo 60 tài liệu thì mỗi nhóm 3–4 câu, không nhóm
+   nào có lực.
+4. ⚠️ `TD-20` trước khi quét lại `chunk_size` · `TD-19` trước `TD-13`.
+5. 💡 **~440 câu** là mục tiêu định lượng cho `TD-13`, không phải một con số tròn
+   chọn bừa: nó là `(0,2168/0,15)² ≈ 2,1×` kích thước nhóm hiện tại.
+6. ⚠️ Bẫy heredoc lặp **lần thứ sáu** — lần này `bash` chết ngay với "unexpected EOF"
+   khi viết `contrast.py`, nên không có file hỏng nào lọt qua. Cứ dùng Write.
 
 ---
 

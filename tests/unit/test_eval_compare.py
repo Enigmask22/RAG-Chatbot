@@ -18,6 +18,8 @@ import pytest
 
 from pipeline.eval.compare import (
     DEFAULT_ALPHA,
+    EFFECTIVE_METRICS,
+    MAX_BOOTSTRAP,
     MIN_TAIL_RESAMPLES,
     BootstrapBounds,
     ComparisonRow,
@@ -32,6 +34,7 @@ from pipeline.eval.compare import (
     mcnemar_exact,
     min_achievable_p,
     paired_bootstrap,
+    resolve_iterations,
 )
 
 
@@ -1110,3 +1113,80 @@ class TestEveryBootstrapRowKnowsItsOwnGranularity:
         (row,) = compare_runs(base, cand, metrics=["hit_rate@5"])
         assert row.ci_jitter is None
         assert row.p_value is not None
+
+
+class TestRaisingBHalfwayIsWorseThanNotRaisingIt:
+    """Quyết định (b) của `W2-09`, và nó ngược với luật hiển nhiên.
+
+    Luật hiển nhiên là "nâng `B` cho tới khi đuôi đủ `MIN_TAIL_RESAMPLES`". Với
+    hằng số cũ (30) luật ấy đưa `B` tới ~48.400 — đúng vùng mà tập thắng của
+    `W2-08` phình từ 2 lên 3 ô rồi co lại về 2 ở `B = 200.000`. Nên hằng số phải
+    là điểm **hội tụ**, không phải điểm đầu tiên trông có vẻ ổn.
+    """
+
+    def test_the_constant_is_the_measured_convergence_point(self) -> None:
+        # 128 = đuôi ở B = 200.000 với alpha đã hiệu chỉnh cho 39 phép kiểm, tức
+        # mức mà số thành viên tập thắng thôi đổi (đo ở W2-09).
+        assert MIN_TAIL_RESAMPLES == 128
+        assert resolve_iterations(DEFAULT_ALPHA / 39) == MAX_BOOTSTRAP
+
+    def test_a_plain_pairwise_table_needs_no_raise(self) -> None:
+        # alpha = 0,05 chỉ cần ~5.160 mẫu lại, nên mặc định 10.000 đã dư — đường
+        # đi của W2-01…W2-07 không đổi một chữ số nào.
+        assert resolve_iterations(DEFAULT_ALPHA, 10_000) == 10_000
+
+    def test_it_never_lowers_what_the_caller_asked_for(self) -> None:
+        assert resolve_iterations(DEFAULT_ALPHA, 500_000) == 500_000
+
+    def test_the_cap_stops_it_from_running_forever(self) -> None:
+        # alpha của bảng chia nhóm (90 phép kiểm) đòi ~464.000 mẫu lại. Chạm trần
+        # thì hàng nào còn bất ổn phải tự khai bằng cờ, không được im lặng.
+        assert resolve_iterations(DEFAULT_ALPHA / 90) == MAX_BOOTSTRAP
+
+    def test_an_explicit_b_is_never_overridden(self) -> None:
+        """Nếu tự nâng giẫm lên `B` nêu tường minh thì chính phép quét đo `B` chết."""
+        diffs = [0.0] * 180 + [0.5] * 15 + [-0.4] * 14
+        alpha = DEFAULT_ALPHA / 39
+        small = bootstrap_resample(diffs, (alpha,), iterations=3_000)[alpha]
+        assert small.tail == int(3_000 * alpha / 2)
+
+    def test_leaving_b_at_the_default_does_trigger_the_raise(self) -> None:
+        diffs = [0.0] * 180 + [0.5] * 15 + [-0.4] * 14
+        alpha = DEFAULT_ALPHA / 39
+        raised = bootstrap_resample(diffs, (alpha,))[alpha]
+        assert raised.tail == int(MAX_BOOTSTRAP * alpha / 2)
+        assert raised.tail >= MIN_TAIL_RESAMPLES
+
+
+class TestFifteenColumnsAreNotFifteenHypotheses:
+    """Quyết định (a) của `W2-09`: tiền đề của nó sai, nên câu trả lời đổi.
+
+    "Kỳ vọng 0,75 dương giả mỗi bảng" tính bằng `15 × 0,05`, tức coi 15 metric là
+    độc lập. Đo trên hiệu từng câu thì số phép kiểm hiệu dụng là 4–7.
+    """
+
+    def test_the_effective_count_is_smaller_than_the_column_count(self) -> None:
+        assert 1 < EFFECTIVE_METRICS < 15
+
+    def test_an_uncorrected_table_prints_its_own_false_positive_budget(self) -> None:
+        base = _run("b", {f"q{i}": float(i % 2) for i in range(40)})
+        cand = _run("c", {f"q{i}": float((i + 1) % 2) for i in range(40)})
+        text = format_table(compare_runs(base, cand), baseline="b", candidate="c")
+        assert "KHÔNG hiệu chỉnh" in text
+        assert "phép kiểm hiệu dụng" in text
+
+    def test_a_corrected_table_says_so_instead(self) -> None:
+        base = _run("b", {f"q{i}": float(i % 2) for i in range(40)})
+        cand = _run("c", {f"q{i}": float((i + 1) % 2) for i in range(40)})
+        text = format_table(compare_runs(base, cand, family_size=39), baseline="b", candidate="c")
+        assert "Đã hiệu chỉnh Bonferroni" in text
+        assert "KHÔNG hiệu chỉnh" not in text
+
+    def test_a_one_row_table_gets_no_banner(self) -> None:
+        """Một hàng không phải một họ — dán cảnh báo đa so sánh lên nó là nhiễu."""
+        base = _run("b", {"q1": 0.0, "q2": 1.0, "q3": 0.0})
+        cand = _run("c", {"q1": 1.0, "q2": 1.0, "q3": 0.0})
+        text = format_table(
+            compare_runs(base, cand, metrics=["hit_rate@5"]), baseline="b", candidate="c"
+        )
+        assert "KHÔNG hiệu chỉnh" not in text

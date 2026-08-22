@@ -146,7 +146,10 @@ eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAN
 # khác nhau, nên hai target khác nhau — xem docstring `compare_by_group`.
 BY ?= category
 CAT ?=
-LANG ?=
+# ⚠️ `QLANG`, KHÔNG phải `LANG`: `LANG` là biến môi trường chuẩn (`en_US.UTF-8`),
+# make thừa kế nó, nên `LANG ?=` không bao giờ có tác dụng và `--lang` luôn nhận
+# một chuỗi locale. Target này hỏng từ `W2-08-prep` tới khi `W2-09` gọi nó thật.
+QLANG ?=
 
 .PHONY: eval-compare-by
 eval-compare-by:  ## So theo TỪNG nhóm, có hiệu chỉnh Bonferroni (BY=category|lang)
@@ -166,10 +169,21 @@ ablation:  ## Bảng ablation 14 ô + tập tương đương, có p/CI từng d�
 		--baseline $(ABL_BASE) --rank-by $(RANK) \
 		--out plans/reports/compare/ablation-exp-001-$(RANK_SLUG).md
 
+# Nhóm nào cải thiện nhiều nhất (W2-09). Khác `eval-compare-by`: ở đó mỗi nhóm so
+# với CHÍNH NÓ ở lần chạy kia (Δ ≠ 0?); ở đây các nhóm so VỚI NHAU (Δ_A > Δ_B?).
+CONTRAST_BASE ?= e1-baseline-dense
+CONTRAST_CAND ?= e1-rr-bgem3-reranked-onhybrid-rc100
+
+.PHONY: contrast
+contrast:  ## Xếp hạng nhóm theo mức cải thiện + tập tương đương (W2-09)
+	$(PY) python -m pipeline.eval.contrast \
+		$(CONTRAST_BASE) $(CONTRAST_CAND) --by $(BY) \
+		--out plans/reports/compare/contrast-$(BY)-exp-001.md
+
 .PHONY: eval-compare-subset
 eval-compare-subset:  ## So trên MỘT nhóm đã nêu trước, không hiệu chỉnh (CAT=… LANG=…)
 	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
-		$(if $(CAT),--category $(CAT)) $(if $(LANG),--lang $(LANG))
+		$(if $(CAT),--category $(CAT)) $(if $(QLANG),--lang $(QLANG))
 
 .PHONY: backfill-payload
 backfill-payload:  ## Vá payload phẳng + payload index của collection ĐÃ build (W2-06)

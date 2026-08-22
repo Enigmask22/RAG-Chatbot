@@ -40,7 +40,9 @@ from pathlib import Path
 
 __all__ = [
     "BINARY_METRICS",
+    "EFFECTIVE_METRICS",
     "GROUP_DIMENSIONS",
+    "MAX_BOOTSTRAP",
     "MIN_TAIL_RESAMPLES",
     "RESOLUTION_FLAGS",
     "BootstrapBounds",
@@ -57,6 +59,7 @@ __all__ = [
     "mcnemar_exact",
     "min_achievable_p",
     "paired_bootstrap",
+    "resolve_iterations",
 ]
 
 logger = logging.getLogger("pipeline.eval.compare")
@@ -112,10 +115,62 @@ RESOLUTION_FLAGS = (
 #: `alpha` đã hiệu chỉnh Bonferroni cho 39 phép kiểm (0,00128) thì đó là phần tử
 #: thứ **6**, và một quyết định kiến trúc dựa vào 6 mẫu lại là dựa vào nhiễu.
 #:
-#: Con số 30 chọn từ đo thật ở `W2-08` (`rc50 → rc100`, 6 seed × 3 mức `B`):
-#: đuôi 6 mẫu → **biên dưới đổi dấu theo seed**; đuôi 32 → dấu ổn định; đuôi 128
-#: → sd của biên tụt còn 1/5. Xem `ComparisonRow.mc_unstable`.
-MIN_TAIL_RESAMPLES = 30
+#: ⚠️ Con số này là **128**, và nó từng là 30. Chỗ sai của 30 đáng ghi lại:
+#:
+#: `W2-08` chọn 30 từ ba mức đuôi (6 / 32 / 128) với tiêu chí "**dấu** của biên
+#: có ổn định không" — và ở đuôi 32 dấu đúng là ổn định. Nhưng thứ quyết định
+#: một ô nằm rổ nào không phải dấu của biên, mà là **dải dao động** của nó có
+#: chứa 0 hay không, và hai cái đó ổn định ở hai tốc độ khác nhau.
+#:
+#: `W2-09` đo lại bằng thứ thật sự quan trọng — số thành viên của tập thắng:
+#:
+#:     B =  10.000  đuôi   5  → tập thắng 2 ô
+#:     B =  50.000  đuôi  31  → tập thắng 3 ô   ⚠️ rc50 lọt vào
+#:     B = 200.000  đuôi 127  → tập thắng 2 ô
+#:     B = 400.000  đuôi 255  → tập thắng 2 ô
+#:
+#: Tức luật "nâng `B` cho tới khi đuôi đủ 30 mẫu" đưa `B` tới ~48.400 — **đúng
+#: vùng bất ổn** — và cho một câu trả lời sai mà 10.000 đã trả lời đúng. Nâng
+#: nửa vời tệ hơn không nâng: nó đổi kết luận rồi dừng lại giữa đường.
+MIN_TAIL_RESAMPLES = 128
+
+#: Trần của việc tự nâng `B`. Có trần vì `alpha` đã hiệu chỉnh cho 90 phép kiểm
+#: (bảng chia nhóm) đòi `B ≈ 464.000` để đuôi đạt 128 — khoảng 46× chi phí, cho
+#: một bảng vốn đã ghi rõ là để **loại** giả thuyết chứ không để chọn người
+#: thắng. Chạm trần thì `mc_unstable` vẫn bật và hàng vẫn nói `KHÔNG KẾT LUẬN`:
+#: hết cách đọc thì nói là chưa đọc được, đừng nói bừa.
+MAX_BOOTSTRAP = 200_000
+
+#: Số phép kiểm **hiệu dụng** của bảng 15 metric — đo, không đếm cột.
+#:
+#: `W2-09` phải chốt câu "bảng một-cặp có hiệu chỉnh cho 15 metric không", và câu
+#: đó đứng trên một tiền đề chưa ai kiểm: rằng 15 cột là 15 giả thuyết. Chúng
+#: không phải. Cả 15 đo trên **cùng** 209 câu và phần lớn là một câu hỏi viết
+#: lại — `recall@5` và `precision@5` chung tử số, `hit_rate@5` là chỉ báo của
+#: chính tử số ấy.
+#:
+#: Đo trên hiệu từng câu của bốn cặp đại diện (Li & Ji 2005 trên ma trận tương
+#: quan; số trong ngoặc là tỉ số tham gia `(Σλ)²/Σλ²`):
+#:
+#:     baseline    → bgem3           n_eff = 5,0  (1,9)   |r| tb = 0,666
+#:     bgem3       → bgem3-rrf       n_eff = 7,0  (2,9)   |r| tb = 0,454
+#:     bgem3       → bgem3-rr-c50    n_eff = 5,0  (2,3)   |r| tb = 0,583
+#:     rc50        → rc100           n_eff = 4,0  (1,4)   |r| tb = 0,833
+#:
+#: Cặp bị hiệu chỉnh cắn đau nhất (`rc50 → rc100`) đúng là cặp tương quan chặt
+#: nhất: trị riêng đầu 12,69/15, tức **một** chiều giải thích 85% phương sai.
+#:
+#: ⚠️ Hệ quả trực tiếp: con số "kỳ vọng 0,75 dương giả mỗi bảng" đã ghi ở
+#: `W2-08-prep` tính bằng `15 × 0,05`, tức bằng chính tiền đề sai. Con số đúng là
+#: `7 × 0,05 =` **0,35**. Vấn đề nhỏ hơn hai lần so với lúc phát biểu — và đó là
+#: lý do bảng một-cặp **không** hiệu chỉnh; xem `compare_runs`.
+#:
+#: Lấy 7 (lớn nhất trong bốn) chứ không lấy trung bình: một hằng số dùng cho mọi
+#: bảng thì phải bảo thủ ở phía an toàn. Và lấy **hằng số** chứ không tính
+#: `n_eff` từng bảng, vì `family_size` phải biết được **trước** khi chạy — tính
+#: từ dữ liệu thì chính nó thành một lựa chọn dựa trên dữ liệu (xem
+#: `compare_by_group`).
+EFFECTIVE_METRICS = 7
 
 #: Chiều chia nhóm hợp lệ — đúng hai trường mà `QueryScore` mang theo từng câu.
 #: Không nhận chiều tuỳ ý: chia theo một trường không có trong file sẽ cho **một
@@ -563,6 +618,46 @@ class BootstrapBounds:
         return self.low_jitter if abs(self.low) <= abs(self.high) else self.high_jitter
 
 
+def resolve_iterations(alpha: float, iterations: int = DEFAULT_BOOTSTRAP) -> int:
+    """`B` cần để đuôi của khoảng `alpha` dày `MIN_TAIL_RESAMPLES` mẫu, có trần.
+
+    Vì sao phải tự nâng chứ không để người gọi tự chọn: `alpha` ở chỗ gọi thường
+    **không** phải `alpha` cuối cùng — nó bị chia cho `family_size` sâu bên
+    trong, nên người gọi truyền `iterations=10.000` không có cách nào biết đuôi
+    của mình còn 5 mẫu. Con số duy nhất biết đủ để quyết định là `alpha` sau
+    hiệu chỉnh, và nó nằm ở đây.
+
+    Không bao giờ **hạ** `B` xuống dưới mức người gọi xin: trần chỉ chặn phía
+    trên. Người gọi xin nhiều hơn mức cần thì họ có lý do của họ.
+
+    ⚠️ Chỉ nâng khi người gọi **để nguyên mặc định** — xem chỗ gọi trong
+    `bootstrap_resample`. Một `B` nêu tường minh là một lựa chọn có chủ đích
+    (quét nhiều mức, test), và tự nâng nó làm chính phép quét mất khả năng đo
+    thứ nó đang đo: bốn con số 10.000/50.000/200.000/400.000 dẫn trong docstring
+    của `MIN_TAIL_RESAMPLES` sẽ không đo được nếu hàm này giẫm lên chúng.
+    """
+    need = math.ceil(2 * (MIN_TAIL_RESAMPLES + 1) / alpha) if alpha > 0 else iterations
+    if need <= iterations:
+        return iterations
+    raised = min(need, MAX_BOOTSTRAP)
+    if raised > iterations:
+        logger.info(
+            "Nâng B %d → %d: ở alpha=%.5g thì %d mẫu lại để lại đuôi %d mẫu, "
+            "dưới ngưỡng đọc được %d.%s",
+            iterations,
+            raised,
+            alpha,
+            iterations,
+            int(iterations * alpha / 2),
+            MIN_TAIL_RESAMPLES,
+            ""
+            if raised == need
+            else f" ⚠️ Cần {need} mới đủ nhưng trần là {MAX_BOOTSTRAP} — "
+            "hàng nào còn bất ổn sẽ tự khai bằng cờ `mc_unstable`.",
+        )
+    return raised
+
+
 def bootstrap_resample(
     diffs: Sequence[float],
     alphas: Sequence[float],
@@ -592,6 +687,8 @@ def bootstrap_resample(
     if not diffs:
         flat = (0.0, 0.0)
         return {alpha: BootstrapBounds(0.0, 0.0, flat, flat, 0) for alpha in alphas}
+    if alphas and iterations == DEFAULT_BOOTSTRAP:
+        iterations = resolve_iterations(min(alphas), iterations)
     rng = random.Random(seed)
     n = len(diffs)
     means: list[float] = []
@@ -1004,7 +1101,14 @@ def format_table(
     candidate: str,
     show_n: bool = False,
 ) -> str:
-    """Bảng Markdown. `show_n=True` thêm cột `n` — bắt buộc cho bảng chia nhóm."""
+    """Bảng Markdown. `show_n=True` thêm cột `n` — bắt buộc cho bảng chia nhóm.
+
+    Bảng **không** hiệu chỉnh thì phải tự khai số dương giả kỳ vọng của chính
+    nó. `W2-08-prep` chọn không hiệu chỉnh bảng một-cặp và ghi lựa chọn ấy vào
+    docstring — nơi người đọc bảng không bao giờ tới. Ba lần trích sai đã công
+    bố đều là người đọc lấy hàng thuận nhất trong 15 hàng; con số cảnh báo phải
+    nằm **trong** bảng.
+    """
     head = f"| metric | {baseline} | {candidate} | Δ |"
     rule = "|---|---:|---:|---:|"
     if show_n:
@@ -1016,7 +1120,32 @@ def format_table(
         if show_n:
             cells += f" {r.n_queries} |"
         out.append(f"{cells} {_detail(r)} | {r.verdict} |")
-    return "\n".join(out)
+
+    banner = _false_positive_banner(rows)
+    return "\n".join([*banner, *out]) if banner else "\n".join(out)
+
+
+def _false_positive_banner(rows: Sequence[ComparisonRow]) -> list[str]:
+    """Dòng nói thẳng bảng này chờ bao nhiêu dương giả — hoặc đã hiệu chỉnh."""
+    if len(rows) < 2:
+        return []
+    family = rows[0].family_size
+    if family > 1:
+        return [
+            f"> Đã hiệu chỉnh Bonferroni cho **{family}** phép kiểm: α = {rows[0].alpha:.5g}.",
+            "",
+        ]
+    effective = min(EFFECTIVE_METRICS, len(rows))
+    return [
+        f"> ⚠️ **{len(rows)} hàng, KHÔNG hiệu chỉnh đa so sánh** — mỗi hàng là một "
+        f"phép kiểm ở α = {rows[0].alpha:.3g}. 15 metric này không độc lập (đo lại ở "
+        f"`W2-09`: **{EFFECTIVE_METRICS}** phép kiểm hiệu dụng, `|r|` trung bình "
+        f'0,45–0,83), nên số hàng "có ý nghĩa" **thuần do ngẫu nhiên** mà bảng này '
+        f"chờ đợi là ≈ **{effective * rows[0].alpha:.2f}**.",
+        "> Đọc **cả bảng** thì được; rút một hàng thuận nhất ra trích thì đó là "
+        "chỗ con số trên biến thành kết luận sai.",
+        "",
+    ]
 
 
 def format_grouped_table(

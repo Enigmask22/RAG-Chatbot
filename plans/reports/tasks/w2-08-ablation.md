@@ -176,6 +176,29 @@ lại thì kết luận sai vẫn đứng. Đây là lần thứ hai trong `W2` 
 ca-của-nó bị áp sang ca khác (lần đầu: `TD-11` "hạ `chunk_size` không cải thiện" bị
 đọc thành công của `W2-01`).
 
+> 📝 **Đính chính 2026-08-22 (`W2-09`): hằng số `MIN_TAIL_RESAMPLES = 30` chọn từ
+> bảng ngay trên là SAI, và nó sai theo một kiểu đáng ghi lại.**
+>
+> Bảng ba mức đuôi (6/32/128) ở trên đo tiêu chí *"**dấu** của biên có ổn định
+> không"*, và ở đuôi 32 dấu **đúng là** ổn định — bảng không sai. Nhưng thứ quyết
+> định một ô nằm rổ nào **không phải dấu** của biên, mà là **dải dao động** của nó
+> có chứa 0 hay không, và hai đại lượng ấy ổn định ở hai tốc độ khác nhau. Tôi
+> chọn hằng số bằng cái ổn định **nhanh hơn**.
+>
+> `W2-09` đo lại bằng thứ thật sự quan trọng — số thành viên tập thắng:
+>
+> | `B` | đuôi | tập thắng |
+> |---:|---:|---:|
+> | 10.000 | 5 | **2 ô** ← con số công bố ở §3 |
+> | 50.000 | 31 | **3 ô** ⚠️ `rc50` lọt vào |
+> | 200.000 | 127 | **2 ô** |
+> | 400.000 | 255 | **2 ô** |
+>
+> Tức luật "nâng `B` cho tới khi đuôi đủ 30 mẫu" — đúng cái §10 đề xuất cân nhắc —
+> đưa `B` tới ~48.400, **đúng vùng bất ổn**, và cho câu trả lời **sai** mà `B` mặc
+> định đã trả lời **đúng**. ✅ **Kết luận "tập thắng 2 ô" của `W2-08` không đổi**;
+> hằng số thì đổi: **30 → 128**. Xem `exp-001-retrieval.md` §6.
+
 ---
 
 ## 6. Bậc thang pool: 20 → 50 phân giải được, 50 → 100 thì không — và đó là **vùng phủ vs xếp hạng**
@@ -332,6 +355,8 @@ dán không-kết-luận cho mọi thứ: `cmp-baseline-vs-bgem3` vẫn **15/15*
   `chunk_size`.
 * **`TD-19`** (`golden`/`golden_digest` vào `EvalReport.config`) vẫn phải làm trước
   `TD-13`.
-* Ngưỡng `MIN_TAIL_RESAMPLES = 30` hiện chỉ dùng để **giải thích** cờ, chưa dùng để
-  tự nâng `B`. Nâng `B` cho α = 0,00128 cần ~47.000 mẫu lại, tức ~4,7× chi phí — đo
-  rồi hãy làm, và `W2-09` là chỗ quyết.
+* ~~Ngưỡng `MIN_TAIL_RESAMPLES = 30` hiện chỉ dùng để **giải thích** cờ~~ →
+  ✅ **chốt ở `W2-09` (2026-08-22)**: có tự nâng (`resolve_iterations`, trần
+  `MAX_BOOTSTRAP = 200.000`), nhưng hằng số phải là **128** chứ không phải 30 —
+  ~47.000 mẫu lại rơi đúng vùng bất ổn và **đổi tập thắng 2 → 3 ô**. Xem đính chính
+  ở §5 và `exp-001-retrieval.md` §6.

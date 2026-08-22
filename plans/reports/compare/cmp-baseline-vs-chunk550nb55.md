@@ -1,3 +1,6 @@
+> ⚠️ **15 hàng, KHÔNG hiệu chỉnh đa so sánh** — mỗi hàng là một phép kiểm ở α = 0.05. 15 metric này không độc lập (đo lại ở `W2-09`: **7** phép kiểm hiệu dụng, `|r|` trung bình 0,45–0,83), nên số hàng "có ý nghĩa" **thuần do ngẫu nhiên** mà bảng này chờ đợi là ≈ **0.35**.
+> Đọc **cả bảng** thì được; rút một hàng thuận nhất ra trích thì đó là chỗ con số trên biến thành kết luận sai.
+
 | metric | baseline | chunk550nb55 | Δ | kiểm định | kết luận |
 |---|---:|---:|---:|---|---|
 | `hit_rate@1` | 0.1196 | 0.0861 | -0.0335 | p=0.2649 · 18↔11 câu đổi chiều | trong ngưỡng nhiễu |
