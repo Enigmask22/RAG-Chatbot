@@ -3,3 +3,18 @@
 # Script shell PHẢI dùng LF, nếu không bash trên Linux báo "bad interpreter: ^M"
 *.sh text eol=lf
 *.ps1 text eol=crlf
+
+# Fixture của loader (`W3-01`) là byte, không phải văn bản — kể cả `.md`/`.html`.
+#
+# Rủi ro: bảng xref của PDF ghi **offset tuyệt đối**, nên đổi LF → CRLF lúc
+# checkout là mọi offset sai và file không mở được. `two-column.pdf` viết tay,
+# toàn ASCII, không có byte NUL — đúng hồ sơ mà `* text=auto` ở trên có thể phân
+# loại nhầm là text.
+#
+# ⚠️ Nhưng đo thật thì **nó KHÔNG bị đổi**: clone lại ở commit trước dòng này,
+# với `core.autocrlf=true`, `git ls-files --eol` vẫn báo `w/lf` và sha256 không
+# đổi — heuristic của git tự nhận ra nó là binary. Nên dòng dưới **không sửa một
+# lỗi đang xảy ra**; nó biến một điều đang đúng nhờ heuristic thành một điều đúng
+# vì được khai báo. Heuristic ấy đọc nội dung file, mà nội dung fixture thì
+# `make loader-fixtures` có quyền đổi.
+tests/fixtures/loaders/** binary
