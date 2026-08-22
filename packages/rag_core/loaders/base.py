@@ -66,17 +66,51 @@ def detect_format(path: str | Path) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ParseFingerprint:
-    """Ba thứ mà đổi cái nào cũng đổi văn bản xuất ra."""
+    """Mọi thứ mà đổi cái nào cũng đổi văn bản xuất ra.
+
+    ## Vì sao có `components`, và vì sao thiếu nó là một lỗ hổng thật
+
+    Bản `W3-01` ghi đúng **một** số version: của `docling`. Nhưng gói phát tán
+    tên `docling` không phải gói làm ra văn bản. Đo trên môi trường này
+    (`TD-22`): `docling==2.121.0` yêu cầu
+
+    ```
+    docling-core       >=2.91.0,<3.0.0     ← export_to_markdown() nằm ở ĐÂY
+    docling-ibm-models >=3.13.0,<4         ← model layout/table
+    docling-parse      >=7.12.0,<8.0.0     ← đọc text layer PDF
+    pypdfium2          >=4.30.0,<6.0.0     ← hai major version
+    rapidocr           >=3.9.1,<4.0.0      ← chỉ khi bật OCR
+    ```
+
+    `LoadedDocument.text` là giá trị trả về của `DoclingDocument.export_to_markdown`,
+    và hàm đó sống trong **`docling-core`**. Nên `docling-core` đi từ 2.91 lên
+    2.99 là markdown có thể đổi trong khi vân tay **không đổi một ký tự** — đúng
+    chế độ hỏng mà `TD-22` mô tả: hash byte vẫn khớp, vân tay vẫn khớp, không
+    test nào đỏ, và mọi offset span lệch đi.
+
+    `components` chỉ ghi những gói **đường parse này thật sự đi qua** (PDF khác
+    DOCX, OCR khác không OCR). Ghi thừa cũng có giá: một lượt nâng `rapidocr`
+    làm mọi tài liệu DOCX báo "parser đã đổi" trong khi chúng chưa từng chạm
+    OCR, và một cảnh báo kêu suốt là một cảnh báo bị tắt.
+    """
 
     loader: str
     library: str
     library_version: str
     options: tuple[str, ...] = ()
+    components: tuple[str, ...] = ()
+    """`"tên=version"` của các gói phụ mà đường parse này đi qua."""
 
     @property
     def canonical(self) -> str:
-        """Dạng chuỗi ổn định — thứ tự `options` được sắp để không phụ thuộc lời gọi."""
-        parts = [self.loader, self.library, self.library_version, *sorted(self.options)]
+        """Dạng chuỗi ổn định — `options`/`components` được sắp để không phụ thuộc lời gọi."""
+        parts = [
+            self.loader,
+            self.library,
+            self.library_version,
+            *sorted(self.options),
+            *sorted(self.components),
+        ]
         return "|".join(parts)
 
     @property

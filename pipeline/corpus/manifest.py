@@ -67,6 +67,8 @@ _FIELDS = (
     "bytes",
     "fetched_at",
     "notes",
+    "text_sha256",
+    "parse_fingerprint",
 )
 
 
@@ -88,6 +90,27 @@ class CorpusEntry(BaseModel):
     published_at: str = ""
     fetched_at: str = ""
     notes: str = ""
+
+    text_sha256: str = ""
+    """sha256 của **văn bản đã parse** (`Document.content`), không phải của byte.
+
+    `TD-22`: tới hết `W2` phép biến đổi byte → văn bản là **hàm đồng nhất**, nên
+    `sha256` ghim luôn cả hai và cột này thừa — đo được: 60/60 tài liệu corpus có
+    `text_sha256` **trùng khít** `sha256`, vì `payload.decode("utf-8").encode("utf-8")`
+    trả lại đúng byte cũ. Có parser đứng giữa thì hai giá trị tách nhau, và lúc đó
+    cột này là thứ duy nhất ghim được cái mà `TextSpan` của golden set neo vào.
+
+    Rỗng = chưa ghim. Xem `corpus_loader.iter_documents` về việc khi nào rỗng là
+    chấp nhận được và khi nào là lỗi.
+    """
+
+    parse_fingerprint: str = ""
+    """`ParseFingerprint.canonical` — dạng đọc được, không phải digest.
+
+    Chuỗi dài hơn digest 16 hex, và đó là mục đích: khi văn bản đổi, thông báo lỗi
+    so được hai chuỗi và chỉ thẳng ra gói nào đã dịch chuyển. Digest chỉ nói
+    "khác", mà "khác" thì đã biết rồi.
+    """
 
     @field_validator("license")
     @classmethod

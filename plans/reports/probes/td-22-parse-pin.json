@@ -1,0 +1,14 @@
+{
+  "doc_id": "wb-651521560259654928",
+  "bytes": 4706,
+  "bytes_identical": true,
+  "text_identical": false,
+  "chars_plain": 4688,
+  "chars_docling": 3673,
+  "fingerprint_plain": "plain|stdlib|1|encoding=utf-8",
+  "fingerprint_docling": "docling|docling|2.121.0|ocr=false|table_structure=true|docling-core=2.92.0",
+  "unpinned_blocked": true,
+  "pinned_loads": true,
+  "drift_blocked": true,
+  "drift_message": "wb-651521560259654928: văn bản parse ra khác manifest (đĩa 4c16f1465f38, manifest 000000000000) trong khi byte thì y nguyên. Nghĩa là **môi trường parse** đã đổi: mất: docling-core=2.91.0 · thêm: docling-core=2.92.0. Mọi TextSpan của golden set neo vào văn bản cũ, nên index tiếp sẽ cho recall sai mà không có gì đỏ. Xác nhận văn bản mới rồi `make corpus-pin`."
+}

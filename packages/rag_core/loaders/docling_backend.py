@@ -42,7 +42,13 @@ from typing import Any
 
 from .base import Heading, LoadedDocument, LoaderError, ParseFingerprint
 
-__all__ = ["DOCLING_FORMATS", "docling_version", "load_with_docling"]
+__all__ = [
+    "DOCLING_FORMATS",
+    "component_versions",
+    "docling_version",
+    "load_with_docling",
+    "model_revisions",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +61,106 @@ _HEADER_LABELS = frozenset({"section_header"})
 _TABLE_LABELS = frozenset({"table"})
 
 
+_ALWAYS = ("docling-core",)
+"""Gói serialise `DoclingDocument` → markdown. Mọi định dạng đều đi qua."""
+
+_PDF_ONLY = ("docling-parse", "pypdfium2", "docling-ibm-models")
+"""Đọc text layer + model layout/table. Chỉ PDF chạm tới."""
+
+_OCR_ONLY = ("rapidocr",)
+
+
+def _dist_version(name: str) -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return "absent"
+
+
+_PDF_MODELS: tuple[tuple[str, str], ...] = (
+    # (repo HF, revision mà docling yêu cầu)
+    ("docling-project/docling-layout-heron", "main"),
+    ("docling-project/docling-models", "v2.3.0"),
+)
+"""Trọng số mà pipeline PDF nạp. Xem `model_revisions` về vì sao phải ghim.
+
+Nguồn: `docling/datamodel/stage_model_specs.py:997` (layout, `revision="main"`) và
+`docling/models/stages/table_structure/table_structure_model.py:105` (bảng,
+`revision="v2.3.0"`).
+"""
+
+
+@lru_cache(maxsize=1)
+def model_revisions() -> tuple[str, ...]:
+    """Commit SHA **thực tế** của trọng số PDF đang nằm trong cache HF.
+
+    ## Vì sao ghim version gói vẫn chưa đủ
+
+    `components` đóng được lỗ "gói phụ dịch chuyển", nhưng pipeline PDF của
+    docling còn một đầu vào nữa mà **không** con số version nào chạm tới: trọng
+    số model tải từ Hugging Face. Và hai model được đối xử khác nhau:
+
+    | model | repo | revision docling yêu cầu |
+    |---|---|---|
+    | bảng | `docling-project/docling-models` | **`v2.3.0`** — tag cố định |
+    | bố cục | `docling-project/docling-layout-heron` | **`main`** — nhánh di động |
+
+    Model bố cục quyết định thứ tự đọc và cách chia khối của trang PDF, tức
+    quyết định thứ tự các đoạn trong markdown xuất ra. Một lượt push lên `main`
+    của repo ấy đổi văn bản parse ra **mà không một con số version nào trên máy
+    này nhúc nhích** — không `docling`, không `docling-core`, không gì cả. Đây là
+    tầng sâu hơn của `TD-22` và là tầng mà chỉ `text_sha256` bắt được.
+
+    Nên ghim vào vân tay **commit SHA đã phân giải** đọc từ cache HF (`refs/`),
+    không phải chuỗi `"main"`. Chỉ đọc đĩa, không gọi mạng — nếu trọng số chưa
+    được tải thì trả `repo@absent` thay vì đi tải về.
+    """
+    from huggingface_hub.constants import HF_HUB_CACHE
+    from huggingface_hub.file_download import repo_folder_name
+
+    out: list[str] = []
+    for repo_id, revision in _PDF_MODELS:
+        ref = (
+            Path(HF_HUB_CACHE)
+            / repo_folder_name(repo_id=repo_id, repo_type="model")
+            / "refs"
+            / revision
+        )
+        try:
+            resolved = ref.read_text(encoding="utf-8").strip()[:12] or "absent"
+        except OSError:
+            resolved = "absent"
+        out.append(f"{repo_id.split('/')[-1]}@{resolved}")
+    return tuple(out)
+
+
+@lru_cache(maxsize=8)
+def component_versions(suffix: str, ocr: bool) -> tuple[str, ...]:
+    """`("tên=version", ...)` của các gói mà **đúng đường parse này** đi qua.
+
+    Chia theo đường đi thay vì ghi tất: xem `ParseFingerprint` về vì sao ghi
+    thừa cũng có giá. `lru_cache` vì `importlib.metadata.version` đọc đĩa và
+    hàm này bị gọi một lần cho mỗi tài liệu.
+    """
+    names = list(_ALWAYS)
+    pins: tuple[str, ...] = ()
+    if suffix == ".pdf":
+        names += list(_PDF_ONLY)
+        pins = model_revisions()
+    if ocr:
+        names += list(_OCR_ONLY)
+    return tuple(f"{name}={_dist_version(name)}" for name in sorted(names)) + pins
+
+
 def docling_version() -> str:
-    """Version của docling, hoặc `"absent"` khi chưa cài."""
+    """Version của docling, hoặc `"absent"` khi chưa cài.
+
+    ⚠️ Một mình con số này **không** ghim được văn bản xuất ra — xem
+    `ParseFingerprint.components` và `model_revisions`. Nó là tên gói ô dù,
+    không phải gói làm việc.
+    """
     from importlib.metadata import PackageNotFoundError, version
 
     try:
@@ -169,6 +273,7 @@ def load_with_docling(
             library="docling",
             library_version=docling_version(),
             options=(f"ocr={str(ocr).lower()}", "table_structure=true"),
+            components=component_versions(Path(path).suffix.lower(), ocr),
         ),
         headings=headings,
         table_count=tables,

@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (7) (cuối file)** — `W3-05` xong, `W3` **5/9**. Small-to-big (`chunking/parent_child.py` + `retrieval/context.py`), hai index thật: `rag_pc256` 10.473 point, `rag_pc128` 22.924 point. ✅ Cả ba vế DoD đạt. ⭐ **Parent KHÔNG phải một point** — nó là *tập* các child, nên 0 field payload mới, 0 field `MetadataFilter`, 0 backfill, 0 con số `W2` bị đổi; và parent không thể lọt vào kết quả tìm kiếm vì nó không nằm trong đó. ⚠️⚠️ **Protocol khớp với một method KHÔNG TỒN TẠI, 27 test vẫn xanh**: gọi `get_by_ids`, lớp thật có `fetch_chunks`, fake trong test cũng khai sai y hệt → *một Protocol cấu trúc không ràng buộc được gì nếu cả hai bên đối chiếu đều do test dựng ra*. Khuôn để bịt đã có sẵn ở `W3-06` mà tôi không dùng lại. ⭐⭐ **Độ nở ngữ cảnh là chỉ số ĐÁNH LỪA**: chia đôi child làm nó gấp đôi (3,45× → 6,98×) trong khi prompt thật không đổi (9.471 → 9.519 token) — prompt = *số parent* × *cỡ parent*, child không có trong công thức. Hệ quả: **child nhỏ hơn không đắt hơn**. ⚠️ `chunk_size=256` token **không phải "small"** (child 256 tok > chunk baseline 218 tok) → thêm `pc128`.
+> **Phiên mới nhất: 2026-08-22 (8) (cuối file)** — `TD-22` **đóng**, `W3-07` hết bị chặn. Manifest ghim `text_sha256` + `parse_fingerprint`; `iter_documents` parse qua đúng loader chung rồi đối chiếu. ⭐⭐ Nợ sâu hơn **hai tầng** so với lúc ghi: (1) vân tay `W3-01` ghim **tên gói ô dù** — `export_to_markdown` sống trong `docling-core`, gói mà `docling==2.121.0` thả tự do `>=2.91,<3.0`; (2) ngay cả ghim đủ version gói vẫn chưa đủ, vì **trọng số model bố cục tải theo `revision='main'`** (model bảng thì ghim `v2.3.0`) → ghim commit SHA đã phân giải, nhưng đó chỉ làm lần đổi *ồn ào* chứ không *ngăn* → `TD-27`. ⭐ Đo: `text_sha256 == sha256` **60/60** (hai cột mới hôm nay hoàn toàn thừa — và đó đúng là thứ hết hạn khi có parser); nối loader **không đổi gì** (14.284.300 ký tự y nguyên); dựng lại chế độ hỏng bằng cách chép **nguyên byte** sang `.md` → sha256 trùng khít, **−21,6% văn bản**. ⚠️ Ba assert đầu tôi viết là vô nghĩa (tautology, `or True`) — cùng hình dạng với `W3-05` §3, hai phiên liền.
+>
+> Phiên trước: **2026-08-22 (7)** — `W3-05` xong, `W3` **5/9**. Small-to-big (`chunking/parent_child.py` + `retrieval/context.py`), hai index thật: `rag_pc256` 10.473 point, `rag_pc128` 22.924 point. ✅ Cả ba vế DoD đạt. ⭐ **Parent KHÔNG phải một point** — nó là *tập* các child, nên 0 field payload mới, 0 field `MetadataFilter`, 0 backfill, 0 con số `W2` bị đổi; và parent không thể lọt vào kết quả tìm kiếm vì nó không nằm trong đó. ⚠️⚠️ **Protocol khớp với một method KHÔNG TỒN TẠI, 27 test vẫn xanh**: gọi `get_by_ids`, lớp thật có `fetch_chunks`, fake trong test cũng khai sai y hệt → *một Protocol cấu trúc không ràng buộc được gì nếu cả hai bên đối chiếu đều do test dựng ra*. Khuôn để bịt đã có sẵn ở `W3-06` mà tôi không dùng lại. ⭐⭐ **Độ nở ngữ cảnh là chỉ số ĐÁNH LỪA**: chia đôi child làm nó gấp đôi (3,45× → 6,98×) trong khi prompt thật không đổi (9.471 → 9.519 token) — prompt = *số parent* × *cỡ parent*, child không có trong công thức. Hệ quả: **child nhỏ hơn không đắt hơn**. ⚠️ `chunk_size=256` token **không phải "small"** (child 256 tok > chunk baseline 218 tok) → thêm `pc128`.
 >
 > Phiên trước: **2026-08-22 (6)** — `W3-06` xong, `W3` **4/9**. Kích thước chunk tính bằng token (`chunking/tokens.py`). ✅ **DoD đã đạt SẴN**: BGE-M3 0/15.814 chunk bị cắt, dư **11,2×** — đã có số từ `W2-01`. ⭐ **Ký tự không phải đơn vị mang đi được**: đổi tokenizer là đổi số token của cùng một chunk tới **47%**, và chiều lệch EN↔VI **đảo dấu** giữa hai model. ⭐ Giá trị thật là **san bằng kích thước giữa hai ngôn ngữ** (PhoBERT: −22,3% → +2,4%), không phải tránh bị cắt. ⚠️⚠️ **Chép quy tắc p05 của `truncation.py` là SAI** vì ở đây có bước kiểm lại (hụt 17% ngân sách). ⚠️⚠️ **Lỗi trộn đơn vị của chính tôi, 28 test xanh không thấy** — test kiểm *trần*, không kiểm *đích*.
 >
@@ -2772,5 +2774,79 @@ uv run pytest tests/unit/test_parent_child.py
 
 Việc tiếp theo: **`W3-08`** (ingestion worker arq) — `W3-04` chờ GPU thuê
 (`W0-05`), `W3-07` chờ `TD-22`.
+
+---
+
+## Phiên 2026-08-22 (8) · `TD-22` — ghim văn bản parse ra
+
+**Mục tiêu:** đóng `TD-22` để `W3-07` hết bị chặn (`W3-04` để anh làm khi có GPU;
+`W3-09` phải đứng sau `W3-04`).
+
+**Kết quả:** đóng. `ruff` + `mypy` sạch (131 file). 13 test mới.
+
+### Nợ hoá ra sâu hơn hai tầng so với lúc ghi
+
+Nợ viết là "manifest ghim `sha256` của byte, không ghim văn bản đã parse". Đúng,
+nhưng chưa đủ:
+
+**Tầng 1 — vân tay ghim tên gói ô dù.** `W3-01` ghi đúng một số version: của
+`docling`. Nhưng `DoclingDocument.export_to_markdown` — hàm sinh ra
+`LoadedDocument.text` — sống trong **`docling-core`**, và `docling==2.121.0` cho
+nó chạy tự do trong `>=2.91.0,<3.0.0`. `docling-core` dịch chuyển là markdown đổi
+trong khi vân tay đứng yên. Cũng vậy với `docling-parse`, `pypdfium2` (thả **hai
+major version**), `docling-ibm-models`, `rapidocr`. → `ParseFingerprint.components`,
+ghi **theo đường parse** chứ không ghi tất (ghi thừa cũng có giá: nâng `rapidocr`
+làm mọi DOCX báo "parser đã đổi" trong khi chúng chưa từng chạm OCR, và một cảnh
+báo kêu suốt là một cảnh báo bị tắt).
+
+**Tầng 2 — ghim đủ version gói vẫn chưa ghim được PDF.** Pipeline PDF nạp trọng
+số từ HF, và hai model được đối xử khác nhau: model **bảng** ghim `revision="v2.3.0"`,
+model **bố cục** dùng `revision="main"` — một nhánh di động. Model bố cục quyết
+định thứ tự đọc trang, tức thứ tự đoạn trong markdown, tức mọi offset span. Một
+lượt push lên `main` đổi văn bản mà **không con số version nào trên máy nhúc
+nhích**. → ghim **commit SHA đã phân giải** đọc từ cache HF. Nhưng đó chỉ làm lần
+đổi *ồn ào*, không *ngăn* được → `TD-27`.
+
+### Đo được
+
+* `text_sha256 == sha256`: **60/60** — hôm nay hai cột mới hoàn toàn thừa, và đó
+  chính là thứ hết hạn khi có parser.
+* Nối loader vào `corpus_loader` **không đổi gì**: `Document.content ==
+  payload.decode("utf-8")` 60/60, tổng **14.284.300** ký tự — khớp từng chữ số
+  với `W3-06` §7 và `index-pc256.json`.
+* Dựng lại chế độ hỏng trên tài liệu thật (chép **nguyên byte** sang `.md`):
+  sha256 byte trùng khít `8da126fbc1a136b7`, văn bản **4.688 → 3.673 ký tự
+  (−21,6%)**. Kiểm-theo-byte không thấy gì.
+
+### Quyết định thiết kế đáng ghi
+
+"Chưa ghim" **không** phải lúc nào cũng là lỗi, và luật phải có lý do chứ không
+theo giá trị: `if entry.text_sha256:` nghĩa là *rỗng = bỏ qua*, tức đúng chế độ
+hỏng đang đi sửa. Luật theo **loader**: `plain` chấp nhận (hàm đồng nhất, `sha256`
+đã ghim văn bản); mọi loader khác **báo lỗi**. Nên `W3-07` về mặt vật lý không
+thêm được một `.docx` mà quên ghim.
+
+Trường hợp thứ ba cố ý không phải lỗi: vân tay đổi mà văn bản không đổi — chỉ
+`WARNING`, vì để manifest mang vân tay cũ nghĩa là lần lệch **thật** sau này sẽ
+chỉ sai thủ phạm.
+
+### ⚠️ Lỗi của tôi trong phiên
+
+Ba assert đầu tiên trong test mới là vô nghĩa: một tautology `x == x`, một
+`... or True`, một biến alias thừa. Đúng loại "test không bao giờ đỏ được" mà
+`W3-05` §3 vừa viết cả một mục — hai phiên liền cùng một hình dạng. Đã thay bằng
+phép kiểm thật.
+
+### Lệnh để tiếp tục
+
+```bash
+make corpus-pin                 # báo cáo (không sửa gì)
+make corpus-pin PIN_ARGS=--write
+make parse-pin-probe            # dựng lại chế độ hỏng rồi cho xem nó bị chặn
+uv run pytest tests/unit/test_parse_pin.py
+```
+
+Việc tiếp theo: **`W3-07`** (content-hash dedupe + incremental re-index), rồi
+**`W3-08`**. `W3-04` chờ GPU thuê; `W3-09` chờ `W3-04`.
 
 ---

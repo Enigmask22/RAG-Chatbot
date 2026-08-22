@@ -250,6 +250,18 @@ SCAN ?= tests/fixtures/loaders/scanned-page.pdf
 scan-probe:  ## In mật độ text layer từng trang của một PDF (W3-02)
 	$(PY) python -m rag_core.loaders.scan $(SCAN) --per-page
 
+.PHONY: incr-probe
+incr-probe:  ## Sửa một dòng trong corpus thật rồi đo phải embed lại bao nhiêu (W3-07)
+	$(PY) python scripts/incremental_probe.py --report plans/reports/probes/w3-07-incremental.json
+
+.PHONY: corpus-pin
+corpus-pin:  ## Ghim text_sha256 + parse_fingerprint vào manifest (TD-22). Không --write = chỉ báo cáo
+	$(PY) python scripts/pin_manifest.py $(PIN_ARGS)
+
+.PHONY: parse-pin-probe
+parse-pin-probe:  ## Dựng lại chế độ hỏng TD-22 trên tài liệu thật rồi cho xem nó bị chặn
+	$(PY) python scripts/parse_pin_probe.py --report plans/reports/probes/td-22-parse-pin.json
+
 PCK ?= 10
 PCCFG ?= pc256
 .PHONY: pc-probe
