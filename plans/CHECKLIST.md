@@ -400,10 +400,12 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 >
 > `W3` **5/9**. `W3-04` cần **GPU thuê** (`W0-05` chưa làm) và vLLM offline
 > batch; nhánh fallback DeepSeek API chạy được ở laptop nhưng tốn tiền thật.
-> `TD-22` và `W3-07` **đã xong**. Còn lại `W3-08` (arq) — chạy được ngay ở laptop,
-> Redis đã sẵn trong `docker-compose` và `settings.redis_url` đã có. `W3-04` anh
-> làm khi có GPU thuê; `W3-09` phải đứng **sau** `W3-04` vì DoD của nó hỏi thẳng
-> contextual chunking giảm retrieval failure bao nhiêu phần trăm.
+> `W3` **7/9**. Còn đúng hai hạng mục, và cả hai đều chờ **`W3-04`**: anh làm nó
+> khi có GPU thuê, rồi `W3-09` (ablation #2) mới chạy được — DoD của nó hỏi thẳng
+> *contextual chunking giảm retrieval failure bao nhiêu phần trăm*, tức không trả
+> lời được nếu chưa có contextual chunking.
+>
+> Mọi thứ **không** chờ GPU đã xong: `TD-22`, `W3-07`, `W3-08`.
 >
 > ✅ **`G3` tiêu chí "reprocess nhanh hơn full rebuild ≥ 10×" đã ĐẠT**: đo được
 > **179,3×** (`W3-07` §3).
@@ -721,14 +723,25 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
   · 💡 Test có **hai lớp đếm độc lập**: `BuildReport.n_chunks_embedded` (code tự báo) và `CountingEmbeddings` (bọc provider, đếm text thật đi qua). Một mình con số tự báo là biến đếm của chính đoạn code đang kiểm — bài học `W3-05` §3 trên một trục khác. Một test ghim **giới hạn** (chèn ở đầu ⇒ mượn lại < 10%) chứ không ghim thành công
   · ⚠️ `IndexState` giờ mang 15.814 hash → file state ~1,1 MB, lớn tuyến tính theo số chunk
   · Dự đoán ghi trước: **1 đúng rưỡi, 4 sai** — cái sai ở `E2` hoá ra là phát hiện chính
-- [ ] `W3-08` **Async ingestion worker (arq)** + job status
-  · DoD: `POST /ingest` trả `job_id` < 200ms; `GET /ingest/{id}` có progress; retry khi worker chết · Test: `tests/integration/test_ingest_job.py` · Evidence: —
+- [x] `W3-08` **Async ingestion worker (arq)** + job status *(2026-08-22)*
+  · DoD: `POST /ingest` trả `job_id` < 200ms; `GET /ingest/{id}` có progress; retry khi worker chết · Test: **20** (`tests/integration/test_ingest_job.py`) · Evidence: `reports/tasks/w3-08-ingest-worker.md`, `reports/probes/w3-08-ingest-latency.json` · Lệnh: `make ingest-api` · `make ingest-worker`
+  · `pipeline/ingest/` (`app.py`\`worker.py`\`tasks.py`\`store.py`\`schemas.py`) + extra `serving` (fastapi/uvicorn/arq) + `settings.ingest_queue`\`ingest_config_dir`
+  · ✅ **`POST` p50 3,47 ms · p95 4,26 ms · max 7,77 ms** (50 lượt) — dư **47×** so với trần 200 ms. Nhanh vì endpoint **không làm gì**: kiểm tên config, ghi trạng thái, đẩy job. Có test chạy trong **tiến trình con** ghim rằng `import pipeline.ingest.app` không kéo theo `torch`/`sentence_transformers`/`docling` — không có nó thì một dòng import lên đầu file là đủ đưa khởi động từ mili giây lên vài giây, mà mọi test khác vẫn xanh
+  · ⭐⭐ **`max_tries` KHÔNG có nghĩa "mọi lỗi được thử 3 lần".** Tôi viết test để chứng minh nó hoạt động, test đỏ, và `arq/worker.py:613-633` cho biết arq chỉ thử lại `Retry`/`RetryJob`/`CancelledError` — `Exception` thường là hỏng hẳn ngay lần đầu. Đó là mặc định **đúng** (thử lại job thiếu config chỉ cho ba lần hỏng y hệt), nên việc phân loại chuyển vào `tasks.is_transient`. Bốn đường quay lại hàng đợi, mỗi đường một test: lỗi hạ tầng → `Retry` ngay · tắt êm → `CancelledError` ngay · **chết hẳn → khoá `in-progress` hết hạn sau `job_timeout + 10s`** · lỗi tất định → không thử lại
+  · ⚠️⚠️ **`doc_ids` suýt thành một endpoint xoá index.** `build_index` **xoá** tài liệu có trong state mà không thấy trong lượt chạy — đúng với bộ lọc corpus (chúng nói *tài liệu nào THUỘC index*), nhưng "index lại đúng tài liệu này" là câu khác hẳn: diễn đạt bằng bộ lọc thì `POST {"doc_ids":["d-1"]}` xoá 59 tài liệu kia, im lặng, trả 200. Nên `only_doc_ids` là **phạm vi lượt chạy**: không vào `fingerprint`, và **tắt** bước gỡ. Có test đi tìm đúng chế độ hỏng ấy
+  · ⚠️ **Đặt ở `pipeline/ingest/` chứ không `serving/`**: endpoint **ghi vào index** là điều khiển từ xa của pipeline, không phải Serving Plane. Đặt nhầm là làm nhoè ranh giới mà cả kiến trúc dựa vào, ngay ở hạng mục **đầu tiên** chạm HTTP — và `W4` sẽ thừa hưởng chỗ nhoè
+  · ⚠️ **Ba lỗi test, cả ba hỏng theo kiểu không giống nguyên nhân**: (a) `Annotated[...]` khai **trong hàm** → `from __future__ import annotations` biến nó thành chuỗi, FastAPI phân giải ở namespace module, không thấy → coi là **query param** và trả `422 Field required: store`; (b) test dùng chung hàng đợi Redis → worker test này nhặt job test kia (sửa bằng `INGEST_QUEUE`, thứ hai môi trường chung một Redis cũng cần); (c) `client` dựng trước `workspace` → app nối hàng đợi mặc định, mọi job nằm im ở `queued`
+  · 💡 Trạng thái job ở **Redis chứ không RAM** — có test dựng hẳn app **thứ hai** đọc job của app thứ nhất; một `dict` sẽ qua mọi test một tiến trình rồi hỏng ở lần deploy đầu
+  · 💡 **Retry rẻ là nhờ `W3-07`**: job chạy lại từ đầu, và chỉ chấp nhận được vì lượt chạy lại chỉ embed phần thật sự đổi. Không có `W3-07` thì "retry" nghĩa là "làm lại 376 giây"
+  · 💡 Cố ý **không** nhận upload file: mở đường vòng qua `LICENSE_ALLOWLIST` (Quy tắc cứng #3) và buộc serving ghi vào manifest. Cố ý `max_jobs = 1`: hai job là hai bản BGE-M3 tranh VRAM
+  · ⚠️ **Chưa có xác thực** — chấp nhận được khi bind `127.0.0.1`, **không** chấp nhận được khi `W4-13` đóng gói Docker; phải vào cùng lúc với việc mở cổng
+  · Dự đoán ghi trước: **0 đúng hẳn, 1 nửa đúng, 5 sai** — hạng mục nhiều dự đoán sai nhất từ đầu dự án
 - [ ] `W3-09` **Ablation #2 + report** `reports/tasks/exp-002-chunking.md` — 5 chiến lược chunking
   · DoD: xác định được contextual chunking giảm retrieval failure bao nhiêu % (có số) · Test: — · Evidence: file report
 
 ### `G3` — Gate tuần 3 ⬜
 - [ ] Contextual/structure-aware chunking thắng hybrid cũ trên nDCG@10 (hoặc kết luận rõ là không, kèm số)
-- [ ] Ingest được ≥ 5 định dạng file, có test fixture cho từng loại
+- [x] Ingest được ≥ 5 định dạng file, có test fixture cho từng loại — **6** (`.txt` `.md` `.html` `.pdf` `.docx` `.pptx` `.xlsx` qua `rag_core.loaders`, `W3-01`), và từ `TD-22` chúng đi được vào `corpus_loader` với văn bản parse đã ghim
 - [x] Reprocess sau sửa nhỏ nhanh hơn full rebuild ≥ 10× (có số đo) — **179,3×**; sửa một dòng ở tài liệu 1.082 chunk chỉ embed lại **6** chunk (`reports/tasks/w3-07-incremental-reindex.md` §3)
 
 ---
@@ -898,6 +911,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 ` là một **điểm đồng bộ lại** — thiệt hại bị chặn trong khoảng cách tới lần xuống dòng đoạn kế tiếp. Cùng văn bản, thêm `
 
 ` mỗi 9 câu: **2,0% → 98,0%** | Loại tài liệu bị ảnh hưởng là loại **mất cấu trúc dòng**: đầu ra OCR, bảng chuyển thành văn xuôi, transcript không chấm câu — đúng vùng của `W3-02`/`TD-23`. Lối ra là **chunking theo nội dung** (`ChunkingStrategy.CONTENT_DEFINED`, ranh giới do hash cục bộ kiểu FastCDC/Rabin) để mọi vị trí đều là điểm đồng bộ tiềm năng. Là một **chiến lược chunking mới**, nên thuộc nhóm `W3-09` đo cùng các chiến lược khác. ⚠️ Đổi ranh giới chunk là đổi **tập** nhãn (`TD-20`) nên không kiểm định cặp được — cùng ràng buộc với `TD-25` |
+| `TD-29` | **Đường "worker chết hẳn" chưa được kiểm bằng cách giết tiến trình thật.** `W3-08` có test cho ba trong bốn đường quay lại hàng đợi; đường thứ tư được xác minh bằng **đọc mã nguồn arq**, không bằng chạy thử | `arq/worker.py:450-465`: job **ở lại hàng đợi** khi đang chạy, worker giữ khoá `in-progress:{job_id}` hạn `job_timeout + 10s`; `:482`: `job_try` được `INCR` ở **mỗi** lần nhặt. Nửa của mình (`job_try > 1` → `JobStatus.attempt`, có log) **có** test, dựng lại bằng cách đặt trước đúng khoá đếm ấy. ⚠️ Kèm một con số chưa ai đo: `job_timeout = 2 giờ` nghĩa là phục hồi sau khi worker chết mất **tới 2 giờ** mới bắt đầu | Cần một test chạy worker ở **tiến trình con**, `kill -9`, rồi bật worker thứ hai và xác nhận `attempt == 2`. Vướng: job phải đủ chậm để còn đang chạy lúc bị giết, mà với `hashing:64` và 3 tài liệu thì nó xong trong dưới một giây — nên cần một job cố ý chậm, tức một đường code chỉ tồn tại cho test. Nếu muốn phục hồi nhanh hơn 2 giờ thì phải thêm heartbeat riêng, và lúc đó test này là bắt buộc |
 | `TD-18` | **Không có nhánh khớp đúng cho mã tài liệu.** `W2-03` đo được: 25/51 mã (project ID, trust fund ID) **không nhánh nào** tìm ra ở top-10. Nguyên nhân là vocab **subword** của BGE-M3: `P171645` → `['▁P','171','645']`, và `171`/`645` có mặt khắp 15.814 chunk tài liệu thống kê. Mã tìm được thì luôn có một mảnh subword tự nó là từ hiếm (`VIE-01` → `['▁','VIE','-01']`) | Ảnh hưởng **không** đo được trên `golden_v1` — 209 câu đều là câu hỏi tự nhiên, không có câu nào tra mã. Nhưng đây là loại truy vấn có thật trong sản phẩm (người dùng dán mã dự án vào hộp tìm kiếm), ⚠️ **`W2-05` đã phản chứng nửa sau của phát biểu này.** Reranker **sửa được phần lớn**: known-item hit@1 0,0980 → **0,5490**, hit@10 0,4706 → **0,6471**, và nó **thắng cả sparse** (0,3529 → 0,5490, McNemar `p = 0,0391`). Vì vocab subword phá việc **truy hồi** một mã (điểm sparse là tích vô hướng trên *túi* subword nên mất thông tin thứ tự/liền kề) nhưng **không** phá việc **nhận ra** nó — cross-encoder có attention trên cả cặp nên nó thấy các mảnh xuất hiện liền nhau, đúng thứ tự. Reranked tìm **33/51** mã vs 26/51 của hợp dense+sparse ở top-10. Nợ còn lại **thu hẹp thành 35% mã (18/51) không vào được pool 50** — đó mới là chỗ cần một nhánh khớp đúng. RRF (`W2-04`) thì đúng là không sửa được | Hai phương án, **đo cái rẻ trước**: (a) **filter payload khớp chuỗi** — Qdrant đã có `create_payload_index` từ `W1-07`, không cần build lại index; (b) **BM25 thô mức từ** (không phải subword) làm named vector sparse thứ hai — đây là chỗ cần `modifier=Modifier.IDF`, khác nhánh BGE-M3, nhưng phải đổi schema + build lại index. `scripts/known_item_probe.py` là phép đo sẵn có để so trước/sau (đã có nhánh `--rerank` từ `W2-05`, nên phép so bốn nhánh chạy được bằng một lệnh). **Ưu tiên đã hạ** sau `W2-05`: giá của việc trì hoãn không còn là 'không tra được mã' mà là '35% mã không tra được' |
 
 ---

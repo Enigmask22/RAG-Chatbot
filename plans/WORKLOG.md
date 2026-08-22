@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (9) (cuối file)** — `W3-07` xong, `W3` **6/9**, và `G3` được một tiêu chí. Re-index tăng dần ở mức **chunk**: nhớ `content_hash` từng chunk, mượn lại vector của point cũ. ⭐ Corpus thật, sửa một dòng ở tài liệu 1.082 chunk → embed lại **6** chunk, nhanh hơn **179,3×** → `G3` "reprocess ≥ 10×" **ĐẠT**. ⭐ **Không dựng cache vector — Qdrant đã là cache**; chỉ thiếu đường đọc lại (`fetch_vectors`). ⭐⭐ Ca tổng hợp cho 2,0% mượn lại còn corpus thật cho 99,4%; chênh lệch ấy nghĩa là chưa hiểu cơ chế, và chỗ hoà giải là phát hiện: `separators` có **thứ tự ưu tiên** nên mỗi `
+> **Phiên mới nhất: 2026-08-22 (10) (cuối file)** — `W3-08` xong, `W3` **7/9**, `G3` **2/3**. API điều khiển ingestion + worker arq (`pipeline/ingest/`). ✅ `POST` **p50 3,47 ms · p95 4,26 ms**, dư **47×** so với trần 200 ms — nhanh vì endpoint không làm gì, và có test **tiến trình con** ghim rằng import app không kéo theo torch. ⭐⭐ **`max_tries` KHÔNG thử lại `Exception` thường**: arq chỉ thử lại `Retry`/`RetryJob`/`CancelledError` (`arq/worker.py:613-633`) — tôi viết test để chứng minh nó hoạt động, test đỏ, và hoá ra mặc định của arq đúng; phân loại lỗi chuyển vào `is_transient`. ⚠️⚠️ **`doc_ids` suýt thành endpoint XOÁ index** — `build_index` gỡ mọi tài liệu không thấy trong lượt chạy, nên diễn đạt "index lại tài liệu này" bằng bộ lọc corpus sẽ xoá 59 tài liệu kia và trả 200. ⚠️ Ba lỗi test đều hỏng không giống nguyên nhân (`Annotated` trong hàm → 422 query param; hàng đợi Redis dùng chung; thứ tự fixture). 💡 Và `-q` tôi gõ suốt nhiều phiên thành `-qq`, tắt hẳn dòng tổng kết — `pyproject.toml` đã cảnh báo từ `W2-05`.
+>
+> Phiên trước: **2026-08-22 (9)** — `W3-07` xong, `W3` **6/9**, và `G3` được một tiêu chí. Re-index tăng dần ở mức **chunk**: nhớ `content_hash` từng chunk, mượn lại vector của point cũ. ⭐ Corpus thật, sửa một dòng ở tài liệu 1.082 chunk → embed lại **6** chunk, nhanh hơn **179,3×** → `G3` "reprocess ≥ 10×" **ĐẠT**. ⭐ **Không dựng cache vector — Qdrant đã là cache**; chỉ thiếu đường đọc lại (`fetch_vectors`). ⭐⭐ Ca tổng hợp cho 2,0% mượn lại còn corpus thật cho 99,4%; chênh lệch ấy nghĩa là chưa hiểu cơ chế, và chỗ hoà giải là phát hiện: `separators` có **thứ tự ưu tiên** nên mỗi `
 
 ` là một **điểm đồng bộ lại** — cùng văn bản thêm xuống dòng đoạn: **2,0% → 98,0%** → `TD-28`. ⚠️ Fixture đầu cho 99% ở **mọi** ca (lần thứ ba trong `W3`, và lần này khó nghi ngờ hơn vì kết quả có lợi). ⚠️ Phát hiện chệch ra: `chunk_size=200` cùng `min_chunk_size` mặc định 200 cho chunk **1.460 ký tự, gấp 7,3×**, im lặng.
 >
@@ -2932,5 +2934,88 @@ uv run pytest tests/integration/test_incremental_reindex.py
 Việc tiếp theo: **`W3-08`** (async ingestion worker, arq). Redis đã sẵn trong
 `docker-compose` và `settings.redis_url` đã có; thiếu extra `fastapi`/`arq`.
 `W3-04` anh làm khi có GPU; `W3-09` chờ `W3-04`.
+
+---
+
+## Phiên 2026-08-22 (10) · `W3-08` — worker ingestion
+
+**Mục tiêu:** `W3-08`, hạng mục cuối của `W3` không cần GPU.
+
+**Kết quả:** xong. `W3` **7/9**; hai hạng mục còn lại (`W3-04`, `W3-09`) đều chờ
+GPU thuê. `G3` **2/3**. 20 test tích hợp mới.
+
+### DoD
+
+| vế | đo được |
+|---|---|
+| `POST` trả `job_id` < 200 ms | **p50 3,47 ms · p95 4,26 ms** (50 lượt) — dư 47× |
+| `GET` có progress | có, đơn điệu tăng theo từng tài liệu |
+| retry khi worker chết | có — nhưng bốn đường khác nhau, xem dưới |
+
+### ⭐⭐ `max_tries` không phải cái tôi tưởng
+
+Tôi viết một test để chứng minh `max_tries = 3` hoạt động: xoá manifest, chạy
+worker, kỳ vọng `attempt == 2`. Nó đỏ ở `attempt == 1`.
+
+`arq/worker.py:613-633`: arq chỉ thử lại `Retry`, `RetryJob`, `CancelledError`.
+Một `Exception` bất kỳ là hỏng hẳn ngay lần đầu; `max_tries` không đụng tới.
+
+Và đó là mặc định **đúng** — thử lại một job thiếu config chỉ cho ba lần hỏng y
+hệt nhau và một hàng đợi che mất lỗi thật. Nên việc phân loại chuyển vào
+`tasks.is_transient`, và bảng thành:
+
+| chuyện gì | cơ chế | nhận ra sau |
+|---|---|---|
+| Qdrant sập | `is_transient` → `Retry` | ngay |
+| worker tắt êm | `CancelledError` | ngay |
+| worker **chết hẳn** | khoá `in-progress` hết hạn | **`job_timeout + 10s`** |
+| sai config | không thử lại | ngay |
+
+Test cho dòng đầu dùng **cổng đóng thật**, không phải exception dựng sẵn. Dòng
+"chết hẳn" chỉ được xác minh bằng đọc mã nguồn → `TD-29`.
+
+### ⚠️⚠️ `doc_ids` suýt thành một endpoint xoá index
+
+`build_index` **xoá** tài liệu có trong state mà không thấy trong lượt chạy —
+đúng với bộ lọc corpus, vì chúng nói *tài liệu nào THUỘC index*. Nhưng "index lại
+đúng tài liệu này" là câu khác hẳn. Nếu tôi dùng lại `select_entries` cho
+`doc_ids` như phản xạ đầu thì `POST /ingest {"doc_ids": ["d-1"]}` sẽ xoá 59 tài
+liệu kia, im lặng, và trả 200.
+
+`only_doc_ids` vì thế là **phạm vi lượt chạy**: không vào `fingerprint`, và tắt
+bước gỡ. Có test đi tìm đúng chế độ hỏng ấy.
+
+### ⚠️ Ba lỗi test, cả ba hỏng không giống nguyên nhân
+
+* `Annotated[...]` khai **trong hàm** → `from __future__ import annotations` biến
+  nó thành chuỗi, FastAPI phân giải ở namespace module, không thấy, nên coi tham
+  số là **query param**: `422 Field required: store`.
+* Test dùng chung hàng đợi Redis → worker test này nhặt job test kia. Sửa bằng
+  `INGEST_QUEUE` cấu hình được — hai môi trường chung một Redis cũng cần nó.
+* `client` dựng trước `workspace` → app nối hàng đợi mặc định, mọi job nằm im ở
+  `queued`.
+
+### Phát hiện phụ về chính công cụ đo
+
+`addopts` đã có `-q`, nên `pytest -q` tôi gõ theo phản xạ suốt nhiều phiên thành
+`-qq` — **tắt hẳn** dòng tổng kết. Repo đã ghi cảnh báo này ở `pyproject.toml`
+từ `W2-05` và tôi vẫn lặp lại. Đã bỏ `-q` khỏi mọi lệnh.
+
+### Vì sao `pipeline/ingest/` chứ không `serving/`
+
+Endpoint **ghi vào index** là điều khiển từ xa của pipeline, không phải Serving
+Plane. Đặt nhầm là làm nhoè ranh giới mà cả kiến trúc dựa vào, ngay ở hạng mục
+đầu tiên chạm HTTP.
+
+### Lệnh để tiếp tục
+
+```bash
+make ingest-api      # uvicorn ở 127.0.0.1:8001, /docs có sẵn
+make ingest-worker   # arq
+uv run pytest tests/integration/test_ingest_job.py
+```
+
+Việc tiếp theo: **`W3-04`** (contextual retrieval, cần GPU thuê — anh làm), rồi
+**`W3-09`** (ablation #2) mới chạy được.
 
 ---

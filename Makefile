@@ -250,6 +250,14 @@ SCAN ?= tests/fixtures/loaders/scanned-page.pdf
 scan-probe:  ## In mật độ text layer từng trang của một PDF (W3-02)
 	$(PY) python -m rag_core.loaders.scan $(SCAN) --per-page
 
+.PHONY: ingest-api
+ingest-api:  ## Chạy API điều khiển ingestion (W3-08) ở cổng 8001
+	$(PY) uvicorn pipeline.ingest.app:app --host 127.0.0.1 --port 8001 --reload
+
+.PHONY: ingest-worker
+ingest-worker:  ## Chạy worker arq xử lý job ingest (W3-08)
+	$(PY) arq pipeline.ingest.worker.WorkerSettings
+
 .PHONY: incr-probe
 incr-probe:  ## Sửa một dòng trong corpus thật rồi đo phải embed lại bao nhiêu (W3-07)
 	$(PY) python scripts/incremental_probe.py --report plans/reports/probes/w3-07-incremental.json

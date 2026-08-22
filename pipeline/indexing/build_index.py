@@ -439,9 +439,7 @@ def build_index(
         wanted = set(only_doc_ids)
         missing = wanted - {doc.doc_id for doc in documents}
         if missing:
-            raise CorpusIntegrityError(
-                f"không có trong manifest: {', '.join(sorted(missing))}"
-            )
+            raise CorpusIntegrityError(f"không có trong manifest: {', '.join(sorted(missing))}")
         documents = [doc for doc in documents if doc.doc_id in wanted]
     logger.info("Nạp %d tài liệu trong %.1fs", len(documents), load_seconds)
 

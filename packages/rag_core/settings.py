@@ -48,6 +48,25 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://127.0.0.1:6379/0"
 
+    ingest_queue: str = "arq:queue"
+    """Tên hàng đợi arq cho job ingest.
+
+    Cấu hình được vì hai môi trường dùng chung một Redis sẽ **nhặt job của nhau**:
+    worker của staging nhận job của production, thất bại vì thiếu config, và job
+    biến mất khỏi hàng đợi. Đo được ở chính test của `W3-08` — các test dùng chung
+    một hàng đợi đã làm đúng chuyện đó với nhau.
+    """
+
+    ingest_config_dir: Path = Path("configs/indexing")
+    """Thư mục mà `POST /ingest` được phép đọc config từ đó (`W3-08`).
+
+    Là **cận trên của quyền đọc**, không phải một tiện ích: `IngestRequest.config`
+    nhận một *tên*, và `pipeline.ingest.schemas.resolve_config` ghép nó vào đúng
+    thư mục này rồi kiểm lại rằng kết quả không thoát ra ngoài. Đổi được bằng biến
+    môi trường vì container có thể mount config ở chỗ khác — và vì test cần một
+    thư mục tạm mà không phải nới lỏng hàng rào.
+    """
+
     # ------------------------------------------------------------ Model
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"
     embedding_device: str = "auto"
