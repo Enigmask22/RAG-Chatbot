@@ -131,7 +131,7 @@ strict = true
 warn_unreachable = true
 # Thư viện bên thứ ba chưa có type stub — không để chúng làm hỏng strict mode của code mình
 [[tool.mypy.overrides]]
-module = ["sentence_transformers.*", "qdrant_client.*", "torch.*"]
+module = ["sentence_transformers.*", "qdrant_client.*", "torch.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------
@@ -148,7 +148,10 @@ testpaths = ["tests"]
 # không bao giờ xuất hiện. Các target trong `Makefile` cố ý **không** thêm `-q`.
 addopts = "-q --strict-markers"
 markers = [
-    "integration: cần service ngoài (Qdrant/Postgres/Redis) — chạy bằng `make test-integration`",
+    # "ngoài" = ngoài Python thuần: service (Qdrant/Postgres/Redis) hoặc trọng số
+    # model phải tải về (OCR ở `W3-02`). Điểm chung là chúng không chạy được
+    # trong một vòng lặp `make test` vài giây.
+    "integration: cần service ngoài hoặc trọng số model — chạy bằng `make test-integration`",
     "gpu: cần GPU cục bộ",
     "slow: chạy lâu, loại khỏi vòng lặp phát triển",
 ]

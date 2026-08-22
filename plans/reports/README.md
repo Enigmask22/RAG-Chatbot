@@ -44,6 +44,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-08` ablation | [`tasks/w2-08-ablation.md`](tasks/w2-08-ablation.md) | `e1-*` (**14 ô**) | `ablation-exp-001-ndcg` | — | **Cấu hình thắng là một TẬP, không một dòng**; và người thắng từng do **6 mẫu lại trên 10.000** quyết định |
 | `W2-09` tổng kết exp-001 | [`tasks/exp-001-retrieval.md`](tasks/exp-001-retrieval.md) | `e1-*` | `cmp-e1-*` · `bycategory-e1-*` · `contrast-category-exp-001` · `contrast-lang-exp-001` | — | **15/15 metric**, `hit_rate@5` **0↔120 câu**; và **câu "category nào cải thiện nhiều nhất" KHÔNG có câu trả lời** — cả 6 nhóm hoà |
 | `W3-01` Docling loader | [`tasks/w3-01-docling-loader.md`](tasks/w3-01-docling-loader.md) | — | — | — | 6 định dạng, cả hai vế DoD đạt; và **chèn parser vào giữa byte và `Document.content` giết sạch golden set — 0/280 span sống sót** (`TD-22`) |
+| `W3-02` OCR fallback | [`tasks/w3-02-ocr-fallback.md`](tasks/w3-02-ocr-fallback.md) | — | — | — | Phát hiện scan bằng mật độ text layer (ngưỡng đo từ PDF World Bank thật); và **máy OCR đọc tiếng Anh nguyên văn nhưng trả rác cho tiếng Việt** nên loader **từ chối** (`TD-23`) |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -84,6 +85,7 @@ Chạy lại thì file rơi đúng chỗ — không cần truyền đường d�
 | `make filter-probe` | `probes/w2-06-filter-probe.json` |
 | `make loader-fixtures` | `tests/fixtures/loaders/*` (6 file, idempotent) |
 | `make loader-probe` | — (in ra stdout: đồng nhất byte · dòng còn nguyên · span golden sống) |
+| `make scan-probe SCAN=…` | — (in ra stdout: mật độ text layer từng trang) |
 | `make exp` | `runs/<run_prefix>-*` × 3 file mỗi ô + `.cache/experiments/<name>.json` + MLflow |
 | `make exp-dry` | — (chỉ in bảng grid + preflight) |
 | `make exp-backfill` | MLflow, **đọc từ** `runs/` — không chạy eval |

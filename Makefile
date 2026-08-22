@@ -242,8 +242,13 @@ eval-rerank:  ## Eval reranked trên cấu hình THẮNG của W2-04 (BUNDLE=bge
 		--rerank-base hybrid --rrf-k 1 --candidate-k 20 $(RERANK_ARGS)
 
 .PHONY: loader-fixtures
-loader-fixtures:  ## Sinh lại 6 fixture cho loader (W3-01) — idempotent
+loader-fixtures:  ## Sinh lại 7 fixture cho loader (W3-01, W3-02) — idempotent
 	$(PY) python scripts/make_loader_fixtures.py
+
+SCAN ?= tests/fixtures/loaders/scanned-page.pdf
+.PHONY: scan-probe
+scan-probe:  ## In mật độ text layer từng trang của một PDF (W3-02)
+	$(PY) python -m rag_core.loaders.scan $(SCAN) --per-page
 
 .PHONY: loader-probe
 loader-probe:  ## Cho corpus qua docling và đếm xem span golden còn sống bao nhiêu (W3-01)

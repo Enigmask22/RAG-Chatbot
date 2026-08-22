@@ -239,6 +239,21 @@ Khoảng **hai bậc độ lớn**, cho một PDF born-digital vốn đã có s�
 tức toàn bộ chi phí ấy mua về đúng thứ đã có. Phát hiện scan rồi mới gọi OCR là
 DoD của **`W3-02`**; ở đây tắt để `W3-01` không âm thầm trả giá đó cho mọi tài liệu.
 
+> ⚠️ **Đính chính 2026-08-22 (`W3-02`): bảng trên là cold start vs cold start,
+> KHÔNG phải chi phí mỗi trang — và tôi đã dùng nó như thể là.**
+>
+> Đo lại 5 lượt liên tiếp **trong cùng một tiến trình**: `12,67 · 0,34 · 0,34 ·
+> 0,35 · 0,36` giây. Phần lớn cái 70 s là **nạp model một lần cho cả tiến
+> trình**, lần đầu còn kèm tải ~30 MB trọng số. Chi phí **cận biên** là
+> **0,35 s/trang** so với ~0,12 s khi tắt — **gấp ~3 lần, không gấp 500**.
+>
+> Quyết định `do_ocr=False` **không đổi** và vẫn đúng: chi phí cố định ~12 s mỗi
+> tiến trình là thật, và tài liệu born-digital không cần trả nó. Cái đổi là **lý
+> do**: `W3-02` đáng làm vì **đúng/sai** (không phát hiện thì PDF ảnh trả rỗng →
+> `LoaderError` → tài liệu biến mất khỏi index, im lặng) và vì nó là chỗ duy
+> nhất chặn được OCR chạy trên tài liệu tiếng Việt — không phải vì tiết kiệm
+> thời gian. Xem `w3-02-ocr-fallback.md` §4.
+
 ## 7. Fixture phải sinh được lại, và lần đầu thì không
 
 `.docx`/`.pptx`/`.xlsx` là zip: zip ghi mtime từng entry, OOXML ghi thêm ngày

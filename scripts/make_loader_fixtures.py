@@ -1,4 +1,4 @@
-"""Sinh 6 file fixture cho `W3-01`, một file cho mỗi định dạng.
+"""Sinh 7 file fixture cho `W3-01`/`W3-02`, một file cho mỗi định dạng.
 
 Chạy: `make loader-fixtures`
 
@@ -164,6 +164,67 @@ def build_pdf() -> bytes:
             + stream
             + b"endstream",
         ]
+    )
+
+
+# --------------------------------------------------------------------------
+# PDF scan — ảnh một trang, KHÔNG có text layer (`W3-02`)
+# --------------------------------------------------------------------------
+# Hai đoạn cố ý khác ngôn ngữ. Máy OCR mặc định của docling là RapidOCR với model
+# PP-OCRv6 + `ppocrv6_dict.txt` — bộ chữ Trung/Anh. Dự án này phục vụ corpus tiếng
+# Việt, nên "OCR có đọc được tiếng Việt có dấu không" là câu phải ĐO chứ không
+# phải câu để giả định. Đặt hai đoạn cạnh nhau trong cùng một ảnh thì so được
+# trực tiếp, cùng độ phân giải, cùng font, cùng một lần chạy.
+_SCAN_EN_LINES = (
+    "Vietnam Macroeconomic Update",
+    "Growth reached 7.09 percent in 2024, up",
+    "from 5.05 percent a year earlier. Exports",
+    "rose to 405.5 billion dollars while the",
+    "consumer price index settled at 3.63.",
+)
+_SCAN_VI_LINES = (
+    "Cap nhat kinh te vi mo Viet Nam",
+    "Tăng trưởng đạt 7,09 phần trăm năm 2024,",
+    "cao hơn mức 5,05 phần trăm của năm trước.",
+    "Xuất khẩu tăng lên 405,5 tỷ đô la trong khi",
+    "chỉ số giá tiêu dùng dừng ở mức 3,63.",
+)
+_SCAN_DPI = 150
+_SCAN_PAGE_PX = (int(8.5 * _SCAN_DPI), int(11 * _SCAN_DPI))
+# ⚠️ **Cả hai** trường, không chỉ `/CreationDate`. Vá một cái rồi tưởng xong là
+# đúng lỗi đã mắc với `docProps` của openpyxl ở trên: hai lần chạy cách nhau
+# dưới một giây thì trùng, cách nhau hơn một giây thì lệch **đúng một byte**.
+_PDF_DATE_RE = re.compile(rb"/(?:Creation|Mod)Date\s*\(D:[^)]*\)")
+
+
+def build_scanned_pdf() -> bytes:
+    """Một trang giấy trắng có chữ, lưu thành PDF **ảnh** — không text layer.
+
+    Pillow ghi `/CreationDate` bằng giờ hiện tại nên phải ép lại, cùng lý do với
+    `docProps` của OOXML ở `_freeze_zip`. Font dùng `ImageFont.load_default(size=)`
+    (Aileron, đóng gói sẵn trong Pillow) chứ không dùng font hệ điều hành: fixture
+    sinh trên máy khác phải ra cùng chuỗi byte.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    page = Image.new("L", _SCAN_PAGE_PX, color=255)
+    draw = ImageDraw.Draw(page)
+    title_font = ImageFont.load_default(size=34)
+    body_font = ImageFont.load_default(size=26)
+
+    y = 120
+    for block in (_SCAN_EN_LINES, _SCAN_VI_LINES):
+        for index, line in enumerate(block):
+            draw.text((110, y), line, fill=0, font=title_font if index == 0 else body_font)
+            y += 52 if index == 0 else 44
+        y += 60
+
+    buffer = io.BytesIO()
+    # `resolution` để pypdfium2 báo đúng kích thước trang (8,5 × 11 inch).
+    page.convert("1").save(buffer, format="PDF", resolution=_SCAN_DPI)
+    return _PDF_DATE_RE.sub(
+        lambda m: m.group(0)[: m.group(0).index(b"(")] + b"(D:19800101000000Z)",
+        buffer.getvalue(),
     )
 
 
@@ -349,6 +410,7 @@ def build_xlsx() -> bytes:
 
 _BUILDERS = {
     "two-column.pdf": build_pdf,
+    "scanned-page.pdf": build_scanned_pdf,
     "chuong-i.docx": build_docx,
     "chuong-i.pptx": build_pptx,
     "chi-tieu.xlsx": build_xlsx,

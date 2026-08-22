@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (3) (cuối file)** — `W3-01` xong, `W3` **1/9**. Loader 6 định dạng (`rag_core.loaders`). ✅ Cả hai vế DoD đạt. ⭐ **Fixture "sạch" đo cái generator của tôi, không đo docling** — PDF hai cột toàn dòng ngắn bằng nhau cho kết quả **không đơn điệu** (4 ✗ · 12 ✓ · 24 ✗ · 40 ✓); đổi sang cột văn xuôi so le thì 4/4 đúng. ⭐⭐ **Chèn parser vào giữa byte và `Document.content` giết sạch golden set: 0/60 tài liệu đồng nhất byte, 0/280 span sống sót** — mà văn bản chỉ ngắn đi 8,85%, vì chữ không mất, **dòng bị dồn**. → `TD-22`. `.txt` **không** đi qua docling, và đó là điều kiện để mọi con số `W2` còn giá trị.
+> **Phiên mới nhất: 2026-08-22 (4) (cuối file)** — `W3-02` xong, `W3` **2/9**. Phát hiện scan (`scan.py`) + cổng OCR (`ocr.py`). ⭐⭐ **Máy OCR đi kèm docling đọc tiếng Anh nguyên văn và trả RÁC cho tiếng Việt** — cả hai model (`ch`, `latin`), cùng một ảnh, cùng một lần chạy. Nên với corpus tiếng Việt **bật OCR còn tệ hơn tắt**, và loader **từ chối** thay vì trả rác → `TD-23`. ⭐ Ngưỡng đo từ PDF World Bank thật: **báo cáo born-digital thật vẫn có trang trống** (1/129 · 4/112) nên luật "một trang trống ⇒ scan" sẽ đẩy 100% báo cáo vào OCR. ⚠️ **Đính chính `W3-01`**: 70,56 s là cold start, cận biên thật **0,35 s/trang** — lý do `W3-02` tồn tại không phải chi phí mà là đúng/sai.
+>
+> Phiên trước: **2026-08-22 (3)** — `W3-01` xong, `W3` **1/9**. Loader 6 định dạng (`rag_core.loaders`). ✅ Cả hai vế DoD đạt. ⭐ **Fixture "sạch" đo cái generator của tôi, không đo docling** — PDF hai cột toàn dòng ngắn bằng nhau cho kết quả **không đơn điệu** (4 ✗ · 12 ✓ · 24 ✗ · 40 ✓); đổi sang cột văn xuôi so le thì 4/4 đúng. ⭐⭐ **Chèn parser vào giữa byte và `Document.content` giết sạch golden set: 0/60 tài liệu đồng nhất byte, 0/280 span sống sót** — mà văn bản chỉ ngắn đi 8,85%, vì chữ không mất, **dòng bị dồn**. → `TD-22`. `.txt` **không** đi qua docling, và đó là điều kiện để mọi con số `W2` còn giá trị.
 >
 > Phiên trước: **2026-08-22 (2)** — `W2-09` xong, **`W2` đóng 10/10**. ⭐ Bảng delta baseline → đỉnh bảng **15/15 metric**, `ndcg@10` ×4,2, `hit_rate@5` **0↔120 câu**. ⭐⭐ **Câu thứ hai của DoD — "category nào cải thiện nhiều nhất" — KHÔNG có câu trả lời**: nó so `Δ_A` với `Δ_B` mà mọi bảng đã công bố chỉ kiểm `Δ ≠ 0`; dựng `contrast.py` (bootstrap **không cặp**) thì **cả 6 nhóm hoà, 0/5 phân giải được**, và **vẫn hoà khi bỏ hiệu chỉnh** — giới hạn của dữ liệu, không của ngưỡng. Cần **~440 câu**. ⚠️ **Hàng rào thứ tư**: số nhãn/câu đổi **giữa các nhóm**, nên `ndcg@10` không xếp hạng nhóm được. ⭐ **Bậc đổi embedding model chiếm phần lớn nhất ở cả 6/6 category**. ⭐⭐ Quyết định (b): **luật nâng `B` hiển nhiên cho câu trả lời SAI** — `MIN_TAIL_RESAMPLES` 30 → **128**. Việc tiếp theo: `G2` rồi `W3`.
 >
@@ -2443,5 +2445,90 @@ uv run pytest tests/unit/test_loaders.py
 
 Việc tiếp theo: **`W3-02`** (OCR fallback — thừa hưởng số 70,56 s vs 0,12–0,77 s)
 hoặc **`TD-22`** (ghim `text_sha256` vào manifest, chặn `W3-07`).
+
+---
+
+## Phiên 2026-08-22 (4) · `W3-02` — Scan detection + OCR fallback
+
+**Mục tiêu phiên:** `W3-02` — DoD là *PDF scan ra được text* và *có queue control
+tránh OOM*.
+
+### Đã làm
+
+* `packages/rag_core/loaders/scan.py` — `PageText` · `ScanReport` · `detect_scan`
+  · CLI `python -m rag_core.loaders.scan --per-page` (cũng là công cụ hiệu chỉnh)
+* `packages/rag_core/loaders/ocr.py` — `OcrGate` · `require_ocr_support` ·
+  `OCR_VERIFIED_LANGUAGES` · `SECONDS_PER_PAGE`
+* `load_document(..., ocr="off"|"auto"|"force", language=…, gate=…)`
+* Fixture thứ 7: `scanned-page.pdf` — ảnh bilevel 150 DPI, 7,8 KB, không text layer
+* `make scan-probe` · marker `integration` nới nghĩa sang "hoặc trọng số model"
+* +26 unit (`test_scan_detection.py`) + 9 integration (`test_ocr_fallback.py`)
+
+### Ba thứ đáng nhớ
+
+1. ⭐⭐ **OCR đọc tiếng Anh nguyên văn và trả rác cho tiếng Việt.** Fixture cố ý
+   đặt hai đoạn cùng nội dung khác ngôn ngữ **trong cùng một ảnh** — cùng font,
+   cùng DPI, cùng một lần chạy, nên không lẫn biến nào.
+
+   | model rec | tiếng Anh | tiếng Việt |
+   |---|---|---|
+   | `ch` PP-OCRv6 (mặc định) | ✅ nguyên văn | `Tāng trng t 7,09 phān trām nām 2024` |
+   | `latin` PP-OCRv3 | ✅ nguyên văn | `Tng trXXng XXt 7,09 phn trm nm 2024` |
+
+   Gốc: `Tăng trưởng đạt 7,09 phần trăm năm 2024`. Con số sống sót cả hai bên,
+   dấu thì không. Model `latin` — thứ tôi tìm tới **vì** tiếng Việt dùng chữ
+   Latin — hoá ra **tệ hơn** model mặc định.
+   💡 Nên `require_ocr_support("vi")` **ném lỗi**: rỗng thì có người thấy, còn
+   rác thì trông như nội dung và đi thẳng vào embedding → index → citation.
+
+2. ⭐ **Báo cáo born-digital THẬT vẫn có trang trống** — 1/129 và 4/112. Luật
+   hiển nhiên "một trang thiếu text ⇒ scan" sẽ đẩy **100%** báo cáo World Bank
+   vào OCR. Ngưỡng phải theo **tỉ lệ**, và cả hai hằng số nằm giữa hai cụm cách
+   nhau rất xa. ⚠️ Fixture born-digital của tôi ở **8,17 ký tự/in², thấp hơn p05
+   của tài liệu thật** — lần thứ hai liên tiếp fixture tự sinh không đại diện;
+   lần này tôi tải PDF thật **trước** khi chọn hằng số.
+
+3. ⚠️⚠️ **Đính chính `W3-01`, và nó đổi lý do cả hạng mục.** "OCR đắt hai bậc độ
+   lớn (70,56 s vs 0,12–0,77 s)" là **cold start vs cold start**. Đo 5 lượt liên
+   tiếp trong một tiến trình: **12,67 · 0,34 · 0,34 · 0,35 · 0,36** s. Cận biên
+   **0,35 s/trang** — gấp ~3 lần, không gấp 500. Nên lý do `W3-02` đáng làm
+   không phải chi phí mà là **đúng/sai** (không phát hiện thì PDF ảnh trả rỗng →
+   `LoaderError` → tài liệu biến mất khỏi index, im lặng) và **chốt ngôn ngữ**.
+   `OcrGate.max_pages` 50 → **500** theo đó.
+
+### Hai chỗ tự bẫy mình
+
+4. Fixture scan **không idempotent**, đúng lỗi openpyxl của phiên trước: ép
+   `/CreationDate` rồi tưởng xong, còn `/ModDate`. Ba lần chạy ba hash, khác
+   **đúng một byte**, và chỉ lộ ra khi hai lần chạy cách nhau **hơn một giây** —
+   gọi hai lần liên tiếp trong cùng tiến trình thì trùng, nên phép thử đầu của
+   tôi báo "ổn".
+5. Đi tìm model `latin` mất ba lượt vì `Rec.ocr_version` là **enum** (không nhận
+   chuỗi), `OCRVersion` **không có** `PPOCRV3` dù file model tên `PP-OCRv3`, và
+   `rapidocr_params` truyền qua docling **không** đổi được engine (nó rơi về
+   onnxruntime rồi `ImportError`). Phải gọi thẳng `RapidOCR` mới so được hai
+   model — tức tách "thư viện có làm được không" khỏi "tôi cấu hình đúng chưa".
+
+### DoD: đạt một nửa, và nửa kia là kết luận
+
+✅ queue control · ✅ PDF scan ra text **với tiếng Anh** · ❌ **với tiếng Việt** —
+và đó không phải phần chưa làm xong. Mở khoá cần `OPENROUTER_API_KEY` (→ VLM,
+đúng như plan viết) hoặc Tesseract `vie` trong image. Cả hai đều ngoài tầm commit
+này: đã kiểm, môi trường không có key OpenRouter, DeepSeek không có model thị
+giác, máy không có `tesseract` lẫn `onnxruntime`.
+
+### Lệnh để tiếp tục
+
+```bash
+make scan-probe SCAN=<file.pdf>          # mật độ text layer từng trang
+uv run pytest tests/unit/test_scan_detection.py
+uv run pytest tests/integration/test_ocr_fallback.py
+```
+
+**Kiểm chứng:** 1312 test — 1311 passed, 1 skipped, exit 0, 387,38 s ·
+`make lint` sạch (`mypy` 123 file, thêm `pypdfium2.*` vào `ignore_missing_imports`).
+
+Việc tiếp theo: **`W3-03`** (structure-aware chunker) — hạng mục đầu tiên tiêu
+thụ `LoadedDocument.headings` + `section_path_at()`.
 
 ---
