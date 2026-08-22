@@ -296,6 +296,32 @@ sạch: `ruff check` passed · `ruff format --check` 126 file · `mypy` 119 file
 > `git add -A --dry-run` chứ không bằng test. Thêm ngoại lệ
 > `!tests/fixtures/loaders/*.pdf`.
 
+### ⚠️ Rồi tôi suýt ghi một lỗi chưa tái lập được vào lịch sử git
+
+Thấy `.gitattributes` có `* text=auto`, tôi kết luận ngay: PDF viết tay toàn
+ASCII không có byte NUL → git coi là text → checkout trên Windows đổi LF thành
+CRLF → **bảng xref ghi offset tuyệt đối nên file hỏng**. Lập luận chặt, và tôi
+đã commit nó như một bản vá.
+
+Đo lại: clone ở đúng commit **trước** bản vá, với `core.autocrlf=true`:
+
+```
+$ git ls-files --eol tests/fixtures/loaders/two-column.pdf
+i/lf    w/lf    attr/text=auto
+$ sha256sum …/two-column.pdf     # trùng đúng hash trên đĩa
+```
+
+**Không đổi.** Heuristic của git tự nhận ra nó là binary. Bản vá đúng, nhưng lý
+do tôi ghi cho nó thì sai — nên `.gitattributes` và commit message đã sửa lại:
+dòng khai báo giữ lại vì nó biến *một điều đang đúng nhờ heuristic* thành *một
+điều đúng vì được khai báo*, và heuristic ấy đọc **nội dung** file, mà nội dung
+fixture thì `make loader-fixtures` có quyền đổi bất cứ lúc nào.
+
+💡 Ba lỗi trong §7–§9 (`.gitignore`, `.gitattributes`, và cái này) đều cùng một
+hình dạng: **"xanh trên máy tôi, chưa biết trên clone sạch"**. Hai cái đầu là lỗi
+thật, cái thứ ba là lỗi tưởng tượng — và không phân biệt được bằng suy luận, chỉ
+phân biệt được bằng cách clone ra thử.
+
 ## 10. Còn lại gì
 
 * ⚠️ **`TD-22` (mới, chặn `W3-07`)** — manifest ghim `sha256` của byte nhưng

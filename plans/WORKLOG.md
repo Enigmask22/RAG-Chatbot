@@ -2418,6 +2418,17 @@ bằng một phép đo mà tôi chưa chạy lần nào.
 7. ⚠️ `.gitignore` có `*.pdf` nên fixture PDF **không vào repo**: clone sạch thì
    `test_fixture_exists` đỏ, còn trên máy tôi mọi thứ xanh. Bắt bằng
    `git add -A --dry-run`, không bằng test. Thêm `!tests/fixtures/loaders/*.pdf`.
+8. ⚠️⚠️ **Rồi tôi suýt ghi một lỗi chưa tái lập được vào lịch sử git.** Thấy
+   `* text=auto`, tôi suy: PDF toàn ASCII không NUL → git coi là text → checkout
+   Windows đổi LF→CRLF → xref ghi offset tuyệt đối → hỏng file. Lập luận chặt, đã
+   commit như một bản vá. **Đo lại thì không đổi**: clone ở commit trước bản vá
+   với `core.autocrlf=true` cho `w/lf` và sha256 y nguyên — heuristic của git tự
+   nhận ra nó là binary. Đã amend lại commit cho đúng. Giữ dòng khai báo vì nó
+   biến điều đang đúng **nhờ heuristic** thành điều đúng **vì được khai báo**, và
+   heuristic ấy đọc nội dung file.
+   💡 Ba lỗi 6–8 cùng hình dạng "xanh trên máy tôi, chưa biết trên clone sạch".
+   Hai cái đầu thật, cái thứ ba tưởng tượng — **không phân biệt được bằng suy
+   luận, chỉ bằng cách clone ra thử.**
 
 **Kiểm chứng:** 1277 test — 1276 passed, 1 skipped, exit 0, 377,42 s ·
 `make lint` sạch (ruff + `mypy` 119 file).
