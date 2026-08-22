@@ -204,6 +204,21 @@ slide một `title` nên không có cây phân cấp nào để dựng; XLSX kh�
 kể cả tên sheet (`"Chỉ tiêu vĩ mô"`) cũng **mất**. `W3-03` phải biết trước điều
 này thay vì phát hiện lúc `section_path` rỗng trên production.
 
+> ### ⚠️ Đính chính từ `W3-03` (2026-08-22): hai chỗ ở §4 này không đủ
+>
+> **(a) `section_path_at` có lỗi `break`.** Bản viết ở đây dừng vòng lặp khi gặp
+> heading không định vị được, trong khi docstring nói là *bỏ qua*. Một heading
+> hỏng làm mù toàn bộ phần còn lại của tài liệu. `wb1.pdf` (129 trang) có
+> **6/128 heading không định vị được** → **575/587 chunk (98,0%)** nhận đường
+> dẫn khác; `wb2.pdf` có 0/83 → 0%. Đã sửa ở `W3-03`, có test ghim.
+>
+> **(b) Bảng độ sâu trên là bảng của *fixture*, không phải của tài liệu thật.**
+> Hai báo cáo World Bank thật cho **128 và 83 heading, tất cả cấp 1** — backend
+> PDF của docling gán nhãn `section_header` nhưng **không suy ra cấp** từ bố
+> cục. Cột `.pdf` thiếu ở bảng này, và nó là cột quan trọng nhất: phân cấp chỉ
+> tồn tại ở định dạng **tự mang** nó. Xem `w3-03-structure-chunker.md` §5 và
+> `TD-24`.
+
 ## 5. Bảng: 5/5 giữ được cấu trúc
 
 | fixture | vào | thời gian | ra (ký tự) | heading | độ sâu | bảng |

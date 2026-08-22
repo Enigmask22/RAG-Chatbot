@@ -45,6 +45,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W2-09` tổng kết exp-001 | [`tasks/exp-001-retrieval.md`](tasks/exp-001-retrieval.md) | `e1-*` | `cmp-e1-*` · `bycategory-e1-*` · `contrast-category-exp-001` · `contrast-lang-exp-001` | — | **15/15 metric**, `hit_rate@5` **0↔120 câu**; và **câu "category nào cải thiện nhiều nhất" KHÔNG có câu trả lời** — cả 6 nhóm hoà |
 | `W3-01` Docling loader | [`tasks/w3-01-docling-loader.md`](tasks/w3-01-docling-loader.md) | — | — | — | 6 định dạng, cả hai vế DoD đạt; và **chèn parser vào giữa byte và `Document.content` giết sạch golden set — 0/280 span sống sót** (`TD-22`) |
 | `W3-02` OCR fallback | [`tasks/w3-02-ocr-fallback.md`](tasks/w3-02-ocr-fallback.md) | — | — | — | Phát hiện scan bằng mật độ text layer (ngưỡng đo từ PDF World Bank thật); và **máy OCR đọc tiếng Anh nguyên văn nhưng trả rác cho tiếng Việt** nên loader **từ chối** (`TD-23`) |
+| `W3-03` Structure chunker | [`tasks/w3-03-structure-chunker.md`](tasks/w3-03-structure-chunker.md) | — | — | — | `section_path` đúng trên 1061 chunk của hai báo cáo thật (0 nói dối); và **PDF thật chỉ cho MỘT cấp heading**, **corpus 0/60 tài liệu có cấu trúc** (`TD-24`) |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy

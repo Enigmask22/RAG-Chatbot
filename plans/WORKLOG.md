@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (4) (cuối file)** — `W3-02` xong, `W3` **2/9**. Phát hiện scan (`scan.py`) + cổng OCR (`ocr.py`). ⭐⭐ **Máy OCR đi kèm docling đọc tiếng Anh nguyên văn và trả RÁC cho tiếng Việt** — cả hai model (`ch`, `latin`), cùng một ảnh, cùng một lần chạy. Nên với corpus tiếng Việt **bật OCR còn tệ hơn tắt**, và loader **từ chối** thay vì trả rác → `TD-23`. ⭐ Ngưỡng đo từ PDF World Bank thật: **báo cáo born-digital thật vẫn có trang trống** (1/129 · 4/112) nên luật "một trang trống ⇒ scan" sẽ đẩy 100% báo cáo vào OCR. ⚠️ **Đính chính `W3-01`**: 70,56 s là cold start, cận biên thật **0,35 s/trang** — lý do `W3-02` tồn tại không phải chi phí mà là đúng/sai.
+> **Phiên mới nhất: 2026-08-22 (5) (cuối file)** — `W3-03` xong, `W3` **3/9**. Structure-aware chunker (`chunking/structure.py`). ✅ Cả hai vế DoD đạt, và "đúng" định nghĩa mạnh hơn DoD: **nhất quán với `section_path_at` trên 1061 chunk của hai báo cáo World Bank thật, 0 chunk nói dối**. ⭐ **Gộp mảnh ngắn qua ranh giới section làm `section_path` nói dối** — cùng khuôn lỗi bản POC gộp qua ranh giới *tài liệu*; lối ra là **hạ đường dẫn xuống tổ tiên chung** (giá: 6,0% chunk). ⭐ **PDF thật chỉ cho MỘT cấp heading** (128 và 83 heading, tất cả cấp 1) và **corpus 0/60 tài liệu có cấu trúc** → `TD-24`. ⚠️ **Lỗi `break` của `W3-01` lộ ra**: 6 heading hỏng làm sai **575/587 chunk** ở `wb1`, 0% ở `wb2`. ⚠️ Tự bẫy hai lần: **vị trí cắt ≠ vị trí hỏi** (486/587 chunk lệch một section), và **script kiểm chứng lặp lại đúng lỗi nó đi kiểm**.
+>
+> Phiên trước: **2026-08-22 (4)** — `W3-02` xong, `W3` **2/9**. Phát hiện scan (`scan.py`) + cổng OCR (`ocr.py`). ⭐⭐ **Máy OCR đi kèm docling đọc tiếng Anh nguyên văn và trả RÁC cho tiếng Việt** — cả hai model (`ch`, `latin`), cùng một ảnh, cùng một lần chạy. Nên với corpus tiếng Việt **bật OCR còn tệ hơn tắt**, và loader **từ chối** thay vì trả rác → `TD-23`. ⭐ Ngưỡng đo từ PDF World Bank thật: **báo cáo born-digital thật vẫn có trang trống** (1/129 · 4/112) nên luật "một trang trống ⇒ scan" sẽ đẩy 100% báo cáo vào OCR. ⚠️ **Đính chính `W3-01`**: 70,56 s là cold start, cận biên thật **0,35 s/trang** — lý do `W3-02` tồn tại không phải chi phí mà là đúng/sai.
 >
 > Phiên trước: **2026-08-22 (3)** — `W3-01` xong, `W3` **1/9**. Loader 6 định dạng (`rag_core.loaders`). ✅ Cả hai vế DoD đạt. ⭐ **Fixture "sạch" đo cái generator của tôi, không đo docling** — PDF hai cột toàn dòng ngắn bằng nhau cho kết quả **không đơn điệu** (4 ✗ · 12 ✓ · 24 ✗ · 40 ✓); đổi sang cột văn xuôi so le thì 4/4 đúng. ⭐⭐ **Chèn parser vào giữa byte và `Document.content` giết sạch golden set: 0/60 tài liệu đồng nhất byte, 0/280 span sống sót** — mà văn bản chỉ ngắn đi 8,85%, vì chữ không mất, **dòng bị dồn**. → `TD-22`. `.txt` **không** đi qua docling, và đó là điều kiện để mọi con số `W2` còn giá trị.
 >
@@ -2530,5 +2532,75 @@ uv run pytest tests/integration/test_ocr_fallback.py
 
 Việc tiếp theo: **`W3-03`** (structure-aware chunker) — hạng mục đầu tiên tiêu
 thụ `LoadedDocument.headings` + `section_path_at()`.
+
+---
+
+## Phiên 2026-08-22 (5) · `W3-03` — Structure-aware chunker
+
+**Mục tiêu phiên:** `W3-03` — DoD là *`section_path` đúng trên tài liệu có 3 cấp
+heading*.
+
+### Đã làm
+
+* `packages/rag_core/chunking/structure.py` — `StructureChunker` ·
+  `common_ancestor` · `section_boundaries` · `ChunkingStrategy.STRUCTURE` ·
+  config `structure_merge_short_sections`
+* `chunking/base.py` tách thành hai điểm mở rộng `_prepare_pieces` /
+  `_section_path_for(doc, index)` — mọi chunker cũ **không đổi hành vi**
+* `scripts/structure_probe.py` + `make structure-probe` / `make structure-corpus`
+* Sửa lỗi `break` ở `loaders/base.py::section_path_at` (lỗi của `W3-01`)
+* +24 unit (`tests/unit/test_structure_chunker.py`)
+
+### Bốn thứ đáng nhớ
+
+1. ⭐ **Gộp mảnh ngắn qua ranh giới section thì `section_path` nói dối.** Một
+   `Điều 4` ngắn bị gộp vào cuối `Điều 3` → chunk mang đường dẫn của `Điều 3` mà
+   nửa sau nội dung thuộc `Điều 4`. Không lỗi, không cảnh báo, citation trỏ sai
+   điều luật. **Đúng khuôn** lỗi bản POC gộp chunk qua ranh giới *tài liệu*
+   (docstring `chunking/base.py` điểm 2), thấp hơn một cấp.
+   💡 Cấm gộp không phải lối ra: `wb1.pdf` ra **735 chunk, nhỏ nhất 1 ký tự**.
+   Lối ra là **hạ `section_path` xuống tổ tiên chung** — 64/1061 chunk (6,0%)
+   đổi một đường dẫn *sai* lấy một đường dẫn *nông hơn*.
+
+2. ⭐ **Tài liệu PDF thật chỉ cho MỘT cấp heading.** `wb1` 128 heading, `wb2`
+   83 — **tất cả cấp 1**. Backend PDF của docling gán nhãn `section_header`
+   nhưng không suy ra cấp từ bố cục. Nên với PDF, `section_path` là danh sách
+   một phần tử: "chunk này ở mục nào", không phải một đường dẫn phân cấp.
+   ⚠️ `DocType.LEGAL` muốn kiểm chứng `section_path` thì văn bản pháp luật phải
+   vào corpus ở dạng **DOCX/HTML**, không phải PDF → `TD-24`.
+
+3. ⭐ **Corpus hôm nay: 0/60 tài liệu có cấu trúc**, nên chunker thoái hoá về
+   fixed ở 60/60 (có test ghim output phải **trùng khít** `FixedSizeChunker`).
+   Cùng một báo cáo *Vietnam STI 2020*: bản `.txt` trong corpus **0 heading**,
+   bản `.pdf` gốc qua docling **128 heading**. Ràng buộc nằm ở **định dạng
+   corpus**, không ở chunker.
+
+4. ⚠️ **Lỗi `break` của `W3-01` chỉ lộ ra khi có người tiêu thụ.**
+   `section_path_at` viết `break` cho cả heading không định vị được, nên **một**
+   heading hỏng làm mù toàn bộ phần sau. `wb1.pdf` có 6/128 → **575/587 chunk
+   (98,0%)** nhận đường dẫn khác; `wb2.pdf` có 0/83 → **0%**. Đo một tài liệu
+   thì 1/2 khả năng kết luận "không sao".
+
+### Hai chỗ tự bẫy mình
+
+5. **Vị trí cắt ≠ vị trí hỏi.** Ranh giới lùi về đầu dòng để `##` đi cùng
+   heading, nhưng hỏi `section_path_at` **tại chỗ cắt** là hỏi tại ký tự `#`, và
+   với hàm ấy heading chưa bắt đầu → **486/587 chunk** mang đường dẫn của section
+   liền trước. `section_boundaries` giờ trả **cặp** `(cắt, hỏi)`.
+6. **Script kiểm chứng lặp lại đúng lỗi nó đi kiểm** — bản kiểm đầu cũng hỏi tại
+   *đầu* chunk, nên sau khi sửa vẫn báo 54 chunk sai, và 54 cái đó là chunk
+   **đúng bị chấm sai**. Phải hỏi tại **ký tự cuối** của chunk.
+
+### Lệnh để tiếp tục
+
+```bash
+make structure-corpus                      # 0/60 — corpus có gì cho chunker ăn?
+make structure-probe STRUCT=<file.pdf>     # heading, phân bố chunk, số chunk nói dối
+uv run pytest tests/unit/test_structure_chunker.py
+```
+
+Việc tiếp theo: **`W3-04`** (Contextual Retrieval — cần GPU thuê `W0-05`), hoặc
+đảo lên `W3-05`/`W3-06`. Đọc `TD-24` trước: `W3-06` không đo được cho tới khi
+corpus có tài liệu mang cấu trúc.
 
 ---

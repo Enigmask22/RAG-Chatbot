@@ -133,12 +133,21 @@ class LoadedDocument:
         """Đường dẫn heading có hiệu lực tại vị trí `offset` của `text`.
 
         Đây là thứ `W3-03` cần để gán `section_path` cho từng chunk mà không
-        phải parse lại markdown. Heading không định vị được thì bỏ qua — nó
+        phải parse lại markdown. Heading không định vị được thì **bỏ qua** — nó
         không có vị trí thì không nói được nó có hiệu lực ở đâu.
+
+        ⚠️ Bản `W3-01` viết `break` cho cả hai điều kiện, tức **một** heading
+        không định vị được sẽ làm mù toàn bộ phần còn lại của tài liệu: mọi
+        heading sau nó biến mất khỏi đường dẫn, im lặng. `_collect` sinh ra đúng
+        tình huống ấy (`text.find` thất bại thì `start_char = -1` nhưng `cursor`
+        không đổi, nên heading kế tiếp vẫn định vị được). `W3-03` là chỗ tiêu thụ
+        đầu tiên nên cũng là chỗ phát hiện ra.
         """
         stack: list[Heading] = []
         for heading in self.headings:
-            if not heading.located or heading.start_char > offset:
+            if not heading.located:
+                continue
+            if heading.start_char > offset:
                 break
             while stack and stack[-1].depth >= heading.depth:
                 stack.pop()

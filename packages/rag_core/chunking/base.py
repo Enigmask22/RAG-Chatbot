@@ -36,6 +36,7 @@ class ChunkingStrategy(StrEnum):
     FIXED = "fixed"
     SEMANTIC = "semantic"
     HYBRID = "hybrid"
+    STRUCTURE = "structure"
 
 
 class ChunkingConfig(BaseModel):
@@ -61,6 +62,19 @@ class ChunkingConfig(BaseModel):
 
     # --- hybrid ---
     hybrid_max_docs_for_semantic: int = Field(default=5, ge=0)
+
+    # --- structure (W3-03) ---
+    structure_merge_short_sections: bool = True
+    """Cho phép gộp section ngắn hơn `min_chunk_size` vào chunk liền trước.
+
+    Bật thì `section_path` của chunk gộp **tụt xuống tổ tiên chung** của các
+    section bị gộp, chứ không giữ đường dẫn của section đầu. Tắt thì mỗi section
+    là ít nhất một chunk, kể cả section chỉ có một dòng.
+
+    Đánh đổi: tắt cho `section_path` sâu nhất nhưng sinh ra rất nhiều chunk vụn
+    ở văn bản pháp luật (mỗi khoản một chunk); bật cho chunk to đều hơn nhưng
+    đường dẫn nông hơn. Là knob để ablation ở `W3-06` đo, không phải để đoán.
+    """
 
     # --- ngữ cảnh hàng xóm (hành vi của bản POC) ---
     neighbor_context_chars: int = Field(default=0, ge=0)
@@ -149,9 +163,7 @@ class Chunker(ABC):
     def chunk(self, documents: Sequence[Document]) -> list[Chunk]:
         chunks: list[Chunk] = []
         for doc in documents:
-            pieces = [p for p in self.split_pieces(doc.content) if p.text.strip()]
-            pieces = self._enforce_size(pieces)
-            pieces = self._apply_neighbor_context(pieces)
+            pieces = self._apply_neighbor_context(self._prepare_pieces(doc))
             for index, piece in enumerate(pieces):
                 chunks.append(
                     Chunk(
@@ -159,12 +171,43 @@ class Chunker(ABC):
                         doc_id=doc.doc_id,
                         content=piece.text,
                         chunk_index=index,
+                        section_path=self._section_path_for(doc, index),
                         metadata=doc.metadata,
                         start_char=piece.start,
                         end_char=piece.end,
                     )
                 )
         return chunks
+
+    # -------------------------------------------------------- điểm mở rộng
+
+    def _prepare_pieces(self, doc: Document) -> list[TextPiece]:
+        """Mảnh cuối cùng của **một** tài liệu, đã lọc rỗng và ép kích thước.
+
+        Tách khỏi `chunk` để `W3-03` thay được bước này mà không phải chép lại
+        phần dựng `Chunk`. `StructureChunker` ép kích thước **theo từng section**
+        chứ không trên danh sách gộp — cùng lý do mà `_enforce_size` được áp theo
+        từng tài liệu chứ không trên cả lô (xem điểm 2 ở docstring module): gộp
+        một mảnh nhỏ vào mảnh liền trước qua ranh giới section thì chunk sinh ra
+        mang `section_path` của section cũ mà nội dung thuộc section mới.
+        """
+        pieces = [p for p in self.split_pieces(doc.content) if p.text.strip()]
+        return self._enforce_size(pieces)
+
+    def _section_path_for(self, doc: Document, index: int) -> list[str]:
+        """Đường dẫn heading của mảnh thứ `index`. Rỗng với chunker không nhìn cấu trúc.
+
+        `Chunk.section_path` có mặt trong schema từ `W1-01` nhưng tới `W3-03` mới
+        có chunker điền được. Mặc định rỗng — **không** phải rỗng vì thiếu sót mà
+        vì fixed/semantic/hybrid cắt theo ký tự và câu, chúng không biết gì về
+        heading để mà điền.
+
+        Nhận **chỉ số** chứ không nhận `TextPiece`: hai mảnh trong cùng một tài
+        liệu có thể trùng span (splitter đệ quy chồng lấn), nên tra theo span là
+        tra nhầm. `_apply_neighbor_context` giữ nguyên số lượng và thứ tự, nên
+        chỉ số khớp 1-1 với thứ tự `_prepare_pieces` trả về.
+        """
+        return []
 
     # ------------------------------------------------------------ hậu xử lý
 

@@ -250,6 +250,15 @@ SCAN ?= tests/fixtures/loaders/scanned-page.pdf
 scan-probe:  ## In mật độ text layer từng trang của một PDF (W3-02)
 	$(PY) python -m rag_core.loaders.scan $(SCAN) --per-page
 
+STRUCT ?= tests/fixtures/loaders/chuong-i.docx
+.PHONY: structure-probe
+structure-probe:  ## Đo StructureChunker trên một tài liệu thật (W3-03)
+	$(PY) python scripts/structure_probe.py $(STRUCT)
+
+.PHONY: structure-corpus
+structure-corpus:  ## Đếm xem corpus hiện tại còn bao nhiêu cấu trúc để dùng (W3-03)
+	$(PY) python scripts/structure_probe.py --corpus
+
 .PHONY: loader-probe
 loader-probe:  ## Cho corpus qua docling và đếm xem span golden còn sống bao nhiêu (W3-01)
 	$(PY) python scripts/loader_probe.py
