@@ -1,0 +1,39 @@
+# `W3-05` — biến thể để kiểm **nửa "small"** của small-to-big.
+#
+# Vì sao cần file thứ hai: ở `pc256`, child p50 đo được là **1384 ký tự ≈ 256
+# token**, còn chunk của baseline (`bgem3.yaml`, 1000 ký tự) chỉ **218 token**
+# (`W3-06` §2). Tức "child" của `pc256` **to hơn** chunk baseline 17%. Con số 256
+# được chọn vì nó tròn, không vì nó nhỏ — nên `pc256` thật ra đo "child cỡ
+# baseline + parent 4×", chưa đo được luận điểm "vector của mảnh nhỏ đúng chủ đề
+# hơn".
+#
+# Ở đây child bị **chia đôi** (128 token) và `parent_size_multiple` **nhân đôi**
+# (8), nên parent vẫn ~1024 token y hệt `pc256`. Chỉ một biến đổi: độ mịn của
+# child. Mọi thứ khác giữ nguyên để so được theo cặp.
+
+name: pc128
+collection: rag_pc128
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+chunking:
+  strategy: parent_child
+  size_unit: tokens
+  chunk_size: 128
+  chunk_overlap: 25
+  min_chunk_size: 26
+  max_chunk_size: 192
+  parent_size_multiple: 8
+  neighbor_context_chars: 0
+
+embedding_model: BAAI/bge-m3
+embedding_device: auto
+embedding_batch_size: 16
+embedding_max_batch_tokens: 8192
+embedding_normalize: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

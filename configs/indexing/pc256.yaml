@@ -1,0 +1,43 @@
+# `W3-05`: small-to-big — child 256 token đem embed, parent ~1024 token đem đọc.
+#
+# ⚠️ Đây là collection **riêng** (`rag_pc256`), không đụng `rag_bgem3`. Bộ chunk
+# khác hẳn baseline nên mọi con số `W2` không so trực tiếp được — xem `TD-20`
+# (đổi chunking là đổi *tập* nhãn, không chỉ số lượng) và `TD-25`.
+#
+# Config này dùng để đo **cấu trúc** (bao nhiêu child mỗi parent, gộp trùng được
+# bao nhiêu, ngữ cảnh nở ra mấy lần), KHÔNG dùng để tuyên bố chất lượng truy hồi.
+#
+# `size_unit: tokens` là máy móc của `W3-06`: `chunk_size` ở đây là **token**, nên
+# "child 256 token" đúng nghĩa đen thay vì là một con số ký tự đoán ra.
+#
+# ⚠️ `neighbor_context_chars: 0` là **bắt buộc**, không phải lựa chọn: ngữ cảnh
+# hàng xóm cố ý vượt `max_chunk_size` nên nó loại trừ trần token (`W3-06` §9).
+# Với small-to-big thì nó cũng thừa — mở rộng sang parent đã làm đúng việc mà
+# padding hàng xóm cố làm, và làm đúng hơn.
+
+name: pc256
+collection: rag_pc256
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+chunking:
+  strategy: parent_child
+  size_unit: tokens
+  chunk_size: 256
+  chunk_overlap: 25
+  min_chunk_size: 51
+  max_chunk_size: 384
+  parent_size_multiple: 4
+  neighbor_context_chars: 0
+
+embedding_model: BAAI/bge-m3
+embedding_device: auto
+embedding_batch_size: 16
+embedding_max_batch_tokens: 8192
+embedding_normalize: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

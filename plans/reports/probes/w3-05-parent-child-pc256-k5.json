@@ -1,0 +1,15 @@
+{
+  "collection": "rag_pc256",
+  "queries": 242,
+  "top_k": 5,
+  "parents_mean": 4.64,
+  "parents_min": 3,
+  "dedupe_ratio_mean": 0.0727,
+  "dedupe_ratio_p50": 0.0,
+  "queries_with_any_dedupe": 75,
+  "child_tokens_mean": 1382.5,
+  "parent_tokens_mean": 4861.2,
+  "token_growth_mean": 3.529,
+  "token_growth_p95": 4.366,
+  "parents_incomplete": 0
+}

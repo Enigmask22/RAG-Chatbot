@@ -1,0 +1,59 @@
+{
+  "config_name": "pc128",
+  "collection": "rag_pc128",
+  "fingerprint": "6811a301cd377e21fa38c9528be4c5481a399be35bb3bcb88b673853587ecce4",
+  "embedding_model": "BAAI/bge-m3",
+  "embedding_device": "cuda",
+  "embedding_dim": 1024,
+  "chunker_name": "parent_child:60adabab8b6b",
+  "n_documents": 60,
+  "n_documents_indexed": 60,
+  "n_documents_skipped": 0,
+  "n_documents_removed": 0,
+  "n_chunks_written": 22924,
+  "n_stale_points_deleted": 0,
+  "collection_count": 22924,
+  "chars_in": 14284300,
+  "chars_out": 14051622,
+  "vector_names": [
+    "dense",
+    "sparse"
+  ],
+  "chunk_len": {
+    "mean": 612.9655383004712,
+    "p50": 634.0,
+    "p95": 813.0,
+    "min": 36.0,
+    "max": 1334.0
+  },
+  "truncation": {
+    "limit": 8192.0,
+    "n_texts": 22924.0,
+    "n_truncated": 0.0,
+    "truncated_ratio": 0.0,
+    "tokens_total": 2521453.0,
+    "tokens_kept": 2521453.0,
+    "chars_total": 14051622.0,
+    "tokens_lost_ratio": 0.0,
+    "tokens_per_char": 0.1794,
+    "chars_per_token_p05": 3.756,
+    "char_budget": 30758.0,
+    "token_p50": 123.0,
+    "token_p95": 173.0,
+    "token_max": 192.0
+  },
+  "seconds": {
+    "load": 0.059765299996797694,
+    "chunk": 4.961223300000711,
+    "upsert": 315.23564940002325,
+    "total": 343.09706410000217
+  },
+  "cache": {
+    "hits": 0.0,
+    "misses": 60.0,
+    "hit_rate": 0.0,
+    "entries": 486.0
+  },
+  "created_at": "2026-08-22T15:11:54+00:00",
+  "context_inflation": 0.9837
+}

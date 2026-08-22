@@ -250,6 +250,12 @@ SCAN ?= tests/fixtures/loaders/scanned-page.pdf
 scan-probe:  ## In mật độ text layer từng trang của một PDF (W3-02)
 	$(PY) python -m rag_core.loaders.scan $(SCAN) --per-page
 
+PCK ?= 10
+PCCFG ?= pc256
+.PHONY: pc-probe
+pc-probe:  ## Đo gộp trùng parent + độ nở ngữ cảnh trên index small-to-big (W3-05)
+	$(PY) python scripts/parent_child_probe.py --config configs/indexing/$(PCCFG).yaml --top-k $(PCK) --report plans/reports/probes/w3-05-parent-child-$(PCCFG)-k$(PCK).json
+
 TOKENS ?= 256
 .PHONY: token-probe
 token-probe:  ## So chunk_size theo ký tự vs theo token trên corpus thật (W3-06)

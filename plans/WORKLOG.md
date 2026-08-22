@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (6) (cuối file)** — `W3-06` xong, `W3` **4/9**. Kích thước chunk tính bằng token (`chunking/tokens.py`). ✅ **DoD đã đạt SẴN**: BGE-M3 0/15.814 chunk bị cắt, dư **11,2×** — đã có số từ `W2-01`. ⭐ **Ký tự không phải đơn vị mang đi được**: đổi tokenizer là đổi số token của cùng một chunk tới **47%**, và chiều lệch EN↔VI **đảo dấu** giữa hai model. ⭐ Giá trị thật là **san bằng kích thước giữa hai ngôn ngữ** (PhoBERT: −22,3% → +2,4%), không phải tránh bị cắt. ⚠️⚠️ **Chép quy tắc p05 của `truncation.py` là SAI** vì ở đây có bước kiểm lại (hụt 17% ngân sách). ⚠️⚠️ **Lỗi trộn đơn vị của chính tôi, 28 test xanh không thấy** — test kiểm *trần*, không kiểm *đích*.
+> **Phiên mới nhất: 2026-08-22 (7) (cuối file)** — `W3-05` xong, `W3` **5/9**. Small-to-big (`chunking/parent_child.py` + `retrieval/context.py`), hai index thật: `rag_pc256` 10.473 point, `rag_pc128` 22.924 point. ✅ Cả ba vế DoD đạt. ⭐ **Parent KHÔNG phải một point** — nó là *tập* các child, nên 0 field payload mới, 0 field `MetadataFilter`, 0 backfill, 0 con số `W2` bị đổi; và parent không thể lọt vào kết quả tìm kiếm vì nó không nằm trong đó. ⚠️⚠️ **Protocol khớp với một method KHÔNG TỒN TẠI, 27 test vẫn xanh**: gọi `get_by_ids`, lớp thật có `fetch_chunks`, fake trong test cũng khai sai y hệt → *một Protocol cấu trúc không ràng buộc được gì nếu cả hai bên đối chiếu đều do test dựng ra*. Khuôn để bịt đã có sẵn ở `W3-06` mà tôi không dùng lại. ⭐⭐ **Độ nở ngữ cảnh là chỉ số ĐÁNH LỪA**: chia đôi child làm nó gấp đôi (3,45× → 6,98×) trong khi prompt thật không đổi (9.471 → 9.519 token) — prompt = *số parent* × *cỡ parent*, child không có trong công thức. Hệ quả: **child nhỏ hơn không đắt hơn**. ⚠️ `chunk_size=256` token **không phải "small"** (child 256 tok > chunk baseline 218 tok) → thêm `pc128`.
+>
+> Phiên trước: **2026-08-22 (6)** — `W3-06` xong, `W3` **4/9**. Kích thước chunk tính bằng token (`chunking/tokens.py`). ✅ **DoD đã đạt SẴN**: BGE-M3 0/15.814 chunk bị cắt, dư **11,2×** — đã có số từ `W2-01`. ⭐ **Ký tự không phải đơn vị mang đi được**: đổi tokenizer là đổi số token của cùng một chunk tới **47%**, và chiều lệch EN↔VI **đảo dấu** giữa hai model. ⭐ Giá trị thật là **san bằng kích thước giữa hai ngôn ngữ** (PhoBERT: −22,3% → +2,4%), không phải tránh bị cắt. ⚠️⚠️ **Chép quy tắc p05 của `truncation.py` là SAI** vì ở đây có bước kiểm lại (hụt 17% ngân sách). ⚠️⚠️ **Lỗi trộn đơn vị của chính tôi, 28 test xanh không thấy** — test kiểm *trần*, không kiểm *đích*.
 >
 > Phiên trước: **2026-08-22 (5)** — `W3-03` xong, `W3` **3/9**. Structure-aware chunker (`chunking/structure.py`). ✅ Cả hai vế DoD đạt, và "đúng" định nghĩa mạnh hơn DoD: **nhất quán với `section_path_at` trên 1061 chunk của hai báo cáo World Bank thật, 0 chunk nói dối**. ⭐ **Gộp mảnh ngắn qua ranh giới section làm `section_path` nói dối** — cùng khuôn lỗi bản POC gộp qua ranh giới *tài liệu*; lối ra là **hạ đường dẫn xuống tổ tiên chung** (giá: 6,0% chunk). ⭐ **PDF thật chỉ cho MỘT cấp heading** (128 và 83 heading, tất cả cấp 1) và **corpus 0/60 tài liệu có cấu trúc** → `TD-24`. ⚠️ **Lỗi `break` của `W3-01` lộ ra**: 6 heading hỏng làm sai **575/587 chunk** ở `wb1`, 0% ở `wb2`. ⚠️ Tự bẫy hai lần: **vị trí cắt ≠ vị trí hỏi** (486/587 chunk lệch một section), và **script kiểm chứng lặp lại đúng lỗi nó đi kiểm**.
 >
@@ -2678,5 +2680,97 @@ uv run pytest tests/unit/test_token_sizing.py
 
 Việc tiếp theo: **`W3-05`** (parent-child) — không cần GPU, không cần key, không
 vướng corpus.
+
+---
+
+## Phiên 2026-08-22 (7) · `W3-05` — small-to-big
+
+**Mục tiêu phiên:** `W3-05` từ đầu tới cuối — code, test, index thật, phép đo, báo cáo.
+
+**Kết quả:** xong. `W3` **5/9**. Full suite **1399 test, exit 0**; `ruff` + `mypy` sạch.
+
+### Quyết định kiến trúc: parent không nằm trong index
+
+Cách quen thuộc (index cả parent lẫn child, lọc parent khỏi search) tốn một field
+phẳng trong payload + một field `MetadataFilter` + một payload index + một lượt
+backfill `rag_bgem3` — tức chạm đúng tầng `W2-06` vừa đo latency xong. Và quên
+filter một chỗ là parent lọt vào kết quả, âm thầm.
+
+Ở đây **parent là tập các child của nó**: `parent_chunk_id` là khoá gom nhóm, id
+anh em nằm trong `extra["parent_children"]`, assembly dựng lại parent bằng một
+lời gọi `fetch_chunks`. Hai hệ quả bắt buộc đi kèm: child cùng parent **không
+chồng lấn** (giữ overlap thì đoạn chồng lấn xuất hiện hai lần trong parent ghép
+lại), và `_enforce_size` áp **trong phạm vi một parent** (gộp qua ranh giới parent
+làm `parent_chunk_id` nói dối — lần **thứ ba** của cùng một hình dạng lỗi, sau
+POC gộp qua ranh giới tài liệu và `W3-03` qua ranh giới section).
+
+### ⚠️⚠️ Lỗi đắt nhất phiên: Protocol khớp với một cái tên không tồn tại
+
+`context.py` gọi `fetcher.get_by_ids(...)`; method thật của `QdrantDenseRetriever`
+là `fetch_chunks`. 27 unit test xanh và `mypy` sạch, vì `RecordingFetcher` trong
+test **cũng** khai `get_by_ids`. Lỗi lộ ra ở probe đầu tiên, sau 328 giây build.
+
+Bài học rộng hơn hạng mục: *một Protocol cấu trúc không ràng buộc được gì nếu cả
+hai bên đối chiếu đều do test dựng ra.* Khó chịu nhất là **khuôn để bịt đã có sẵn
+từ `W3-06`** (`test_token_sizing.py:427` ghim `TokenCounter` vào lớp thật) và tôi
+không dùng lại. Quét cả 4 Protocol của repo thì `ChunkFetcher` là trường hợp duy
+nhất bị hở.
+
+Bịt: `runtime_checkable` + 2 test ghim vào lớp thật (`isinstance` và
+`inspect.signature`). Tiêm lại lỗi: đúng 2 test mới đỏ, 27 test cũ vẫn xanh.
+
+### ⭐⭐ Độ nở ngữ cảnh là một chỉ số đánh lừa
+
+242 câu golden, hai index khác nhau **đúng một biến** (cỡ child; parent giữ
+~1024 token ở cả hai):
+
+| index | child | k | parent tb | dedupe | token child | **token parent** | nở |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `pc256` | ~256 tok | 10 | 9,00 | 10,0% | 2.750 | **9.471** | 3,45× |
+| `pc128` | ~117 tok | 10 | 8,70 | 13,0% | 1.370 | **9.519** | 6,98× |
+
+Chia đôi child làm "độ nở" **gấp đôi** trong khi prompt thật lệch **+0,5%**.
+Prompt = *số parent riêng biệt* × *cỡ parent*; child không có trong công thức.
+Hệ quả đi ngược trực giác: **child nhỏ hơn không đắt hơn** — thêm 3 điểm dedupe
+và vector mịn hơn ở cùng ngân sách prompt.
+
+Và `chunk_size=256` token hoá ra **không phải "small"**: child `pc256` là 256
+token còn chunk baseline chỉ 218 token (`W3-06` §2), tức child *to hơn* baseline
+17%. 256 được chọn vì nó tròn. Đó là lý do `pc128` tồn tại.
+
+### Dedupe: có thật, nhỏ
+
+k=3 → 5,0% · k=5 → 7,3% · k=10 → **10,0%** (148/242 câu gộp được ≥1 lần) · k=20 →
+13,3% (218/242). Không phải code chết, nhưng chỉ tiết kiệm ~14% prompt. Cái đắt
+là **số token parent tuyệt đối**: ở k=10 prompt đi từ 2.750 lên 9.471 token.
+
+→ Ràng buộc mới cho `W3-09`: so "k=10 child" với "k=10 parent" là so hai thứ
+**khác giá**. Ablation phải ghép cặp theo **ngân sách token**, không theo k.
+
+### Filter, đo trên store thật
+
+Sau vụ Protocol thì fake không còn đủ để tin. Trên `rag_pc256`:
+`MetadataFilter(lang=en)` chặn **32 anh em**, **9/10 parent** thành
+`complete=False` với `missing_children` đủ id. Index sạch: **0/968 lượt** thiếu
+anh em. Ranh giới đã ghi vào docstring: `filters` chỉ chắn đường **lấy thêm anh
+em**, không chắn các child đã trúng — tầng serving `W4` phải truyền đúng filter
+đã dùng cho lượt search.
+
+### Cố ý không làm
+
+Không đụng `bgem3.yaml`; không tuyên bố chất lượng truy hồi (bộ chunk khác nên
+nhãn ánh xạ khác — `TD-20`/`TD-25`); không nối vào `CachedChunker`/serving →
+`TD-26`.
+
+### Lệnh để tiếp tục
+
+```bash
+make pc-probe PCCFG=pc256 PCK=10   # gộp trùng + độ nở, index child 256 token
+make pc-probe PCCFG=pc128 PCK=10   # child 128 token, parent giữ nguyên ~1024
+uv run pytest tests/unit/test_parent_child.py
+```
+
+Việc tiếp theo: **`W3-08`** (ingestion worker arq) — `W3-04` chờ GPU thuê
+(`W0-05`), `W3-07` chờ `TD-22`.
 
 ---

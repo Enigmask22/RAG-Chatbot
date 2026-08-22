@@ -9,6 +9,7 @@ from .branch import (
     build_branch,
     check_branch_options,
 )
+from .context import AssembledParent, ChunkFetcher, assemble_text, expand_to_parents
 from .filters import FILTER_FIELDS, FilterSpec, MetadataFilter, build_filter
 from .hybrid import DEFAULT_CANDIDATE_K, QdrantHybridRetriever
 from .qdrant_store import (
@@ -36,6 +37,8 @@ __all__ = [
     "RRF_K",
     "SPARSE_VECTOR_NAME",
     "SUPPORTED_MODES",
+    "AssembledParent",
+    "ChunkFetcher",
     "FilterSpec",
     "FusedItem",
     "MetadataFilter",
@@ -44,10 +47,12 @@ __all__ = [
     "QdrantSparseRetriever",
     "RerankedRetriever",
     "Retriever",
+    "assemble_text",
     "build_branch",
     "build_filter",
     "check_branch_options",
     "chunk_point_id",
+    "expand_to_parents",
     "points_to_chunks",
     "reciprocal_rank_fusion",
     "schema_problems",

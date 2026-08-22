@@ -41,6 +41,7 @@ class ChunkingStrategy(StrEnum):
     SEMANTIC = "semantic"
     HYBRID = "hybrid"
     STRUCTURE = "structure"
+    PARENT_CHILD = "parent_child"
 
 
 class ChunkingConfig(BaseModel):
@@ -81,6 +82,16 @@ class ChunkingConfig(BaseModel):
 
     # --- hybrid ---
     hybrid_max_docs_for_semantic: int = Field(default=5, ge=0)
+
+    # --- parent-child (W3-05) ---
+    parent_size_multiple: int = Field(default=4, ge=2)
+    """Parent lớn gấp bấy nhiêu lần child. `chunk_size` là kích thước **child**.
+
+    Mặc định 4 ứng với cặp mà plan nêu: child 256 token → parent ~1024 token.
+    Cận dưới 2 vì `parent_size_multiple=1` nghĩa là parent trùng child, tức tắt
+    hẳn small-to-big — muốn tắt thì đổi `strategy`, đừng làm nó thành một cấu
+    hình trông vẫn giống bật.
+    """
 
     # --- structure (W3-03) ---
     structure_merge_short_sections: bool = True

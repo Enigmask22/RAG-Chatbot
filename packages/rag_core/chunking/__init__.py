@@ -5,6 +5,7 @@ from .base import Chunker, ChunkingConfig, ChunkingStrategy
 from .cache import CachedChunker, CacheStats, SQLiteChunkCache
 from .fixed import FixedSizeChunker, split_recursive
 from .hybrid import HybridChunker
+from .parent_child import ParentChildChunker, parent_id
 from .semantic import SemanticChunker, split_sentences
 from .structure import StructureChunker, common_ancestor, section_boundaries
 from .tokens import TokenCounter, TokenSizingUnavailable, calibrate_density, fit_to_budget
@@ -17,6 +18,7 @@ __all__ = [
     "ChunkingStrategy",
     "FixedSizeChunker",
     "HybridChunker",
+    "ParentChildChunker",
     "SQLiteChunkCache",
     "SemanticChunker",
     "StructureChunker",
@@ -26,6 +28,7 @@ __all__ = [
     "calibrate_density",
     "common_ancestor",
     "fit_to_budget",
+    "parent_id",
     "section_boundaries",
     "split_recursive",
     "split_sentences",
@@ -42,6 +45,8 @@ def build_chunker(
         return FixedSizeChunker(cfg, token_counter=embeddings)
     if cfg.strategy is ChunkingStrategy.STRUCTURE:
         return StructureChunker(cfg, token_counter=embeddings)
+    if cfg.strategy is ChunkingStrategy.PARENT_CHILD:
+        return ParentChildChunker(cfg, token_counter=embeddings)
     if cfg.strategy is ChunkingStrategy.SEMANTIC:
         if embeddings is None:
             raise ValueError("strategy=semantic bắt buộc phải có EmbeddingProvider")
