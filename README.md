@@ -233,10 +233,10 @@ giới tài liệu**. Hình dạng lỗi cuối cùng ấy còn xuất hiện th
 
 ## License
 
-MIT, khai trong [`pyproject.toml`](pyproject.toml). ⚠️ Repo **chưa có file
-`LICENSE`** — cần thêm trước khi công khai, vì một repo public khai MIT mà không
-kèm toàn văn giấy phép thì mặc định là *không* cấp quyền gì.
+**Mã nguồn:** MIT — [`LICENSE`](LICENSE).
 
-Corpus đi kèm là tài liệu World Bank phát hành theo **CC BY 3.0 IGO**; giấy phép
-của **từng** tài liệu ghi trong `data/corpus_manifest.csv` và được
-`LICENSE_ALLOWLIST` ép ngay lúc thêm vào manifest.
+**Corpus KHÔNG thuộc phạm vi MIT.** `data/corpus/` là tài liệu World Bank phát
+hành theo **CC BY 3.0 IGO**; giấy phép, URL nguồn và landing page của **từng**
+tài liệu ghi trong `data/corpus_manifest.csv`, và `LICENSE_ALLOWLIST` ép ngay lúc
+thêm vào manifest. Hai thứ này phải tách bạch: gộp chúng dưới một dòng "MIT" là
+cấp cho người khác một quyền mình không có.
