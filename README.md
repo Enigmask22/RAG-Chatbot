@@ -1,410 +1,242 @@
-# 🧠 RAG Chatbot - Advanced Document Intelligence System
-
-> ⚠️ **Repo đang được xây lại thành nền tảng RAG production.** Bản POC Streamlit
-> mô tả dưới đây đã dời vào [`legacy/`](legacy/README.md) và vẫn chạy được; nó là
-> mốc so sánh cho hệ thống mới. Tiến độ và quyết định kỹ thuật:
-> [`plans/CHECKLIST.md`](plans/CHECKLIST.md).
-
-<div align="center">
-
-![RAG System](https://img.shields.io/badge/RAG_System-v2.0.0-blue?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![AI Engine](https://img.shields.io/badge/AI_Engine-Enhanced_RAG-red?style=for-the-badge)
-![Performance](https://img.shields.io/badge/Processing_Speed-3x_Faster-green?style=for-the-badge)
-
-**Advanced Retrieval-Augmented Generation system with enhanced chunking and Vietnamese language support**
-
-[🚀 Quick Start](#-quick-start) • [📖 Documentation](#-documentation) • [🛠️ Technologies](#️-technologies) • [📊 Performance](#-performance)
-
-</div>
-
-<!-- Teaser visualization block: system architecture -->
-<div align="center">
-  <img src="rag_architecture.png" alt="RAG System Architecture" width="45%">
-  <img src="chunking_strategies.png" alt="Chunking Strategies Comparison" width="45%">
-  <br/>
-  <p align="center"><b>Figure 1.</b> System architecture and chunking strategy performance comparison.</p>
-</div>
-
-## 🌟 Key Features
-
-### 🤖 Advanced RAG Pipeline
-- **3 Chunking Strategies** - Hybrid, Semantic, and Fixed-size chunking
-- **Smart Caching System** - 15x faster reprocessing with intelligent cache
-- **Vietnamese Language Support** - Optimized for Vietnamese text processing
-- **Real-time Processing** - Interactive progress tracking and analytics
-
-### 📊 Document Intelligence
-- **PDF Processing** - Advanced document parsing and text extraction
-- **Vector Database** - ChromaDB with HuggingFace embeddings
-- **Context Preservation** - Intelligent overlap strategies for better context
-- **Metadata Enhancement** - Rich document and chunk metadata
-
-### 🎯 Production-Ready Features
-- **GPU Optimization** - CUDA-optimized for T4 and higher GPUs
-- **Memory Management** - 4-bit quantization and smart garbage collection
-- **Error Handling** - Robust fallback mechanisms and graceful degradation
-- **Web Interface** - Modern Streamlit-based responsive UI
-
-## 🛠️ Technologies
-
-### 🐍 Python Stack
-![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat&logo=langchain&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
-
-- **Python 3.8+** - Core programming language
-- **Streamlit** - Interactive web application framework
-- **LangChain** - LLM application framework
-- **PyTorch** - Deep learning backend
-- **ChromaDB** - Vector database for similarity search
-
-### 🤖 AI & NLP
-![Hugging Face](https://img.shields.io/badge/Hugging_Face-FF6B6B?style=flat&logo=huggingface&logoColor=white)
-![Transformers](https://img.shields.io/badge/Transformers-FF6B6B?style=flat&logo=transformers&logoColor=white)
-![Sentence Transformers](https://img.shields.io/badge/Sentence_Transformers-FF6B6B?style=flat&logo=sentence-transformers&logoColor=white)
-
-- **HuggingFace Transformers** - Pre-trained language models
-- **Vietnamese Bi-encoder** - Optimized for Vietnamese text
-- **Vicuna 7B** - Large language model with 4-bit quantization
-- **Sentence Transformers** - Semantic embeddings
-- **BitsAndBytes** - Model quantization for memory efficiency
-
-## 🎯 Problem Statement
-
-Given a PDF document, create an intelligent question-answering system that can understand and respond to queries based on document content. The challenge involves implementing an efficient RAG pipeline with advanced chunking strategies, vector similarity search, and context-aware response generation while maintaining high performance and accuracy.
-
-## 🔬 Methodology
-
-### 📊 RAG Pipeline Architecture
-1. **Document Processing**
-   - PDF parsing using PyPDFLoader
-   - Text extraction and normalization
-   - Metadata preservation and enhancement
-
-2. **Enhanced Chunking System**
-   - **Hybrid Strategy**: Combines semantic and fixed-size chunking
-   - **Semantic Chunking**: Uses sentence embeddings for context-aware splitting
-   - **Fixed Chunking**: Fast processing for large documents
-   - **Smart Overlap**: Preserves context between chunks
-
-3. **Vector Database & Retrieval**
-   - ChromaDB for vector storage and similarity search
-   - Vietnamese bi-encoder for text embeddings
-   - Top-k retrieval with configurable parameters
-
-4. **Language Model Integration**
-   - Vicuna 7B with 4-bit quantization
-   - HuggingFace pipeline for inference
-   - Context-aware prompt engineering
-
-5. **Caching & Optimization**
-   - Content-based caching system
-   - Configuration-aware cache keys
-   - Memory management and garbage collection
-
-## 📊 Performance
-
-### 🏆 System Performance Metrics
-
-| Metric | Before Optimization | After Optimization | Improvement |
-|--------|-------------------|-------------------|-------------|
-| **Processing Speed** | ~30s/page | ~10s/page | **🚀 3x faster** |
-| **Reprocess PDF** | 30s | 2s | **⚡ 15x faster** |
-| **Memory Usage** | High peaks | Optimized | **💾 40% reduction** |
-| **Cache Hit Rate** | 0% | 80-90% | **📈 Significant** |
-
-### 🎯 Chunking Strategy Performance
-
-| Strategy | Processing Time | Quality Score | Use Case |
-|----------|----------------|---------------|----------|
-| **Hybrid** | 8-12s | 8.5/10 | General documents |
-| **Semantic** | 15-20s | 9.5/10 | Technical/Complex |
-| **Fixed** | 3-5s | 7.5/10 | Large documents |
-
-### 🖼️ Performance Visualization
-
-<div align="center">
-  <img src="performance_comparison.png" alt="Performance comparison across strategies" width="85%">
-  <br/>
-  <p align="center"><b>Figure 2.</b> Processing time vs. quality trade-offs for different chunking strategies.</p>
-</div>
-
-#### Technical Analysis
-
-1) **Objective** — This figure demonstrates the performance characteristics of three chunking strategies across different document types and sizes, enabling optimal strategy selection based on use case requirements.
-
-2) **Experimental Setup** — We evaluated Hybrid, Semantic, and Fixed chunking strategies on various document types (academic papers, legal documents, technical reports) with identical hardware configurations.
-
-3) **Key Findings** —
-- **Hybrid Strategy** provides the best balance between speed and quality for most use cases
-- **Semantic Chunking** excels on complex technical documents requiring high context preservation
-- **Fixed Chunking** offers maximum speed for large document processing
-
-4) **Memory Optimization** —
-- 4-bit quantization reduces memory usage by 40% while maintaining model performance
-- Smart caching system provides 15x speedup for document reprocessing
-- Garbage collection prevents memory leaks during long processing sessions
-
-5) **Production Readiness** —
-- System handles documents up to 100+ pages without memory issues
-- Real-time progress tracking provides user feedback during processing
-- Robust error handling ensures graceful degradation under resource constraints
-
-## 🚀 Quick Start
-
-### 📋 System Requirements
-- **Python 3.8+** with pip
-- **CUDA-compatible GPU** (T4 or higher recommended)
-- **8GB+ RAM** (16GB+ recommended for large documents)
-- **10GB+ Storage** (for models and cache)
-
-### ⚡ Automated Setup
-
-```bash
-# 1. Clone repository
-git clone <repository-url>
-cd RAG-Chatbot
-
-# 2. Create a virtual environment
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-# macOS/Linux  
-source venv/bin/activate
-
-# 3. Install dependencies
-pip install -r legacy/requirements.txt
-```
-
-### 🔧 Configuration
-
-#### Chunking Strategy Selection
-
-| Document Type | Strategy | Chunk Size | Overlap | Rationale |
-|---------------|----------|------------|---------|-----------|
-| **📚 Academic Papers** | Semantic | 1200-1500 | 100-150 | Complex context preservation |
-| **⚖️ Legal Documents** | Semantic | 800-1000 | 150-200 | High precision requirements |
-| **📖 Books/Novels** | Hybrid | 1000-1500 | 50-100 | Balanced story flow |
-| **📊 Reports/Statistics** | Fixed | 600-1000 | 50-100 | Processing speed priority |
-| **📰 News/Blogs** | Hybrid | 800-1200 | 75-125 | Diverse content handling |
-
-#### Advanced Configuration
-
-```python
-# Custom chunking configuration
-from enhanced_chunking import ChunkingConfig  # legacy/
-
-config = ChunkingConfig()
-config.strategy = "hybrid"  # hybrid, semantic, fixed
-config.fixed_chunk_size = 1000
-config.fixed_overlap = 100
-config.enable_cache = True
-config.show_progress = True
-```
-
-### 🏃‍♂️ Run the application
-
-```bash
-# Run the RAG system
-streamlit run legacy/app.py
-```
-
-**What it does:**
-- 📥 Loads and processes PDF documents
-- 🔄 Applies enhanced chunking strategies
-- 🧮 Creates vector embeddings and database
-- 🤖 Initializes language model with quantization
-- 📊 Provides interactive web interface
-
-## 🧪 Testing
-
-```bash
-# Test individual components
-python -c "import sys; sys.path.insert(0, 'legacy'); import app"
-
-# Test model loading
-python -c "from transformers import AutoModelForCausalLM; print('Model loading OK')"
-
-# Test chunking system
-python -c "import sys; sys.path.insert(0, 'legacy'); from enhanced_chunking import EnhancedChunker"
-```
-
-## 📦 Project Structure
-
-```
-RAG-Chatbot/
-├── 📦 packages/rag_core/        # Shared library: schemas, chunking, embedding, retrieval, llm
-├── 🔬 pipeline/                 # Pipeline plane: corpus, indexing, goldenset, eval
-├── 🌐 serving/                  # Serving plane (W4)
-├── ⚙️  configs/                  # YAML configs for corpus, indexing, eval
-├── 🐳 infra/                    # docker-compose: Qdrant + Postgres + Redis
-├── 🧪 tests/                    # unit/ (no Docker) + integration/
-├── 📋 plans/                    # CHECKLIST, WORKLOG, reports
-├── 🗄️  legacy/                   # The original POC — see legacy/README.md
-│   ├── 📄 app.py                # Streamlit application
-│   ├── 🔧 enhanced_chunking.py  # Chunking system
-│   └── 📋 requirements.txt      # pip dependencies
-└── 📖 README.md
-```
-
-## 🚀 Performance Benchmarks
-
-### ⚡ Speed Metrics
-- **Document Loading**: ~5s for 50-page PDF
-- **Chunking Process**: ~10s (hybrid), ~20s (semantic), ~5s (fixed)
-- **Vector Creation**: ~15s for 1000 chunks
-- **Model Inference**: ~3s per query
-- **Cache Hit**: ~0.5s for reprocessed documents
-
-### 💾 Memory Usage
-- **Base System**: ~2GB RAM
-- **Model Loading**: ~4GB VRAM (4-bit quantized)
-- **Document Processing**: ~1GB RAM per 100 pages
-- **Cache Storage**: ~100MB per document
-- **Peak RAM**: ~8GB during large document processing
-
-## 🔒 Security & Privacy
-
-### 🛡️ Data Protection
-- **Local Processing**: All data processed locally, no cloud uploads
-- **Temporary Storage**: Temporary files automatically cleaned after processing
-- **Secure Cache**: Content-based hashing for cache security
-- **No Data Persistence**: No permanent storage of user documents
-
-### 🔐 Best Practices
-- Avoid uploading sensitive documents
-- Regularly clear cache for privacy
-- Monitor resource usage
-- Use VPN for additional security when needed
-
-## 🛠️ Troubleshooting
-
-### ❓ Common Issues
-
-#### 1. **Out of Memory Error**
-```bash
-# Solutions:
-- Reduce chunk_size to 800-1000
-- Use fixed strategy for large documents
-- Restart application to clear memory
-- Enable garbage collection
-```
-
-#### 2. **Slow Processing**
-```bash
-# Solutions:  
-- Enable caching system
-- Use hybrid strategy for balanced performance
-- Reduce retrieval chunk count
-- Check GPU availability
-```
-
-#### 3. **Model Loading Error**
-```bash
-# Solutions:
-- Verify CUDA availability
-- Restart Python kernel
-- Clear GPU memory
-- Check model download status
-```
-
-### 🔧 Performance Tuning
-
-1. **Memory Optimization**:
-   - Use 4-bit quantization
-   - Enable garbage collection
-   - Reduce chunk size for large documents
-   - Monitor memory usage patterns
-
-2. **Speed Optimization**:
-   - Enable intelligent caching
-   - Use hybrid strategy for balanced performance
-   - Optimize retrieval parameters
-   - Parallel processing where possible
-
-3. **Quality Optimization**:
-   - Use semantic chunking for complex documents
-   - Increase overlap for better context
-   - Fine-tune retrieval parameters
-   - Adjust chunk size based on content type
-
-## 🤝 Contributions
-
-We welcome contributions!
-
-### 📝 Development Workflow
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
-### 🎨 Code Standards
-- **Python**: PEP 8 + Black formatter
-- **Commits**: Conventional Commits
-- **Documentation**: Docstrings for all functions
-- **Testing**: Unit tests for critical functions
-
-## 📚 Technical Documentation
-
-### 🔧 API Reference
-
-```python
-# Enhanced Chunking API
-from enhanced_chunking import EnhancedChunker, ChunkingConfig  # legacy/
-
-# Create configuration
-config = ChunkingConfig()
-config.strategy = "hybrid"  # hybrid, semantic, fixed
-config.fixed_chunk_size = 1000
-config.fixed_overlap = 100
-config.enable_cache = True
-
-# Initialize chunker
-chunker = EnhancedChunker(embeddings, config)
-
-# Process documents
-chunks, metadata = chunker.chunk_documents(documents)
-```
-
-### 📖 Advanced Usage
-
-```python
-# Custom chunking strategy
-def custom_chunking_strategy(documents):
-    # Implement custom logic
-    pass
-
-# Integration with other frameworks
-def integrate_with_langchain():
-    # Custom integration
-    pass
-```
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
-## 🙏 Acknowledgments
-
-- [Hugging Face](https://huggingface.co/) - Transformers and datasets
-- [LangChain](https://langchain.com/) - LLM application framework
-- [Streamlit](https://streamlit.io/) - Web application framework
-- [Chroma](https://www.trychroma.com/) - Vector database
-- [Vietnamese NLP Community](https://github.com/undertheseanlp) - Language models
+# RAG Platform — nền tảng RAG production cho tiếng Việt
+
+> Dự án này bắt đầu từ một POC Streamlit và đang được **viết lại thành một nền
+> tảng production**. Bản POC vẫn chạy được, nằm ở [`legacy/`](legacy/), và được
+> giữ lại vì nó là **mốc so sánh có số đo** — mọi cải thiện dưới đây đều đo ngược
+> lại nó chứ không so với cảm nhận.
+>
+> Tiến độ, quyết định kỹ thuật và **mọi con số** ở
+> [`plans/CHECKLIST.md`](plans/CHECKLIST.md) · nhật ký phiên ở
+> [`plans/WORKLOG.md`](plans/WORKLOG.md) · báo cáo từng hạng mục ở
+> [`plans/reports/`](plans/reports/README.md).
 
 ---
 
-<div align="center">
+## Luận điểm
 
-**Built with ❤️ for AI Engineers**
+Hầu hết demo RAG hỏng khi lên production vì cùng một lý do: **không có cách nào
+biết một thay đổi làm hệ thống tốt lên hay tệ đi**. Đổi chunk size, đổi model,
+thêm reranker — tất cả đều "trông có vẻ khá hơn".
 
-[![GitHub Stars](https://img.shields.io/github/stars/your-repo/rag-chatbot?style=social)](https://github.com/your-repo/rag-chatbot)
-[![GitHub Forks](https://img.shields.io/github/forks/your-repo/rag-chatbot?style=social)](https://github.com/your-repo/rag-chatbot/fork)
+Repo này dựng theo hai nguyên tắc, và phần lớn công sức nằm ở nguyên tắc thứ hai:
 
-[⭐ Star this repo if you find it useful!](https://github.com/your-repo/rag-chatbot)
+**1. Tách hai plane.** *Pipeline Plane* (offline: ingest, index, eval, thí
+nghiệm) và *Serving Plane* (online: truy vấn của người dùng) là hai tiến trình,
+hai vòng đời, hai bộ phụ thuộc. Chúng chỉ được nối với nhau qua một artifact bất
+biến có version. Ranh giới này được **canh bằng test** — `tests/unit/test_architecture_boundaries.py`
+quét AST và làm đỏ CI nếu `rag_core` import `pipeline`, hoặc nếu một phụ thuộc
+nặng (`torch`, `qdrant_client`) lọt vào tầng module của thư viện lõi.
 
-</div> 
+**2. Không con số nào được phát biểu mà không có phép đo, và không phép đo nào
+được tin mà không có kiểm định.** So hai cấu hình retrieval là một bài toán thống
+kê, không phải việc nhìn hai bảng cạnh nhau: repo có bootstrap có cặp, McNemar,
+hiệu chỉnh Bonferroni khi quét nhiều nhóm, và cờ riêng cho *"không đủ lực để kết
+luận"* — khác hẳn *"hoà"*.
+
+---
+
+## Trạng thái
+
+| Giai đoạn | Xong | Gate | Ghi chú |
+|---|:---:|:---:|---|
+| **W0** · Chuẩn bị & quyết định | 1/8 | — | phần lớn chờ GPU thuê |
+| **W1** · Nền móng + eval baseline | **13/13** | 🟡 | PASS *có điều kiện* — golden set review bằng model, chưa phải người (`TD-13`) |
+| **W2** · Retrieval upgrade | **10/10** | 🟡 | 1 tiêu chí chưa đo được (p95 end-to-end, chờ `W4-13`) |
+| **W3** · Ingestion + chunking | **7/9** | ⬜ | 2/3 tiêu chí đạt; còn `W3-04` (cần GPU) và `W3-09` |
+| **W4** · Serving Plane | 0/13 | ⬜ | chưa bắt đầu |
+| **W5** · Eval đầy đủ + observability | 0/11 | ⬜ | chưa bắt đầu |
+| **W6** · Hoàn thiện & trình bày | 0/8 | ⬜ | chưa bắt đầu |
+
+**1 436 test** — 40 file unit (không cần Docker) + 11 file integration (cần
+Qdrant/Redis thật). `ruff` và `mypy` sạch trên 139 file. 27 báo cáo kỹ thuật, mỗi
+hạng mục một cái. `tests/e2e/` và `tests/security/` mới là khung rỗng, dành cho
+`W5`/`W6`.
+
+---
+
+## Kết quả đo được
+
+Trên `golden_v1` — **242 câu** neo theo span vào **60 tài liệu World Bank về Việt
+Nam** (40 tiếng Anh + 20 tiếng Việt, 14,3 triệu ký tự, toàn bộ CC BY 3.0 IGO).
+209 câu chấm điểm xếp hạng; 33 câu `unanswerable` đo riêng bằng refusal
+correctness — chúng trả `None` ở mọi metric xếp hạng chứ không bị tính là 0.
+
+| Metric | POC (baseline) | Hiện tại | Mục tiêu `G6` |
+|---|---:|---:|---:|
+| Recall@10 | 0,2257 | **0,7352** | ≥ 0,90 |
+| Recall@5 | 0,1746 | **0,7026** | — |
+| nDCG@10 | 0,1621 | **0,6481** | ≥ 0,82 |
+| MRR | 0,1660 | **0,6440** | ≥ 0,75 |
+| hit_rate@1 | 0,1196 | **0,5598** | — |
+| p95 truy hồi | 32,8 ms | 604,0 ms | — |
+
+Cấu hình hiện tại: **BGE-M3 + hybrid RRF (`k=1`) + cross-encoder rerank trên pool
+50**. Đo trên **cùng 209 câu và cùng nhãn**, nên so trực tiếp được với baseline.
+
+**Ba điều phải đọc kèm bảng trên:**
+
+* **`cross_lingual` đang bằng 0** ở baseline vì model embedding cũ là **đơn ngữ**.
+  Khoảng cách tới `Recall@10 ≥ 0,90` **không** lấp được bằng tinh chỉnh tham số.
+* **`c=50` không phải cấu hình tốt nhất cũng không phải nhanh nhất** — nó là cấu
+  hình được báo cáo. `c=100` cao điểm hơn nhưng `W2-08` đo ra phần tăng đó là
+  **vùng phủ**, không phải chất lượng xếp hạng (nDCG và MAP **trái chiều**).
+  `c=20` giữ 91% mức lợi với **233 ms** và là điểm vận hành khuyến nghị.
+* **604 ms là độ trễ truy hồi thuần**, không phải end-to-end. Ngưỡng 3 500 ms chỉ
+  so được sau `W4-13`.
+
+---
+
+## Kiến trúc
+
+```mermaid
+flowchart LR
+    subgraph P["Pipeline Plane — offline"]
+        direction TB
+        C[corpus + manifest<br/>có ép giấy phép] --> L[loaders<br/>7 định dạng]
+        L --> K[chunking<br/>5 chiến lược]
+        K --> I[build_index<br/>tăng dần]
+        I --> Q[(Qdrant<br/>dense + sparse)]
+        Q --> E[eval + ablation<br/>bootstrap · McNemar]
+        E --> M[(MLflow)]
+    end
+    subgraph S["Serving Plane — online"]
+        direction TB
+        A[API truy vấn<br/>W4] --> R[retrieve → rerank<br/>→ generate]
+    end
+    Q -. "chỉ qua artifact bất biến có version" .-> R
+
+    style P fill:#eef6ff,stroke:#4a7fb5
+    style S fill:#f6f0ff,stroke:#8a6db5
+```
+
+| Thư mục | Vai trò |
+|---|---|
+| `packages/rag_core/` | **Thư viện lõi.** Không import `pipeline`/`serving`. Phụ thuộc nặng import lazy. `chunking/` `embedding/` `loaders/` `retrieval/` `reranking/` `llm/` |
+| `pipeline/` | Pipeline Plane: `corpus/` `indexing/` `goldenset/` `eval/` `experiments/` `ingest/` |
+| `serving/` | Serving Plane (`W4`, chưa dựng) |
+| `configs/` | Config có version cho corpus / indexing / experiment |
+| `plans/` | `CHECKLIST.md` (nguồn sự thật), `WORKLOG.md`, `reports/` |
+| `tests/` | `unit/` (40 file) · `integration/` (11) · `e2e/`, `security/` còn rỗng |
+| `legacy/` | POC Streamlit — mốc so sánh, vẫn chạy được |
+
+---
+
+## Bắt đầu
+
+```bash
+uv sync --all-extras        # hoặc: make install
+cp .env.example .env        # điền API key nếu cần sinh golden set
+make up                     # Qdrant + Postgres + Redis, đợi tới khi healthy
+
+make data-pull              # corpus qua DVC (hoặc `make corpus` để tải lại từ nguồn)
+make index BUNDLE=bgem3     # build index
+make eval-retrieval BUNDLE=bgem3 MODE=hybrid RUN=thu-nghiem
+```
+
+**Đường eval không cần LLM API nào.** Đã chạy thật với key rỗng và kết quả trùng
+khít lượt có key (sai số 0,0000%) — retrieval eval không được phép phụ thuộc vào
+một dịch vụ trả tiền.
+
+```bash
+make help                   # toàn bộ target, có mô tả
+make lint                   # ruff check + format + mypy
+make test                   # unit test, không cần Docker
+make test-integration       # cần `make up`
+```
+
+### Vài lệnh đáng thử
+
+```bash
+make index-dry BUNDLE=bgem3      # chunk thử, in thống kê, không chạm Qdrant
+make truncation                  # bao nhiêu text bị model embedding cắt mất
+make token-probe                 # chunk theo ký tự vs theo token, trên corpus thật
+make incr-probe                  # sửa một dòng → phải embed lại bao nhiêu
+make ablation                    # bảng 14 ô, có p-value và CI từng dòng
+make ingest-api & make ingest-worker   # API ingestion + worker nền
+```
+
+---
+
+## Eval hoạt động thế nào
+
+Đây là phần khiến repo này khác một demo, nên nó đáng được đọc kỹ nhất.
+
+**Nhãn neo theo span, không theo `chunk_id`.** `chunk_id` ở đây là
+`{doc_id}::{index}` — thuần vị trí. Đổi `chunk_size` là mọi `chunk_id` trỏ sang
+đoạn văn khác, nên một golden set neo theo `chunk_id` sẽ **âm thầm** đo sai ngay
+lần đầu ai đó chỉnh chunking. Nhãn vì thế neo vào **khoảng ký tự trong tài liệu
+gốc** và được ánh xạ lại cho từng index.
+
+**Hàng rào băm nhãn.** Mỗi lần chạy ghi `relevant_digest`. So hai lần chạy có
+nhãn khác nhau bị **từ chối**, không phải cảnh báo — vì đó đúng là cách một bảng
+so sánh trở nên vô nghĩa mà vẫn trông bình thường.
+
+**Kiểm định, không phải mắt thường.** `make eval-compare` cho bootstrap **có cặp**
++ CI + McNemar trên từng metric. `make eval-compare-by BY=lang` quét theo nhóm và
+**hiệu chỉnh Bonferroni**. Có cờ riêng cho `KHÔNG ĐỦ LỰC` (trần `p` của McNemar
+là `2/2ⁿ`, nên nhóm 4 câu là vĩnh viễn không đo được) và `KHÔNG KẾT LUẬN` — cả
+hai khác hẳn "hoà", và gộp chúng lại là cách nhanh nhất để đọc sai kết quả.
+
+**Chuỗi toàn vẹn ghim tới tận văn bản đã parse.** Manifest không chỉ ghim
+`sha256` của byte mà cả `text_sha256` và vân tay parser — kèm version của **mọi**
+gói có thể đổi văn bản xuất ra, và commit SHA của trọng số model layout.
+
+---
+
+## Vài quyết định có số đo
+
+Mỗi dòng dẫn tới một báo cáo có phép đo, phần "cố ý không làm", và bảng dự đoán
+ghi **trước** khi đo đối chiếu với kết quả.
+
+| | Phát hiện | Báo cáo |
+|---|---|---|
+| `W2-03`<br/>`W2-05` | Vocab **subword** phá known-item search: 25/51 mã tài liệu không nhánh nào tìm ra. Reranker sửa được phần lớn (hit@1 0,098 → 0,549) — nó **thắng cả sparse** | [`w2-05-reranker.md`](plans/reports/tasks/w2-05-reranker.md) |
+| `W2-08` | "Cấu hình nào thắng" là một **phép chọn cực đại**, nên câu trả lời là một **tập**, không phải một dòng. Người thắng từng do **6 mẫu lại trên 10 000** quyết định | [`w2-08-ablation.md`](plans/reports/tasks/w2-08-ablation.md) |
+| `W2-09` | Câu "category nào cải thiện nhiều nhất" **không có câu trả lời** với dữ liệu hiện có — cả 6 nhóm hoà, và vẫn hoà khi bỏ hiệu chỉnh. Cần ~440 câu | [`exp-001-retrieval.md`](plans/reports/tasks/exp-001-retrieval.md) |
+| `W3-01` | Chèn parser vào giữa byte và văn bản **giết sạch golden set**: 0/280 span sống sót, trong khi `sha256` vẫn khớp và không test nào đỏ | [`w3-01-docling-loader.md`](plans/reports/tasks/w3-01-docling-loader.md) |
+| `W3-02` | Máy OCR đi kèm đọc tiếng Anh nguyên văn nhưng **trả rác cho tiếng Việt** — nên loader **từ chối** thay vì trả rác trông như nội dung | [`w3-02-ocr-fallback.md`](plans/reports/tasks/w3-02-ocr-fallback.md) |
+| `W3-06` | **Ký tự không phải đơn vị mang đi được**: cùng một bộ chunk, đổi tokenizer là đổi số token tới 47%, và chiều lệch EN↔VI **đảo dấu** | [`w3-06-token-sizing.md`](plans/reports/tasks/w3-06-token-sizing.md) |
+| `W3-05` | **Độ nở ngữ cảnh là chỉ số đánh lừa**: chia đôi child làm nó gấp đôi trong khi prompt thật không đổi (9 471 → 9 519 token) | [`w3-05-parent-child.md`](plans/reports/tasks/w3-05-parent-child.md) |
+| `TD-22` | Vân tay parser ghim **tên gói ô dù**: hàm sinh ra văn bản sống ở `docling-core`, và trọng số model bố cục tải theo nhánh **di động** | [`td-22-parse-pin.md`](plans/reports/tasks/td-22-parse-pin.md) |
+| `W3-07` | Re-index tăng dần **179,3×**; và thiệt hại của một lần sửa bị chặn bởi **khoảng cách tới dấu xuống dòng đoạn kế tiếp** (2,0% → 98,0%) | [`w3-07-incremental-reindex.md`](plans/reports/tasks/w3-07-incremental-reindex.md) |
+| `W3-08` | `max_tries` của arq **không** thử lại `Exception` thường — và mặc định ấy hoá ra đúng | [`w3-08-ingest-worker.md`](plans/reports/tasks/w3-08-ingest-worker.md) |
+
+---
+
+## Ràng buộc cứng
+
+Ba quy tắc được thực thi bằng code, không phải bằng lời hứa:
+
+1. **Không dùng OpenRouter preset (`@preset/...`) ở bất kỳ đâu trong đường eval.**
+   Preset là config phía server, đổi ngầm được, và một metric dịch chuyển không
+   truy được nguyên nhân là một metric vô dụng. Luôn pin slug tường minh,
+   `temperature=0`, seed cố định, và **log lại model thực tế đã phục vụ request**.
+   Chặn ngay ở constructor của LLM client.
+2. **Job GPU thuê không mang API key.** Máy thuê chỉ chạy việc GPU-bound tự chứa;
+   mọi thứ chạm API trả tiền chạy ở máy cá nhân.
+3. **Corpus phải công khai và giấy phép cho phép redistribute.** Repo public +
+   demo public + máy thuê bên thứ ba = ba kênh công bố dữ liệu. `LICENSE_ALLOWLIST`
+   từ chối entry thiếu `source_url` hoặc mang giấy phép ngoài danh sách — kể cả
+   `ND` (NoDerivatives), vì chunking + sinh context bằng LLM **là** tạo tác phẩm
+   phái sinh.
+
+---
+
+## POC gốc
+
+Bản Streamlit ở [`legacy/`](legacy/) vẫn chạy được và là mốc so sánh cho mọi con
+số ở trên. Vài lỗi của nó được ghi lại có chủ ý vì chúng dạy được điều gì đó:
+cache `pickle` nạp từ thư mục ghi được, `config_hash` **làm tròn** tham số nên
+hai cấu hình khác nhau dùng chung cache entry, và hậu xử lý gộp chunk **qua ranh
+giới tài liệu**. Hình dạng lỗi cuối cùng ấy còn xuất hiện thêm hai lần nữa trong
+`W3` — ở ranh giới section và ranh giới parent.
+
+## License
+
+MIT, khai trong [`pyproject.toml`](pyproject.toml). ⚠️ Repo **chưa có file
+`LICENSE`** — cần thêm trước khi công khai, vì một repo public khai MIT mà không
+kèm toàn văn giấy phép thì mặc định là *không* cấp quyền gì.
+
+Corpus đi kèm là tài liệu World Bank phát hành theo **CC BY 3.0 IGO**; giấy phép
+của **từng** tài liệu ghi trong `data/corpus_manifest.csv` và được
+`LICENSE_ALLOWLIST` ép ngay lúc thêm vào manifest.

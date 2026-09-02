@@ -54,13 +54,13 @@ Một task chỉ được `[x]` khi đủ **cả 4**:
 | W0 · Chuẩn bị | 8 | 1 | 0 | 2 | 2 | 3 | — |
 | W1 · Nền móng + Eval baseline | 13 | 13 | 0 | 0 | 0 | 0 | `G1` 🟡 |
 | W2 · Retrieval upgrade | 10 | 10 | 0 | 0 | 0 | 0 | `G2` 🟡 |
-| W3 · Ingestion + Chunking | 9 | 0 | 0 | 0 | 0 | 9 | `G3` ⬜ |
+| W3 · Ingestion + Chunking | 9 | 7 | 0 | 0 | 0 | 2 | `G3` ⬜ |
 | W4 · Serving Plane | 13 | 0 | 0 | 0 | 0 | 13 | `G4` ⬜ |
 | W5 · Eval đầy đủ + Observability | 11 | 0 | 0 | 0 | 0 | 11 | `G5` ⬜ |
 | W6 · Hoàn thiện & trình bày | 8 | 0 | 0 | 0 | 0 | 8 | `G6` ⬜ |
-| **Tổng backlog gốc** | **72** | **23** | **0** | **2** | **2** | **46** | 0/6 |
+| **Tổng backlog gốc** | **72** | **31** | **0** | **2** | **2** | **37** | 0/6 |
 | §9 Task thêm mới (`NEW-xx`) | 6 | 6 | 0 | 0 | 0 | 0 | — |
-| **Tổng cộng** | **78** | **29** | **0** | **2** | **2** | **46** | 0/6 |
+| **Tổng cộng** | **78** | **37** | **0** | **2** | **2** | **37** | 0/6 |
 
 Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
@@ -71,6 +71,18 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 > dòng W2 ở đây vẫn ghi 4 done, nên tổng cộng đếm thiếu một task. Quy tắc §0 nói rõ "đổi
 > trạng thái → cập nhật luôn §1 Dashboard" và tôi đã bỏ nửa sau. Cách kiểm không tốn gì:
 > `grep -cE '^- \[x\]'` trên đúng khoảng dòng của từng mục §2–§8.
+
+> ⚠️ **Lỗi sổ sách thứ BA, vẫn cùng loại** (sửa 2026-08-22): dòng W3 ghi `0/9` trong khi §5 đã
+> tick 7 task (`W3-01`, `-02`, `-03`, `-05`, `-06`, `-07`, `-08`). Hai cảnh báo phía trên
+> không ngăn được lần thứ ba, nên vấn đề không phải trí nhớ mà là **đếm bằng tay**. Lệnh đếm
+> đúng — chỉ tính dòng có **mã task**, không tính tiêu chí gate (chúng cũng viết `- [x]`):
+>
+> ```bash
+> grep -cE '^- \[x\] `(W[0-9]|NEW)-[0-9]{2}' plans/CHECKLIST.md   # tổng đã xong
+> ```
+>
+> Đếm máy xác nhận cột Tổng **đúng**: 8+13+10+9+13+11+8 = **72** (W2 có 10 mã vì
+> `W2-08-prep`), cộng 6 mã `NEW` ở §9 là **78**. Cái sai chỉ nằm ở cột `[x]`.
 
 **Chỉ số chất lượng (điền dần, lấy từ `plans/reports/`)**
 
@@ -741,7 +753,7 @@ Gate: ⬜ chưa chạy · 🟡 đã chạy FAIL · ✅ PASS
 
 ### `G3` — Gate tuần 3 ⬜
 - [ ] Contextual/structure-aware chunking thắng hybrid cũ trên nDCG@10 (hoặc kết luận rõ là không, kèm số)
-- [x] Ingest được ≥ 5 định dạng file, có test fixture cho từng loại — **6** (`.txt` `.md` `.html` `.pdf` `.docx` `.pptx` `.xlsx` qua `rag_core.loaders`, `W3-01`), và từ `TD-22` chúng đi được vào `corpus_loader` với văn bản parse đã ghim
+- [x] Ingest được ≥ 5 định dạng file, có test fixture cho từng loại — **7**: `.pdf` `.docx` `.pptx` `.xlsx` `.html` `.md` qua docling (`W3-01`, mỗi định dạng một fixture) + `.txt` qua `plain`. Và từ `TD-22` chúng đi được vào `corpus_loader` với văn bản parse **đã ghim**
 - [x] Reprocess sau sửa nhỏ nhanh hơn full rebuild ≥ 10× (có số đo) — **179,3×**; sửa một dòng ở tài liệu 1.082 chunk chỉ embed lại **6** chunk (`reports/tasks/w3-07-incremental-reindex.md` §3)
 
 ---
