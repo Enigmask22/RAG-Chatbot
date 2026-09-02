@@ -1,240 +1,259 @@
-# RAG Platform — nền tảng RAG production cho tiếng Việt
+# RAG Platform — a production RAG system for Vietnamese
 
-> Dự án này bắt đầu từ một POC Streamlit và đang được **viết lại thành một nền
-> tảng production**. Bản POC vẫn chạy được, nằm ở [`legacy/`](legacy/), và được
-> giữ lại vì nó là **mốc so sánh có số đo** — mọi cải thiện dưới đây đều đo ngược
-> lại nó chứ không so với cảm nhận.
+***English** · [Tiếng Việt](README.vi.md)*
+
+> This started as a Streamlit RAG proof-of-concept and is being **rebuilt as a
+> production platform**. The POC still runs, lives in [`legacy/`](legacy/), and is
+> kept deliberately: it is the **measured baseline** every improvement below is
+> compared against.
 >
-> Tiến độ, quyết định kỹ thuật và **mọi con số** ở
-> [`plans/CHECKLIST.md`](plans/CHECKLIST.md) · nhật ký phiên ở
-> [`plans/WORKLOG.md`](plans/WORKLOG.md) · báo cáo từng hạng mục ở
+> Progress, engineering decisions and **every number** live in
+> [`plans/CHECKLIST.md`](plans/CHECKLIST.md) · session journal in
+> [`plans/WORKLOG.md`](plans/WORKLOG.md) · one report per task in
 > [`plans/reports/`](plans/reports/README.md).
+>
+> ℹ️ Those engineering journals are written in **Vietnamese** — they are working
+> documents, not marketing. This README covers what they contain.
 
 ---
 
-## Luận điểm
+## The thesis
 
-Hầu hết demo RAG hỏng khi lên production vì cùng một lý do: **không có cách nào
-biết một thay đổi làm hệ thống tốt lên hay tệ đi**. Đổi chunk size, đổi model,
-thêm reranker — tất cả đều "trông có vẻ khá hơn".
+Most RAG demos break on the way to production for the same reason: **there is no
+way to tell whether a change made the system better or worse.** Change the chunk
+size, swap the model, add a reranker — everything "seems better".
 
-Repo này dựng theo hai nguyên tắc, và phần lớn công sức nằm ở nguyên tắc thứ hai:
+This repo is built on two principles, and most of the work went into the second.
 
-**1. Tách hai plane.** *Pipeline Plane* (offline: ingest, index, eval, thí
-nghiệm) và *Serving Plane* (online: truy vấn của người dùng) là hai tiến trình,
-hai vòng đời, hai bộ phụ thuộc. Chúng chỉ được nối với nhau qua một artifact bất
-biến có version. Ranh giới này được **canh bằng test** — `tests/unit/test_architecture_boundaries.py`
-quét AST và làm đỏ CI nếu `rag_core` import `pipeline`, hoặc nếu một phụ thuộc
-nặng (`torch`, `qdrant_client`) lọt vào tầng module của thư viện lõi.
+**1. Two separate planes.** The *Pipeline Plane* (offline: ingestion, indexing,
+evaluation, experiments) and the *Serving Plane* (online: user queries) are two
+processes, two lifecycles, two dependency sets. They may only be joined through a
+versioned, immutable artifact. That boundary is **enforced by a test** —
+`tests/unit/test_architecture_boundaries.py` walks the AST and fails CI if
+`rag_core` imports `pipeline`, or if a heavy dependency (`torch`,
+`qdrant_client`) reaches the module level of the core library.
 
-**2. Không con số nào được phát biểu mà không có phép đo, và không phép đo nào
-được tin mà không có kiểm định.** So hai cấu hình retrieval là một bài toán thống
-kê, không phải việc nhìn hai bảng cạnh nhau: repo có bootstrap có cặp, McNemar,
-hiệu chỉnh Bonferroni khi quét nhiều nhóm, và cờ riêng cho *"không đủ lực để kết
-luận"* — khác hẳn *"hoà"*.
+**2. No number is stated without a measurement, and no measurement is trusted
+without a significance test.** Comparing two retrieval configurations is a
+statistics problem, not a matter of putting two tables side by side: the repo has
+paired bootstrap, McNemar, Bonferroni correction when scanning across groups, and
+a distinct flag for *"not enough power to conclude"* — which is not the same
+thing as *"tie"*.
 
 ---
 
-## Trạng thái
+## Status
 
-| Giai đoạn | Xong | Gate | Ghi chú |
+| Phase | Done | Gate | Notes |
 |---|:---:|:---:|---|
-| **W0** · Chuẩn bị & quyết định | 1/8 | — | phần lớn chờ GPU thuê |
-| **W1** · Nền móng + eval baseline | **13/13** | 🟡 | PASS *có điều kiện* — golden set review bằng model, chưa phải người (`TD-13`) |
-| **W2** · Retrieval upgrade | **10/10** | 🟡 | 1 tiêu chí chưa đo được (p95 end-to-end, chờ `W4-13`) |
-| **W3** · Ingestion + chunking | **7/9** | ⬜ | 2/3 tiêu chí đạt; còn `W3-04` (cần GPU) và `W3-09` |
-| **W4** · Serving Plane | 0/13 | ⬜ | chưa bắt đầu |
-| **W5** · Eval đầy đủ + observability | 0/11 | ⬜ | chưa bắt đầu |
-| **W6** · Hoàn thiện & trình bày | 0/8 | ⬜ | chưa bắt đầu |
+| **W0** · Setup & decisions | 1/8 | — | mostly waiting on rented GPU |
+| **W1** · Foundations + eval baseline | **13/13** | 🟡 | conditional PASS — golden set was model-reviewed, not human-reviewed (`TD-13`) |
+| **W2** · Retrieval upgrade | **10/10** | 🟡 | 1 criterion not yet measurable (end-to-end p95, blocked on `W4-13`) |
+| **W3** · Ingestion + chunking | **7/9** | ⬜ | 2/3 gate criteria met; `W3-04` (needs GPU) and `W3-09` remain |
+| **W4** · Serving Plane | 0/13 | ⬜ | not started |
+| **W5** · Full eval + observability | 0/11 | ⬜ | not started |
+| **W6** · Polish & presentation | 0/8 | ⬜ | not started |
 
-**1 436 test** — 40 file unit (không cần Docker) + 11 file integration (cần
-Qdrant/Redis thật). `ruff` và `mypy` sạch trên 139 file. 27 báo cáo kỹ thuật, mỗi
-hạng mục một cái. `tests/e2e/` và `tests/security/` mới là khung rỗng, dành cho
-`W5`/`W6`.
+**1,436 tests** — 40 unit files (no Docker required) + 11 integration files
+(against real Qdrant/Redis). `ruff` and `mypy` clean across 139 files. 27
+engineering reports, one per task. `tests/e2e/` and `tests/security/` are empty
+scaffolding for `W5`/`W6`.
 
 ---
 
-## Kết quả đo được
+## Measured results
 
-Trên `golden_v1` — **242 câu** neo theo span vào **60 tài liệu World Bank về Việt
-Nam** (40 tiếng Anh + 20 tiếng Việt, 14,3 triệu ký tự, toàn bộ CC BY 3.0 IGO).
-209 câu chấm điểm xếp hạng; 33 câu `unanswerable` đo riêng bằng refusal
-correctness — chúng trả `None` ở mọi metric xếp hạng chứ không bị tính là 0.
+On `golden_v1` — **242 questions** whose labels are anchored to character spans in
+**60 World Bank documents about Vietnam** (40 English + 20 Vietnamese, 14.3M
+characters, all CC BY 3.0 IGO). 209 questions are scored for ranking; 33
+`unanswerable` questions are measured separately by refusal correctness — they
+return `None` on every ranking metric rather than being counted as zero.
 
-| Metric | POC (baseline) | Hiện tại | Mục tiêu `G6` |
+| Metric | POC (baseline) | Current | `G6` target |
 |---|---:|---:|---:|
-| Recall@10 | 0,2257 | **0,7352** | ≥ 0,90 |
-| Recall@5 | 0,1746 | **0,7026** | — |
-| nDCG@10 | 0,1621 | **0,6481** | ≥ 0,82 |
-| MRR | 0,1660 | **0,6440** | ≥ 0,75 |
-| hit_rate@1 | 0,1196 | **0,5598** | — |
-| p95 truy hồi | 32,8 ms | 604,0 ms | — |
+| Recall@10 | 0.2257 | **0.7352** | ≥ 0.90 |
+| Recall@5 | 0.1746 | **0.7026** | — |
+| nDCG@10 | 0.1621 | **0.6481** | ≥ 0.82 |
+| MRR | 0.1660 | **0.6440** | ≥ 0.75 |
+| hit_rate@1 | 0.1196 | **0.5598** | — |
+| p95 retrieval latency | 32.8 ms | 604.0 ms | — |
 
-Cấu hình hiện tại: **BGE-M3 + hybrid RRF (`k=1`) + cross-encoder rerank trên pool
-50**. Đo trên **cùng 209 câu và cùng nhãn**, nên so trực tiếp được với baseline.
+Current configuration: **BGE-M3 + hybrid RRF (`k=1`) + cross-encoder reranking
+over a pool of 50**. Measured on the **same 209 questions with the same labels**,
+so it is directly comparable to the baseline.
 
-**Ba điều phải đọc kèm bảng trên:**
+**Three things that must be read alongside that table:**
 
-* **`cross_lingual` đang bằng 0** ở baseline vì model embedding cũ là **đơn ngữ**.
-  Khoảng cách tới `Recall@10 ≥ 0,90` **không** lấp được bằng tinh chỉnh tham số.
-* **`c=50` không phải cấu hình tốt nhất cũng không phải nhanh nhất** — nó là cấu
-  hình được báo cáo. `c=100` cao điểm hơn nhưng `W2-08` đo ra phần tăng đó là
-  **vùng phủ**, không phải chất lượng xếp hạng (nDCG và MAP **trái chiều**).
-  `c=20` giữ 91% mức lợi với **233 ms** và là điểm vận hành khuyến nghị.
-* **604 ms là độ trễ truy hồi thuần**, không phải end-to-end. Ngưỡng 3 500 ms chỉ
-  so được sau `W4-13`.
+* **`cross_lingual` scores 0** at baseline because the old embedding model is
+  **monolingual**. The gap to `Recall@10 ≥ 0.90` is **not** closable by parameter
+  tuning.
+* **`c=50` is neither the best nor the fastest configuration** — it is the one
+  being reported. `c=100` scores higher, but `W2-08` measured that the gain is
+  **coverage**, not ranking quality (nDCG and MAP move in the **opposite**
+  direction). `c=20` keeps 91% of the gain at **233 ms** and is the recommended
+  operating point.
+* **604 ms is retrieval-only latency**, not end-to-end. It can only be compared
+  against the 3,500 ms threshold after `W4-13`.
 
 ---
 
-## Kiến trúc
+## Architecture
 
 ```mermaid
 flowchart LR
     subgraph P["Pipeline Plane — offline"]
         direction TB
-        C[corpus + manifest<br/>có ép giấy phép] --> L[loaders<br/>7 định dạng]
-        L --> K[chunking<br/>5 chiến lược]
-        K --> I[build_index<br/>tăng dần]
+        C[corpus + manifest<br/>license enforced] --> L[loaders<br/>7 formats]
+        L --> K[chunking<br/>5 strategies]
+        K --> I[build_index<br/>incremental]
         I --> Q[(Qdrant<br/>dense + sparse)]
         Q --> E[eval + ablation<br/>bootstrap · McNemar]
         E --> M[(MLflow)]
     end
     subgraph S["Serving Plane — online"]
         direction TB
-        A[API truy vấn<br/>W4] --> R[retrieve → rerank<br/>→ generate]
+        A[query API<br/>W4] --> R[retrieve → rerank<br/>→ generate]
     end
-    Q -. "chỉ qua artifact bất biến có version" .-> R
+    Q -. "only via a versioned immutable artifact" .-> R
 
     style P fill:#eef6ff,stroke:#4a7fb5
     style S fill:#f6f0ff,stroke:#8a6db5
 ```
 
-| Thư mục | Vai trò |
+| Directory | Role |
 |---|---|
-| `packages/rag_core/` | **Thư viện lõi.** Không import `pipeline`/`serving`. Phụ thuộc nặng import lazy. `chunking/` `embedding/` `loaders/` `retrieval/` `reranking/` `llm/` |
+| `packages/rag_core/` | **Core library.** Never imports `pipeline`/`serving`. Heavy dependencies are imported lazily. `chunking/` `embedding/` `loaders/` `retrieval/` `reranking/` `llm/` |
 | `pipeline/` | Pipeline Plane: `corpus/` `indexing/` `goldenset/` `eval/` `experiments/` `ingest/` |
-| `serving/` | Serving Plane (`W4`, chưa dựng) |
-| `configs/` | Config có version cho corpus / indexing / experiment |
-| `plans/` | `CHECKLIST.md` (nguồn sự thật), `WORKLOG.md`, `reports/` |
-| `tests/` | `unit/` (40 file) · `integration/` (11) · `e2e/`, `security/` còn rỗng |
-| `legacy/` | POC Streamlit — mốc so sánh, vẫn chạy được |
+| `serving/` | Serving Plane (`W4`, not built yet) |
+| `configs/` | Versioned configs for corpus / indexing / experiments |
+| `plans/` | `CHECKLIST.md` (source of truth), `WORKLOG.md`, `reports/` |
+| `tests/` | `unit/` (40 files) · `integration/` (11) · `e2e/`, `security/` still empty |
+| `legacy/` | The Streamlit POC — the comparison baseline, still runnable |
 
 ---
 
-## Bắt đầu
+## Getting started
 
 ```bash
-uv sync --all-extras        # hoặc: make install
-cp .env.example .env        # điền API key nếu cần sinh golden set
-make up                     # Qdrant + Postgres + Redis, đợi tới khi healthy
+uv sync --all-extras        # or: make install
+cp .env.example .env        # fill in API keys only if generating a golden set
+make up                     # Qdrant + Postgres + Redis, waits until healthy
 
-make data-pull              # corpus qua DVC (hoặc `make corpus` để tải lại từ nguồn)
-make index BUNDLE=bgem3     # build index
-make eval-retrieval BUNDLE=bgem3 MODE=hybrid RUN=thu-nghiem
+make data-pull              # corpus via DVC (or `make corpus` to re-fetch from source)
+make index BUNDLE=bgem3     # build the index
+make eval-retrieval BUNDLE=bgem3 MODE=hybrid RUN=my-run
 ```
 
-**Đường eval không cần LLM API nào.** Đã chạy thật với key rỗng và kết quả trùng
-khít lượt có key (sai số 0,0000%) — retrieval eval không được phép phụ thuộc vào
-một dịch vụ trả tiền.
+**The evaluation path needs no LLM API at all.** It has been run for real with
+empty keys and produced results identical to the run with keys (0.0000%
+deviation) — retrieval evaluation must not depend on a paid service.
 
 ```bash
-make help                   # toàn bộ target, có mô tả
+make help                   # every target, with descriptions
 make lint                   # ruff check + format + mypy
-make test                   # unit test, không cần Docker
-make test-integration       # cần `make up`
+make test                   # unit tests, no Docker needed
+make test-integration       # requires `make up`
 ```
 
-### Vài lệnh đáng thử
+### Worth trying
 
 ```bash
-make index-dry BUNDLE=bgem3      # chunk thử, in thống kê, không chạm Qdrant
-make truncation                  # bao nhiêu text bị model embedding cắt mất
-make token-probe                 # chunk theo ký tự vs theo token, trên corpus thật
-make incr-probe                  # sửa một dòng → phải embed lại bao nhiêu
-make ablation                    # bảng 14 ô, có p-value và CI từng dòng
-make ingest-api & make ingest-worker   # API ingestion + worker nền
+make index-dry BUNDLE=bgem3      # chunk a few docs, print stats, never touch Qdrant
+make truncation                  # how much text the embedding model silently cuts
+make token-probe                 # chunking by characters vs by tokens, on the real corpus
+make incr-probe                  # edit one line → how many chunks must be re-embedded
+make ablation                    # 14-cell table with per-row p-values and CIs
+make ingest-api & make ingest-worker   # ingestion API + background worker
 ```
 
 ---
 
-## Eval hoạt động thế nào
+## How evaluation works
 
-Đây là phần khiến repo này khác một demo, nên nó đáng được đọc kỹ nhất.
+This is the part that separates the repo from a demo, so it is the part worth
+reading closely.
 
-**Nhãn neo theo span, không theo `chunk_id`.** `chunk_id` ở đây là
-`{doc_id}::{index}` — thuần vị trí. Đổi `chunk_size` là mọi `chunk_id` trỏ sang
-đoạn văn khác, nên một golden set neo theo `chunk_id` sẽ **âm thầm** đo sai ngay
-lần đầu ai đó chỉnh chunking. Nhãn vì thế neo vào **khoảng ký tự trong tài liệu
-gốc** và được ánh xạ lại cho từng index.
+**Labels are anchored to character spans, not to `chunk_id`.** A `chunk_id` here
+is `{doc_id}::{index}` — purely positional. Change `chunk_size` and every
+`chunk_id` points at a different passage, so a golden set anchored to `chunk_id`
+starts measuring the wrong thing **silently** the first time anyone touches
+chunking. Labels therefore anchor to **character ranges in the source document**
+and are re-resolved per index.
 
-**Hàng rào băm nhãn.** Mỗi lần chạy ghi `relevant_digest`. So hai lần chạy có
-nhãn khác nhau bị **từ chối**, không phải cảnh báo — vì đó đúng là cách một bảng
-so sánh trở nên vô nghĩa mà vẫn trông bình thường.
+**A label digest guards every comparison.** Each run records a
+`relevant_digest`. Comparing two runs with different labels is **rejected**, not
+warned about — because that is exactly how a comparison table becomes meaningless
+while still looking perfectly normal.
 
-**Kiểm định, không phải mắt thường.** `make eval-compare` cho bootstrap **có cặp**
-+ CI + McNemar trên từng metric. `make eval-compare-by BY=lang` quét theo nhóm và
-**hiệu chỉnh Bonferroni**. Có cờ riêng cho `KHÔNG ĐỦ LỰC` (trần `p` của McNemar
-là `2/2ⁿ`, nên nhóm 4 câu là vĩnh viễn không đo được) và `KHÔNG KẾT LUẬN` — cả
-hai khác hẳn "hoà", và gộp chúng lại là cách nhanh nhất để đọc sai kết quả.
+**Significance testing, not eyeballing.** `make eval-compare` runs a **paired**
+bootstrap + CI + McNemar per metric. `make eval-compare-by BY=lang` scans across
+groups with **Bonferroni correction**. There are separate flags for
+`INSUFFICIENT POWER` (McNemar's `p` is bounded below by `2/2ⁿ`, so a 4-question
+group is permanently unmeasurable) and `INCONCLUSIVE` — both distinct from "tie",
+and collapsing them together is the fastest way to misread a result.
 
-**Chuỗi toàn vẹn ghim tới tận văn bản đã parse.** Manifest không chỉ ghim
-`sha256` của byte mà cả `text_sha256` và vân tay parser — kèm version của **mọi**
-gói có thể đổi văn bản xuất ra, và commit SHA của trọng số model layout.
+**The integrity chain is pinned all the way to the parsed text.** The manifest
+pins not just the `sha256` of the bytes but also `text_sha256` and a parser
+fingerprint — including the version of **every** package that can change the
+output, plus the resolved commit SHA of the layout model weights.
 
 ---
 
-## Vài quyết định có số đo
+## A few decisions, with numbers
 
-Mỗi dòng dẫn tới một báo cáo có phép đo, phần "cố ý không làm", và bảng dự đoán
-ghi **trước** khi đo đối chiếu với kết quả.
+Each row links to a report containing the measurement, an explicit "what I
+deliberately did not do" section, and a table of predictions written **before**
+measuring, checked against the outcome.
 
-| | Phát hiện | Báo cáo |
+| | Finding | Report |
 |---|---|---|
-| `W2-03`<br/>`W2-05` | Vocab **subword** phá known-item search: 25/51 mã tài liệu không nhánh nào tìm ra. Reranker sửa được phần lớn (hit@1 0,098 → 0,549) — nó **thắng cả sparse** | [`w2-05-reranker.md`](plans/reports/tasks/w2-05-reranker.md) |
-| `W2-08` | "Cấu hình nào thắng" là một **phép chọn cực đại**, nên câu trả lời là một **tập**, không phải một dòng. Người thắng từng do **6 mẫu lại trên 10 000** quyết định | [`w2-08-ablation.md`](plans/reports/tasks/w2-08-ablation.md) |
-| `W2-09` | Câu "category nào cải thiện nhiều nhất" **không có câu trả lời** với dữ liệu hiện có — cả 6 nhóm hoà, và vẫn hoà khi bỏ hiệu chỉnh. Cần ~440 câu | [`exp-001-retrieval.md`](plans/reports/tasks/exp-001-retrieval.md) |
-| `W3-01` | Chèn parser vào giữa byte và văn bản **giết sạch golden set**: 0/280 span sống sót, trong khi `sha256` vẫn khớp và không test nào đỏ | [`w3-01-docling-loader.md`](plans/reports/tasks/w3-01-docling-loader.md) |
-| `W3-02` | Máy OCR đi kèm đọc tiếng Anh nguyên văn nhưng **trả rác cho tiếng Việt** — nên loader **từ chối** thay vì trả rác trông như nội dung | [`w3-02-ocr-fallback.md`](plans/reports/tasks/w3-02-ocr-fallback.md) |
-| `W3-06` | **Ký tự không phải đơn vị mang đi được**: cùng một bộ chunk, đổi tokenizer là đổi số token tới 47%, và chiều lệch EN↔VI **đảo dấu** | [`w3-06-token-sizing.md`](plans/reports/tasks/w3-06-token-sizing.md) |
-| `W3-05` | **Độ nở ngữ cảnh là chỉ số đánh lừa**: chia đôi child làm nó gấp đôi trong khi prompt thật không đổi (9 471 → 9 519 token) | [`w3-05-parent-child.md`](plans/reports/tasks/w3-05-parent-child.md) |
-| `TD-22` | Vân tay parser ghim **tên gói ô dù**: hàm sinh ra văn bản sống ở `docling-core`, và trọng số model bố cục tải theo nhánh **di động** | [`td-22-parse-pin.md`](plans/reports/tasks/td-22-parse-pin.md) |
-| `W3-07` | Re-index tăng dần **179,3×**; và thiệt hại của một lần sửa bị chặn bởi **khoảng cách tới dấu xuống dòng đoạn kế tiếp** (2,0% → 98,0%) | [`w3-07-incremental-reindex.md`](plans/reports/tasks/w3-07-incremental-reindex.md) |
-| `W3-08` | `max_tries` của arq **không** thử lại `Exception` thường — và mặc định ấy hoá ra đúng | [`w3-08-ingest-worker.md`](plans/reports/tasks/w3-08-ingest-worker.md) |
+| `W2-03`<br/>`W2-05` | **Subword vocabulary breaks known-item search**: 25/51 document IDs were unfindable by any branch. The reranker fixes most of it (hit@1 0.098 → 0.549) — and it **beats sparse retrieval** | [`w2-05-reranker.md`](plans/reports/tasks/w2-05-reranker.md) |
+| `W2-08` | "Which configuration wins" is a **max-selection problem**, so the answer is a **set**, not a row. The winner was once decided by **6 resamples out of 10,000** | [`w2-08-ablation.md`](plans/reports/tasks/w2-08-ablation.md) |
+| `W2-09` | "Which category improved most" **has no answer** with the data available — all 6 groups tie, and still tie without the correction. It needs ~440 questions | [`exp-001-retrieval.md`](plans/reports/tasks/exp-001-retrieval.md) |
+| `W3-01` | Inserting a parser between bytes and text **destroys the golden set**: 0/280 spans survive, while `sha256` still matches and no test goes red | [`w3-01-docling-loader.md`](plans/reports/tasks/w3-01-docling-loader.md) |
+| `W3-02` | The bundled OCR engine reads English verbatim but **returns garbage for Vietnamese** — so the loader **refuses** rather than emitting garbage that looks like content | [`w3-02-ocr-fallback.md`](plans/reports/tasks/w3-02-ocr-fallback.md) |
+| `W3-06` | **Characters are not a portable unit**: for the same chunk set, switching tokenizer changes the token count by up to 47%, and the EN↔VI skew **reverses sign** | [`w3-06-token-sizing.md`](plans/reports/tasks/w3-06-token-sizing.md) |
+| `W3-05` | **Context expansion ratio is a misleading metric**: halving the child doubles it while the actual prompt stays the same (9,471 → 9,519 tokens) | [`w3-05-parent-child.md`](plans/reports/tasks/w3-05-parent-child.md) |
+| `TD-22` | The parser fingerprint pinned the **umbrella package name**: the function producing the text lives in `docling-core`, and the layout model weights are pulled from a **moving branch** | [`td-22-parse-pin.md`](plans/reports/tasks/td-22-parse-pin.md) |
+| `W3-07` | Incremental re-indexing is **179.3× faster**; and the blast radius of an edit is bounded by the **distance to the next paragraph break** (2.0% → 98.0% reuse) | [`w3-07-incremental-reindex.md`](plans/reports/tasks/w3-07-incremental-reindex.md) |
+| `W3-08` | arq's `max_tries` does **not** retry ordinary exceptions — and that default turns out to be right | [`w3-08-ingest-worker.md`](plans/reports/tasks/w3-08-ingest-worker.md) |
 
 ---
 
-## Ràng buộc cứng
+## Hard constraints
 
-Ba quy tắc được thực thi bằng code, không phải bằng lời hứa:
+Three rules enforced in code, not by promise:
 
-1. **Không dùng OpenRouter preset (`@preset/...`) ở bất kỳ đâu trong đường eval.**
-   Preset là config phía server, đổi ngầm được, và một metric dịch chuyển không
-   truy được nguyên nhân là một metric vô dụng. Luôn pin slug tường minh,
-   `temperature=0`, seed cố định, và **log lại model thực tế đã phục vụ request**.
-   Chặn ngay ở constructor của LLM client.
-2. **Job GPU thuê không mang API key.** Máy thuê chỉ chạy việc GPU-bound tự chứa;
-   mọi thứ chạm API trả tiền chạy ở máy cá nhân.
-3. **Corpus phải công khai và giấy phép cho phép redistribute.** Repo public +
-   demo public + máy thuê bên thứ ba = ba kênh công bố dữ liệu. `LICENSE_ALLOWLIST`
-   từ chối entry thiếu `source_url` hoặc mang giấy phép ngoài danh sách — kể cả
-   `ND` (NoDerivatives), vì chunking + sinh context bằng LLM **là** tạo tác phẩm
-   phái sinh.
+1. **No OpenRouter presets (`@preset/...`) anywhere on the evaluation path.** A
+   preset is server-side configuration that can change without notice, and a
+   metric that shifts for untraceable reasons is a useless metric. Always pin an
+   explicit slug, `temperature=0`, a fixed seed, and **log the model that
+   actually served the request**. Blocked in the LLM client's constructor.
+2. **Rented GPU jobs never carry API keys.** Rented machines only run
+   self-contained GPU-bound work; anything touching a paid API runs locally.
+3. **The corpus must be public and redistributable.** Public repo + public demo +
+   third-party rented machine = three publication channels. `LICENSE_ALLOWLIST`
+   rejects any entry missing `source_url` or carrying a license outside the list
+   — including `ND` (NoDerivatives), because chunking plus LLM-generated context
+   **is** creating a derivative work.
 
 ---
 
-## POC gốc
+## The original POC
 
-Bản Streamlit ở [`legacy/`](legacy/) vẫn chạy được và là mốc so sánh cho mọi con
-số ở trên. Vài lỗi của nó được ghi lại có chủ ý vì chúng dạy được điều gì đó:
-cache `pickle` nạp từ thư mục ghi được, `config_hash` **làm tròn** tham số nên
-hai cấu hình khác nhau dùng chung cache entry, và hậu xử lý gộp chunk **qua ranh
-giới tài liệu**. Hình dạng lỗi cuối cùng ấy còn xuất hiện thêm hai lần nữa trong
-`W3` — ở ranh giới section và ranh giới parent.
+The Streamlit version in [`legacy/`](legacy/) still runs and is the baseline for
+every number above. Some of its bugs are documented on purpose, because they
+teach something: a `pickle` cache loaded from a writable directory, a
+`config_hash` that **rounded** its parameters so two different configurations
+shared one cache entry, and post-processing that merged chunks **across document
+boundaries**. That last bug shape reappeared twice more during `W3` — at section
+boundaries and at parent boundaries.
 
 ## License
 
-**Mã nguồn:** MIT — [`LICENSE`](LICENSE).
+**Source code:** MIT — [`LICENSE`](LICENSE).
 
-**Corpus KHÔNG thuộc phạm vi MIT** — tài liệu World Bank theo **CC BY 3.0 IGO**.
-Chi tiết ở [`data/README.md`](data/README.md). Hai thứ này phải tách bạch: gộp
-chúng dưới một dòng "MIT" là cấp cho người khác một quyền mình không có.
+**The corpus is NOT under MIT** — those are World Bank documents under
+**CC BY 3.0 IGO**. Details in [`data/README.md`](data/README.md). The two must be
+kept separate: folding them under a single "MIT" line grants others a right I do
+not hold.
