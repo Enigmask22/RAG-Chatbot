@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Giấy phép trên áp cho **mã nguồn** của repo này.
-
-Corpus trong `data/corpus/` KHÔNG thuộc phạm vi MIT: đó là tài liệu do World Bank
-phát hành theo **CC BY 3.0 IGO** (https://creativecommons.org/licenses/by/3.0/igo/).
-Giấy phép, URL nguồn và landing page của **từng** tài liệu ghi trong
-`data/corpus_manifest.csv`, và `pipeline/corpus/manifest.py` từ chối mọi entry
-thiếu `source_url` hoặc mang giấy phép ngoài danh sách cho phép.
