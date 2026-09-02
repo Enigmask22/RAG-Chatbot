@@ -235,8 +235,6 @@ giới tài liệu**. Hình dạng lỗi cuối cùng ấy còn xuất hiện th
 
 **Mã nguồn:** MIT — [`LICENSE`](LICENSE).
 
-**Corpus KHÔNG thuộc phạm vi MIT.** `data/corpus/` là tài liệu World Bank phát
-hành theo **CC BY 3.0 IGO**; giấy phép, URL nguồn và landing page của **từng**
-tài liệu ghi trong `data/corpus_manifest.csv`, và `LICENSE_ALLOWLIST` ép ngay lúc
-thêm vào manifest. Hai thứ này phải tách bạch: gộp chúng dưới một dòng "MIT" là
-cấp cho người khác một quyền mình không có.
+**Corpus KHÔNG thuộc phạm vi MIT** — tài liệu World Bank theo **CC BY 3.0 IGO**.
+Chi tiết ở [`data/README.md`](data/README.md). Hai thứ này phải tách bạch: gộp
+chúng dưới một dòng "MIT" là cấp cho người khác một quyền mình không có.
