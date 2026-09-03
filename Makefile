@@ -342,7 +342,7 @@ ctx-run-api:  ## W3-04: sinh ngữ cảnh bằng DeepSeek (TỐN TIỀN). LIMIT=
 		--backend deepseek --model deepseek-v4-flash \
 		--limit $(or $(LIMIT),40) --cost-cap $(or $(CAP),1.0) \
 		--out data/contexts/contexts.jsonl \
-		--report reports/probes/w3-04-contexts.json
+		--report plans/reports/probes/w3-04-contexts.json
 
 .PHONY: job-bundle
 job-bundle:  ## W0-08: dựng gói job cho RunPod (git archive + gói request)

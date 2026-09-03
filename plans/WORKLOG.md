@@ -3019,3 +3019,58 @@ Việc tiếp theo: **`W3-04`** (contextual retrieval, cần GPU thuê — anh l
 **`W3-09`** (ablation #2) mới chạy được.
 
 ---
+
+## 2026-09-03 · `W0-08` xong · `W3-04` chuẩn bị xong (lượt chạy GPU còn lại)
+
+Mục tiêu phiên: làm **mọi thứ có thể hỏng trước khi thuê GPU**, để phiên pod chỉ
+còn là chạy. Pod tính tiền theo giờ, nên mỗi lỗi phát hiện trên đó đắt hơn cùng
+lỗi ấy ở laptop đúng bằng tiền thuê.
+
+### Cái đáng nhớ nhất: tôi thiết kế sai chiều
+
+Trước khi viết code tôi phân tích kỹ **kích thước cửa sổ ngữ cảnh** — chiều duy
+nhất tính toán được từ trước — và kết luận đúng: 28/60 tài liệu vượt cửa sổ
+40.960 token của Qwen3-8B, nên công thức gốc của Anthropic không áp thẳng được.
+
+Rồi dry-run 60 request giá **$0,055** tìm ra hai lỗi mà **không suy luận thiết kế
+nào bắt được**, và cả hai đều nghiêm trọng hơn chiều tôi đã phân tích:
+
+1. **83% completion token là chuỗi suy luận**, 6/30 request trả rỗng.
+2. **17% ngữ cảnh đúng ngôn ngữ** — 15 tiếng Pháp, 10 tiếng Trung trên tài liệu
+   tiếng Anh.
+
+Cả hai vô hình trong log. Cả hai chỉ lộ ra khi mở file output ra đọc. Nếu bỏ qua
+bước dry-run vì "hạ tầng đã có test xanh", cả hai đi thẳng lên pod và lỗi thứ hai
+thì còn đi tiếp vào index rồi vào mọi con số của `W3-09`.
+
+### Tham số được nhận, không lỗi, và không có tác dụng
+
+`chat_template_kwargs={"enable_thinking": false}` là cách đúng với vLLM/Qwen3.
+DeepSeek **nhận nó, trả 200, và vẫn suy luận 159 token**. Nếu tôi chỉ thử đúng
+tham số ấy trên DeepSeek rồi kết luận "đã tắt", con số cost/1000 sẽ sai 43% và
+tôi sẽ mang giả định ấy lên pod.
+
+Bài học chung: với tham số ngoài chuẩn, **không có phản hồi nào chứng minh nó có
+tác dụng** — phải đo cái mà nó đáng lẽ đổi.
+
+### Ranh giới laptop/pod trùng với ranh giới bảo mật
+
+`prepare` (cần corpus, manifest, BGE-M3) chạy ở laptop; `run` chỉ nhận
+`requests.jsonl.gz`. Pod không có corpus, không có manifest, không có config,
+không có `.env`. Cách chắc nhất để giữ lời hứa "không mang API key lên pod" là
+làm cho pod **không có gì khác để chạy**.
+
+### Lệnh để tiếp tục
+
+```bash
+make ctx-dry              # thống kê prefill + prompt mẫu, không gọi LLM
+make ctx-prepare          # → data/contexts/requests.jsonl.gz (8,5 MB)
+make job-bundle           # → dist/runpod-job.tar.gz (7,6 MB)
+make job-verify           # PHẢI sạch trước khi đẩy
+uv run pytest tests/unit/test_contextual_chunking.py tests/security
+```
+
+Việc tiếp theo: **`W4`** (Serving Plane) ở laptop — nó không phụ thuộc `W3-04` —
+song song với phiên GPU của anh. Kiểm ngay ở 50 request đầu trên pod:
+`reasoning_tokens` phải bằng **0** và `cache_hit_rate` phải trên **30%**; cả hai
+rẻ để phát hiện ở phút thứ ba và đắt ở giờ thứ ba (`TD-30`).
