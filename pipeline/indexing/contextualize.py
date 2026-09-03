@@ -147,6 +147,7 @@ def write_requests(path: Path, requests: Iterable[ContextRequest]) -> int:
                     {
                         "key": request.key,
                         "chunk_ids": list(request.chunk_ids),
+                        "cfg": request.chunk_fingerprint,
                         "echoes": list(request.echoes),
                         "doc_id": request.doc_id,
                         "system": request.messages[0].content,
@@ -172,6 +173,7 @@ def read_requests(path: Path) -> list[ContextRequest]:
                 ContextRequest(
                     key=row["key"],
                     chunk_ids=tuple(row.get("chunk_ids") or [row["chunk_id"]]),
+                    chunk_fingerprint=str(row.get("cfg", "")),
                     echoes=tuple(row.get("echoes") or ()),
                     doc_id=row["doc_id"],
                     messages=(
@@ -210,7 +212,12 @@ def load_done_keys(path: Path) -> set[str]:
     return keys
 
 
-def load_contexts(path: Path, keys: Collection[str] | None = None) -> dict[str, str]:
+def load_contexts(
+    path: Path,
+    keys: Collection[str] | None = None,
+    *,
+    fingerprint: str | None = None,
+) -> dict[str, str]:
     """`chunk_id -> context`, dạng mà `apply_contexts` nhận.
 
     `keys` là tập khoá request của **lần chạy hiện tại**. Truyền vào thì các dòng
@@ -218,10 +225,17 @@ def load_contexts(path: Path, keys: Collection[str] | None = None) -> dict[str, 
     cấu hình sau khi `apply_contexts` chuyển sang khoá theo `chunk_id`. Không
     truyền thì lấy tất, và khi ấy artifact lẫn hai cấu hình sẽ cho kết quả tuỳ
     theo dòng nào ghi sau.
+
+    `fingerprint` lọc theo **cấu hình chunk** đã sinh ra ngữ cảnh. Đây là thứ
+    chặn lỗi im lặng nguy hiểm hơn: `chunk_id` là `doc::index`, nên ngữ cảnh
+    sinh cho `chunk_size=1000` vẫn khớp id với chunk của `chunk_size=550` trong
+    khi nội dung khác hẳn — coverage báo 100% và index nhận toàn câu mô tả sai.
     """
     out: dict[str, str] = {}
     for row in _iter_rows(path):
         if keys is not None and str(row.get("key")) not in keys:
+            continue
+        if fingerprint is not None and str(row.get("cfg", "")) != fingerprint:
             continue
         context = (row.get("context") or "").strip()
         chunk_id = row.get("chunk_id")
@@ -527,6 +541,7 @@ def _append_contexts(
                         "key": request.key,
                         "chunk_id": chunk_id,
                         "doc_id": request.doc_id,
+                        "cfg": request.chunk_fingerprint,
                         "context": context,
                         "model": response.model,
                         "batch_size": len(request.chunk_ids),
@@ -608,6 +623,7 @@ def _prepare(args: argparse.Namespace) -> int:
     chunker.prepare(len(documents))
 
     contextual = ContextualConfig(
+        chunk_fingerprint=config.chunking_fingerprint,
         model=args.model,
         head_tokens=args.head_tokens,
         window_tokens=args.window_tokens,

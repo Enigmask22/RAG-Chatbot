@@ -36,6 +36,32 @@ if TYPE_CHECKING:
 __all__ = ["IndexConfig", "load_index_config"]
 
 
+class ContextualIndexConfig(BaseModel):
+    """Cấu hình phía **tiêu thụ** của `W3-04`: dán ngữ cảnh đã sinh vào chunk.
+
+    Tách khỏi `ContextualConfig` của `rag_core` một cách có chủ ý: cái kia mô tả
+    **cách sinh** ngữ cảnh (prompt, cửa sổ, batch), cái này mô tả **cách dùng**
+    artifact đã sinh. Build index không cần biết prompt nào đã tạo ra nó.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    """Mặc định **tắt**, vì bật là đổi mọi vector — phải là lựa chọn có ý thức."""
+
+    contexts_path: Path = Path("data/contexts/contexts.jsonl")
+
+    min_coverage: float = Field(default=0.95, ge=0.0, le=1.0)
+    """Dưới ngưỡng này thì build **dừng** thay vì lặng lẽ index một nửa có ngữ cảnh.
+
+    `apply_contexts` cố ý giữ nguyên chunk khi thiếu — nửa "fail 1 chunk không
+    làm sập cả job" của DoD. Nhưng thiếu 1 chunk và thiếu 8.000 chunk trông
+    giống hệt nhau ở phía build, nên ranh giới giữa hai thứ đó phải khai ra."""
+
+    require_fingerprint: bool = True
+    """Đòi artifact khai đúng vân tay cấu hình chunk — xem `chunking_fingerprint`."""
+
+
 class IndexConfig(BaseModel):
     """Mô tả đầy đủ một lần build index."""
 
@@ -74,6 +100,9 @@ class IndexConfig(BaseModel):
     """`query_prefix` / `document_prefix` cho model bất đối xứng (E5, BGE)."""
 
     # ------------------------------------------------------------ ghi
+    contextual: ContextualIndexConfig = ContextualIndexConfig()
+    """Dán ngữ cảnh định vị vào chunk trước khi embed (`W3-04`). Nằm trong `fingerprint`."""
+
     upsert_batch_size: int = Field(default=128, ge=1)
     use_cache: bool = True
     cache_path: Path = Path(".cache/chunks.sqlite3")
@@ -113,9 +142,33 @@ class IndexConfig(BaseModel):
             "languages": sorted(self.languages),
             "doc_types": sorted(self.doc_types),
             "max_documents": self.max_documents,
+            "contextual": json.loads(self.contextual.model_dump_json()),
         }
         blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    @property
+    def chunking_fingerprint(self) -> str:
+        """Băm những trường quyết định **bộ chunk** — `chunk_id` và nội dung của nó.
+
+        Hẹp hơn `fingerprint`: bỏ `embedding_normalize`/`embedding_kwargs` vì
+        chúng đổi *vector* chứ không đổi *chunk*. Giữ `embedding_model` vì
+        `HybridChunker` mượn tokenizer của nó để đo kích thước.
+
+        ⚠️ Tồn tại để chặn một lỗi im lặng: `chunk_id` là `doc::index`, nên ngữ
+        cảnh sinh cho `chunk_size=1000` đem dán lên chunk của `chunk_size=550`
+        vẫn **khớp id** trong khi nội dung khác hẳn. Coverage báo 100%, index
+        nhận 15.814 câu mô tả sai đoạn, và không có gì đỏ.
+        """
+        payload = {
+            "chunking": json.loads(self.chunking.model_dump_json()),
+            "embedding_model": self.embedding_model,
+            "languages": sorted(self.languages),
+            "doc_types": sorted(self.doc_types),
+            "max_documents": self.max_documents,
+        }
+        blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
     # ------------------------------------------------------------ factory
 

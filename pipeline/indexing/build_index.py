@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rag_core.chunking import Chunker
 from rag_core.chunking.cache import CachedChunker
+from rag_core.chunking.contextual import EnrichStats, apply_contexts
 from rag_core.embedding import EmbeddingProvider
 from rag_core.embedding.truncation import token_stats
 from rag_core.retrieval import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
@@ -145,6 +146,13 @@ class BuildReport:
     truncation: dict[str, float] = field(default_factory=dict)
     seconds: dict[str, float] = field(default_factory=dict)
     cache: dict[str, float] = field(default_factory=dict)
+    contextual: dict[str, float] = field(default_factory=dict)
+    """Kết quả dán ngữ cảnh `W3-04`. Rỗng nghĩa là **tắt**, không phải 0%.
+
+    Phân biệt hai thứ ấy trong báo cáo là cần thiết: một index không bật
+    Contextual Retrieval và một index bật nhưng dán trượt toàn bộ cho ra hai
+    bảng eval khác nhau mà nhìn số chunk thì y hệt nhau."""
+
     created_at: str = ""
 
     @property
@@ -340,6 +348,80 @@ def _stale_point_ids(doc_id: str, old_count: int, new_count: int) -> list[str]:
     return [chunk_point_id(f"{doc_id}::{i:05d}") for i in range(new_count, old_count)]
 
 
+def _load_contexts(config: IndexConfig) -> dict[str, str] | None:
+    """Nạp artifact ngữ cảnh `W3-04`, hoặc `None` khi tắt.
+
+    ⚠️ Trả `None` khi tắt và `{}` là **không thể xảy ra** — artifact rỗng thì
+    hàm này ném. Hai trạng thái "tắt" và "bật nhưng không nạp được gì" phải khác
+    nhau, vì cái sau cho ra một index trông bình thường mà không có ngữ cảnh nào.
+
+    Raises:
+        FileNotFoundError: bật nhưng không có artifact.
+        RuntimeError: artifact tồn tại nhưng không dòng nào khai đúng vân tay
+            cấu hình chunk hiện tại — nghĩa là ngữ cảnh sinh cho một bộ chunk
+            **khác**. Xem `IndexConfig.chunking_fingerprint`.
+    """
+    if not config.contextual.enabled:
+        return None
+
+    from .contextualize import load_contexts
+
+    path = config.contextual.contexts_path
+    if not path.exists():
+        raise FileNotFoundError(
+            f"`contextual.enabled` bật nhưng không có {path}. "
+            "Chạy `make ctx-prepare` rồi `make ctx-run-glm` trước."
+        )
+    want = config.chunking_fingerprint if config.contextual.require_fingerprint else None
+    contexts = load_contexts(path, fingerprint=want)
+    if not contexts:
+        total = len(load_contexts(path))
+        raise RuntimeError(
+            f"{path} có {total:,} ngữ cảnh nhưng không dòng nào khai vân tay "
+            f"cấu hình chunk `{want}`. Ngữ cảnh này sinh cho một bộ chunk khác; "
+            "dán nó lên bộ chunk hiện tại sẽ khớp `chunk_id` mà sai nội dung. "
+            "Sinh lại ngữ cảnh, hoặc đặt `contextual.require_fingerprint: false` "
+            "nếu bạn đã tự kiểm bằng cách khác."
+        )
+    logger.info("Ngữ cảnh: nạp %d chunk từ %s", len(contexts), path)
+    return contexts
+
+
+def _merge_enrich(total: EnrichStats, part: EnrichStats) -> None:
+    total.n_chunks += part.n_chunks
+    total.n_enriched += part.n_enriched
+    total.n_missing += part.n_missing
+    total.n_empty += part.n_empty
+    for chunk_id in part.missing_chunk_ids:
+        if len(total.missing_chunk_ids) < 20:
+            total.missing_chunk_ids.append(chunk_id)
+
+
+def _check_coverage(config: IndexConfig, enrich: EnrichStats) -> None:
+    """Dừng build khi phủ dưới ngưỡng, thay vì index một nửa có ngữ cảnh.
+
+    `apply_contexts` cố ý **không** ném khi thiếu — đó là nửa "fail 1 chunk không
+    làm sập cả job" của DoD, và nó đúng ở tầng ấy. Nhưng ở tầng build, thiếu 1
+    chunk và thiếu 8.000 chunk trông giống hệt nhau: cả hai đều chạy xong, cả hai
+    đều không báo gì, và chỉ một trong hai cho ra index dùng được.
+    """
+    if enrich.coverage >= config.contextual.min_coverage:
+        logger.info(
+            "Ngữ cảnh: dán %d/%d chunk (%.1f%%)",
+            enrich.n_enriched,
+            enrich.n_chunks,
+            enrich.coverage * 100,
+        )
+        return
+    raise RuntimeError(
+        f"Chỉ dán được ngữ cảnh cho {enrich.n_enriched:,}/{enrich.n_chunks:,} chunk "
+        f"({enrich.coverage:.1%}), dưới ngưỡng `contextual.min_coverage` "
+        f"({config.contextual.min_coverage:.0%}). Ví dụ chunk thiếu: "
+        f"{', '.join(enrich.missing_chunk_ids[:5])}. "
+        "Chạy `make ctx-coverage` để xem thiếu tập trung ở tài liệu nào."
+    )
+
+
 def _reconcile_state(
     state: IndexState | None,
     config: IndexConfig,
@@ -461,6 +543,11 @@ def build_index(
         state, config, retriever, dimension, chunker_name, allow_mixed=allow_mixed
     )
 
+    contexts = _load_contexts(config)
+    enrich = EnrichStats()
+    ctx_chars_before = 0
+    ctx_chars_after = 0
+
     chunk_seconds = 0.0
     upsert_seconds = 0.0
     chars_in = 0
@@ -491,6 +578,14 @@ def build_index(
         t0 = time.perf_counter()
         chunks = chunker.chunk([doc])
         chunk_seconds += time.perf_counter() - t0
+
+        if contexts is not None:
+            # Dán **trước** khi đo độ dài và đếm token: đây là văn bản thật sự
+            # được embed, nên mọi thống kê truncation phải nhìn thấy nó.
+            ctx_chars_before += sum(len(c.content) for c in chunks)
+            chunks, doc_enrich = apply_contexts(chunks, contexts)
+            ctx_chars_after += sum(len(c.content) for c in chunks)
+            _merge_enrich(enrich, doc_enrich)
 
         chars_out += sum(len(c.content) for c in chunks)
         lengths.extend(len(c.content) for c in chunks)
@@ -542,6 +637,18 @@ def build_index(
             "entries": float(stats.entries),
         }
 
+    contextual_stats: dict[str, float] = {}
+    if contexts is not None:
+        contextual_stats = {
+            "n_chunks": float(enrich.n_chunks),
+            "n_enriched": float(enrich.n_enriched),
+            "n_missing": float(enrich.n_missing),
+            "n_empty": float(enrich.n_empty),
+            "coverage": round(enrich.coverage, 4),
+            "inflation": round(ctx_chars_after / ctx_chars_before, 4) if ctx_chars_before else 0.0,
+        }
+        _check_coverage(config, enrich)
+
     limit = embeddings.max_sequence_tokens
     truncation: dict[str, float] = {}
     if token_counts and limit is not None:
@@ -555,6 +662,7 @@ def build_index(
         embedding_device=getattr(embeddings, "device", config.embedding_device),
         embedding_dim=dimension,
         chunker_name=chunker_name,
+        contextual=contextual_stats,
         n_documents=len(documents),
         n_documents_indexed=n_indexed,
         n_documents_skipped=n_skipped,

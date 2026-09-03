@@ -202,6 +202,17 @@ class ContextualConfig(BaseModel):
     max_context_tokens: int = Field(default=120, ge=16)
     prompt_version: str = Field(default="ctx-v1", min_length=1)
 
+    chunk_fingerprint: str = ""
+    """Vân tay của cấu hình đã sinh ra bộ chunk này, do phía gọi cung cấp.
+
+    `rag_core` không biết `IndexConfig`, nên nó chỉ **mang theo** chuỗi này chứ
+    không tính ra nó. Mục đích duy nhất: đi kèm ngữ cảnh vào artifact để lúc dán
+    còn kiểm được rằng chunk hiện tại đúng là chunk đã sinh ra nó.
+
+    Không nằm trong khoá cache — đổi cấu hình chunk thì nội dung chunk đổi, nên
+    prompt đổi, nên khoá đã đổi sẵn. Ở đây nó là **bằng chứng**, không phải khoá.
+    """
+
     batch_size: int = Field(default=1, ge=1, le=32)
     """Số chunk mỗi lời gọi LLM. `1` là chế độ một-chunk-một-lời-gọi ban đầu.
 
@@ -231,6 +242,7 @@ class ContextRequest:
     doc_id: str
     messages: tuple[ChatMessage, ...]
     est_prompt_tokens: int
+    chunk_fingerprint: str = ""
     echoes: tuple[str, ...] = ()
     """4 từ đầu của từng chunk, để `parse_response` kiểm chốt chặn — xem `ECHO_WORDS`.
 
@@ -364,6 +376,7 @@ def build_requests(
                     ChatMessage(role="user", content=user),
                 ),
                 est_prompt_tokens=int((len(system) + len(user)) / max(density, 1.0)),
+                chunk_fingerprint=config.chunk_fingerprint,
                 echoes=tuple(_first_words(c.content) for c in group),
             )
         )

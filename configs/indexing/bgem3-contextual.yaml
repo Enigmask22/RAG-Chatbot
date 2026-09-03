@@ -1,0 +1,60 @@
+# `W3-04`: BGE-M3 + Contextual Retrieval. Chunking GIỮ NGUYÊN của `bgem3.yaml`.
+#
+# Ô này chỉ đổi **một** thứ so với `bgem3.yaml`: mỗi chunk được dán 1–2 câu định
+# vị (tên báo cáo, tổ chức, năm, mục) lên đầu **trước khi embed**. Giữ nguyên
+# chunking là điều kiện để `W3-09` quy được phần chênh lệch về đúng nguyên nhân
+# — đổi hai thứ cùng lúc thì bảng ablation không nói được gì.
+#
+# ⚠️ Khối `chunking` dưới đây phải là bản sao ĐÚNG TỪNG CHỮ của `bgem3.yaml`.
+# Không phải vì thẩm mỹ: `contextual.contexts_path` trỏ tới artifact sinh cho
+# đúng bộ chunk ấy, và `chunking_fingerprint` sẽ từ chối build nếu lệch. Lệch
+# một tham số là phải sinh lại 15.814 ngữ cảnh.
+#
+# ⚠️ Collection riêng và bắt buộc `--recreate`. Dán ngữ cảnh đổi `content`, tức
+# đổi `content_hash`, tức **mọi vector đều phải embed lại** — `W3-07` không mượn
+# lại được gì ở lượt đầu. Từ lượt thứ hai trở đi thì bình thường, miễn là
+# artifact ngữ cảnh ổn định.
+#
+# Artifact ngữ cảnh (đo 03/09/2026, GLM-5.3-Flash, gộp 8 chunk mỗi lời gọi):
+#   15.814/15.814 chunk (100%) · p50 352 ký tự · 92,1% nêu tên tổ chức
+#   chi phí ~$5,90 · xem `reports/tasks/w3-04-contextual-prep.md`
+
+name: bgem3-contextual
+collection: rag_bgem3_ctx
+
+manifest_path: data/corpus_manifest.csv
+corpus_dir: data/corpus
+
+# ---- Y NGUYÊN bgem3.yaml từ đây ----
+chunking:
+  strategy: hybrid
+  chunk_size: 1000
+  chunk_overlap: 100
+  min_chunk_size: 200
+  max_chunk_size: 1500
+  semantic_buffer_size: 1
+  semantic_threshold_percentile: 85.0
+  semantic_min_sentences: 3
+  hybrid_max_docs_for_semantic: 5
+  neighbor_context_chars: 100
+
+embedding_model: BAAI/bge-m3
+embedding_device: auto
+embedding_batch_size: 16
+embedding_max_batch_tokens: 8192
+embedding_normalize: true
+# ---- hết phần y nguyên bgem3.yaml ----
+
+contextual:
+  enabled: true
+  contexts_path: data/contexts/contexts.jsonl
+  # Artifact phủ 100%, nên ngưỡng đặt sát: tụt xuống dưới nghĩa là bộ chunk đã
+  # đổi mà ai đó quên sinh lại ngữ cảnh, và đó là thứ phải dừng build chứ không
+  # phải thứ để ghi vào log rồi chạy tiếp.
+  min_coverage: 0.99
+  require_fingerprint: true
+
+upsert_batch_size: 128
+use_cache: true
+cache_path: .cache/chunks.sqlite3
+state_dir: .cache/index_state

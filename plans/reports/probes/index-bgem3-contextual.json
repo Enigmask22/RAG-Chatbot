@@ -1,0 +1,71 @@
+{
+  "config_name": "bgem3-contextual",
+  "collection": "rag_bgem3_ctx",
+  "fingerprint": "ff0828fecae7998ad2bf04a389fbe2194ee62506468a6ceb6e9660a981eac52f",
+  "embedding_model": "BAAI/bge-m3",
+  "embedding_device": "cuda",
+  "embedding_dim": 1024,
+  "chunker_name": "hybrid->fixed:c7e6707863bb",
+  "n_documents": 60,
+  "n_documents_indexed": 60,
+  "n_documents_skipped": 0,
+  "n_documents_removed": 0,
+  "n_chunks_written": 15814,
+  "n_stale_points_deleted": 0,
+  "collection_count": 15814,
+  "chars_in": 14284300,
+  "chars_out": 23454506,
+  "embedding_provider": "BAAI/bge-m3@cuda",
+  "n_chunks_embedded": 15814,
+  "n_chunks_reused": 0,
+  "vector_names": [
+    "dense",
+    "sparse"
+  ],
+  "chunk_len": {
+    "mean": 1483.1482230934614,
+    "p50": 1492.0,
+    "p95": 1640.0,
+    "min": 645.0,
+    "max": 1975.0
+  },
+  "truncation": {
+    "limit": 8192.0,
+    "n_texts": 15814.0,
+    "n_truncated": 0.0,
+    "truncated_ratio": 0.0,
+    "tokens_total": 4532042.0,
+    "tokens_kept": 4532042.0,
+    "chars_total": 23454506.0,
+    "tokens_lost_ratio": 0.0,
+    "tokens_per_char": 0.1932,
+    "chars_per_token_p05": 3.855,
+    "char_budget": 31575.0,
+    "token_p50": 303.0,
+    "token_p95": 398.0,
+    "token_max": 831.0
+  },
+  "seconds": {
+    "load": 0.12071019999712007,
+    "chunk": 1.2573730000185606,
+    "upsert": 559.2694071000078,
+    "total": 585.3865714000021
+  },
+  "cache": {
+    "hits": 60.0,
+    "misses": 0.0,
+    "hit_rate": 1.0,
+    "entries": 549.0
+  },
+  "contextual": {
+    "n_chunks": 15814.0,
+    "n_enriched": 15814.0,
+    "n_missing": 0.0,
+    "n_empty": 0.0,
+    "coverage": 1.0,
+    "inflation": 1.3217
+  },
+  "created_at": "2026-09-03T09:08:36+00:00",
+  "context_inflation": 1.642,
+  "reuse_rate": 0.0
+}
