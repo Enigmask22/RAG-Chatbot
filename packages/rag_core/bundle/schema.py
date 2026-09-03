@@ -241,11 +241,24 @@ class RerankComponent(_Component):
     thật**: dán ngữ cảnh đẩy p95 token từ 352 lên 453 trên trần 512."""
     model: NonEmptyStr
     candidates: int = Field(gt=0)
-    top_n: int = Field(gt=0)
+    top_n: int | None = Field(gt=0)
+    """Số kết quả trả về sau khi xếp lại. `None` = **không cắt thêm** — retriever
+    trả đúng `retrieval.top_k`.
+
+    ⭐ Nullable nhưng vẫn **bắt buộc** (không có mặc định), và khác biệt ấy đắt
+    giá: `W4-01` từng đặt `top_n = branch_options.get("rerank_top_n", 6)`, tức
+    **bịa ra 6** khi lần eval không nêu — ngay dưới một docstring nói rằng đoán
+    giá trị ở đó sẽ tạo ra một bundle mô tả sai hệ thống đã đo. Bundle mẫu vì
+    thế khai `top_n=6` trong khi hệ thống được đo không cắt gì cả.
+
+    Không test nào bắt được: cả `6` lẫn `None` đều hợp lệ về hình dạng. Thứ bắt
+    được là phép kiểm danh tính của `TD-38`, ở **lần chạy thật đầu tiên** —
+    runtime dựng ra `…:n50-top6` còn eval ghi `…:n50`.
+    """
 
     @model_validator(mode="after")
     def _top_n_below_candidates(self) -> Self:
-        if self.top_n > self.candidates:
+        if self.top_n is not None and self.top_n > self.candidates:
             raise ValueError(
                 f"`top_n` ({self.top_n}) > `candidates` ({self.candidates}): "
                 "reranker không thể trả về nhiều hơn số ứng viên nó nhận."

@@ -1,7 +1,7 @@
 {
   "bundle_version": "0.1.0",
-  "created_at": "2026-09-03T14:57:41.851525Z",
-  "git_sha": "29718f8116",
+  "created_at": "2026-09-03T15:21:45.379399Z",
+  "git_sha": "37cd16327d",
   "components": {
     "chunking": {
       "strategy": "hybrid",
@@ -36,7 +36,7 @@
       "max_length": 512,
       "model": "BAAI/bge-reranker-v2-m3",
       "candidates": 50,
-      "top_n": 6
+      "top_n": null
     },
     "retriever_name": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
     "prompt": null,
@@ -74,5 +74,5 @@
     "report": null
   },
   "notes": "Điểm vận hành W3: dense+sparse RRF k=1 -> reranker pool 50. Chưa có tầng sinh (W4-08/W4-11).",
-  "checksum": "sha256:bf9e6fbee9c661f385bdf11bd30a9e986f8f0eb5813631fc6faa1222546c75ba"
+  "checksum": "sha256:38d720d35e15fa40b2c8d5c8a6f043b8e9fead76a0ce78097b5c8fd682845694"
 }

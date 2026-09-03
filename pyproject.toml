@@ -53,6 +53,17 @@ serving = [
     "uvicorn[standard]>=0.30",
     "arq>=0.26",
     "python-multipart>=0.0.9",
+    # `W4-05`. `psycopg` v3 chọn thay `asyncpg` vì nó là **một** driver phục vụ
+    # cả hai chế độ: Alembic chạy đồng bộ (`postgresql+psycopg`), đường request
+    # chạy async (`postgresql+psycopg` với `create_async_engine`). Dùng asyncpg
+    # thì migration vẫn cần thêm một driver đồng bộ, tức hai driver phải đồng ý
+    # với nhau về kiểu dữ liệu — một chỗ lệch không ai kiểm.
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    # Alembic nằm ở đây, không ở `dev`: bước deploy chạy `alembic upgrade head`
+    # **từ chính image này**, và đó là cách duy nhất bảo đảm migration và đoạn mã
+    # giả định nó đã chạy được ship cùng nhau.
+    "alembic>=1.13",
 ]
 dev = [
     "pytest>=8.2",

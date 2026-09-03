@@ -250,3 +250,28 @@ def test_an_eval_report_without_a_retriever_name_cannot_be_packaged() -> None:
     config = make_config()
     with pytest.raises(BundleValidationError, match="TD-38"):
         build(config, eval_run=make_eval_run(config, retriever=""))
+
+
+def test_an_unset_top_n_is_recorded_as_none_not_guessed() -> None:
+    """⭐⭐ Bug thật, và nó sống sót qua cả `W4-01` lẫn `W4-03`.
+
+    Bản đầu viết `branch_options.get("rerank_top_n", 6)` — **bịa ra 6** khi lần
+    eval không nêu, ngay dưới một docstring nói rằng đoán giá trị ở đây tạo ra
+    một bundle mô tả sai hệ thống đã đo.
+
+    Không test nào của `W4-01` bắt được, vì cả `6` lẫn `None` đều hợp lệ về hình
+    dạng và bundle vẫn round-trip xanh. Thứ bắt được là phép kiểm danh tính của
+    `TD-38`, ở **lần chạy thật đầu tiên**: runtime dựng ra `…:n50-top6` còn báo
+    cáo eval ghi `…:n50`.
+    """
+    rerank = build().components.rerank
+    assert rerank is not None
+    assert rerank.top_n is None, "đoán `top_n` = mô tả sai hệ thống đã đo"
+
+
+def test_an_explicit_top_n_is_kept() -> None:
+    config = make_config()
+    run = make_eval_run(config)
+    run["config"]["branch_options"]["rerank_top_n"] = 6
+    rerank = build(config, eval_run=run).components.rerank
+    assert rerank is not None and rerank.top_n == 6

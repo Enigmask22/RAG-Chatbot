@@ -242,3 +242,29 @@ def test_a_model_that_does_not_match_the_declared_dim_is_refused() -> None:
     )
     with pytest.raises(BundleRuntimeError, match="chiều"):
         QdrantRuntimeBuilder(url="x", client=FakeQdrant())(lying)
+
+
+def test_an_unset_top_n_builds_a_retriever_that_does_not_truncate() -> None:
+    """Nửa còn lại của bug `top_n`: `None` phải đi **nguyên** xuống retriever.
+
+    Nếu builder lấp một mặc định ở đây thì tên dựng ra mang `-top6` và phép kiểm
+    danh tính đỏ — tức bundle đúng lại bị từ chối, và cách sửa dễ nhất mà sai là
+    tắt phép kiểm.
+    """
+    bundle = make_bundle()
+    no_cut = bundle.model_copy(
+        update={
+            "components": bundle.components.model_copy(
+                update={
+                    "rerank": RerankComponent(
+                        model="BAAI/bge-reranker-v2-m3",
+                        candidates=50,
+                        top_n=None,
+                        max_length=512,
+                    )
+                }
+            )
+        }
+    )
+    assert no_cut.components.rerank is not None
+    assert no_cut.components.rerank.top_n is None

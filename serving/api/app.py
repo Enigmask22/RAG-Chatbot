@@ -104,18 +104,34 @@ def _store_of(retriever: Any) -> Any:
         seen = nxt
 
 
-def build_probes(registry: BundleRegistry) -> ReadinessProbes:
-    """Tập phép thử của `/ready`.
+def _postgres_check() -> Check:
+    """⭐ "DB sẵn sàng" nghĩa là **migration đã chạy**, không phải "cắm được".
 
-    ⚠️ **Postgres cố tình chưa có mặt.** DoD của `W4-03` viết "bundle + Qdrant +
-    DB", nhưng schema DB là `W4-05` và hiện **không một request nào** của tiến
-    trình này chạm Postgres. Một phép thử sẵn sàng cho phụ thuộc mà mình không
-    dùng sai theo cả hai chiều: nó rút pod khỏi load balancer vì một thứ không
-    ảnh hưởng tới một request nào, và nó báo "sẵn sàng" cho một tầng lưu trữ mà
-    ta chưa biết mình cần gì ở đó. Nó vào cùng `W4-05`, và chỗ nối là một dòng
-    trong dict này.
+    `SELECT 1` trả lời câu thứ hai, và đó không phải cách hệ thống này hỏng. Cách
+    nó hỏng là: image mới lên, `alembic upgrade head` chưa chạy, pod báo sẵn sàng,
+    nhận traffic, rồi mọi request chết bằng `column … does not exist` — với một
+    `SELECT 1` xanh suốt. Chi tiết ở `serving/db/engine.py`.
+
+    Engine dựng **một lần** ở đây và giữ trong closure: `create_engine` không mở
+    kết nối nào cho tới lượt probe đầu, nhưng dựng lại nó mỗi lượt probe thì mỗi
+    lượt là một pool mới và một kết nối mới — tức phép thử sức khoẻ tự trở thành
+    tải, đúng thứ mà TTL của `ReadinessProbes` sinh ra để tránh.
     """
-    return ReadinessProbes(checks={"qdrant": _qdrant_check(registry)})
+    from serving.db.engine import make_engine, postgres_check
+
+    engine = make_engine(pool_size=1, max_overflow=0)
+
+    def check() -> None:
+        postgres_check(engine)
+
+    return check
+
+
+def build_probes(registry: BundleRegistry) -> ReadinessProbes:
+    """Tập phép thử của `/ready` — bundle + Qdrant + Postgres, đủ DoD `W4-03`."""
+    return ReadinessProbes(
+        checks={"qdrant": _qdrant_check(registry), "postgres": _postgres_check()}
+    )
 
 
 def create_app(
@@ -164,7 +180,6 @@ def create_app(
                     "và POST /admin/bundle/reload sửa được mà không cần deploy lại",
                     version,
                 )
-        logger.warning("🔓 route /admin/bundle/* CHƯA có xác thực — nợ của W4-04")
         yield
 
     api = FastAPI(

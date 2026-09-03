@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432
 
+    postgres_app_user: str = "rag_app"
+    postgres_app_password: SecretStr = SecretStr("rag_app_local_dev_only")
+    """⭐⭐ Role mà **ứng dụng** dùng, tách khỏi role chạy migration (`W4-05`).
+
+    Không phải để cho gọn. `POSTGRES_USER` của image postgres là **superuser**, và
+    superuser **bỏ qua Row-Level Security hoàn toàn** — kể cả `FORCE ROW LEVEL
+    SECURITY`. Nên nếu ứng dụng dùng chung role ấy thì mọi policy trở thành trang
+    trí, trong khi `pg_class.relforcerowsecurity` vẫn báo `true` và mọi phép kiểm
+    cấu hình vẫn xanh.
+
+    Phát hiện được vì test **hành vi** đỏ trong khi test **cấu hình** xanh —
+    xem `tests/integration/test_migrations.py` §2.
+    """
+
     redis_url: str = "redis://127.0.0.1:6379/0"
 
     ingest_queue: str = "arq:queue"
@@ -124,9 +138,28 @@ class Settings(BaseSettings):
 
     @property
     def postgres_dsn(self) -> str:
+        """DSN đồng bộ, dùng cho Alembic và cho phép thử `/ready`.
+
+        ⚠️ Ghi rõ driver `+psycopg` (v3) chứ không để `postgresql://` trần:
+        SQLAlchemy 2.0 mặc định `postgresql://` thành **psycopg2**, thứ không có
+        trong dự án này — nên DSN trần chết bằng `ModuleNotFoundError` ở lần
+        migration đầu, chứ không phải bằng một thông báo về cấu hình.
+        """
         pwd = self.postgres_password.get_secret_value()
+        return self._dsn(self.postgres_user, pwd)
+
+    @property
+    def postgres_app_dsn(self) -> str:
+        """DSN của **ứng dụng** — role không superuser, nên RLS áp lên nó.
+
+        Mọi thứ chạm dữ liệu khách hàng phải đi qua DSN này. `postgres_dsn` chỉ
+        dành cho migration và cho việc quản trị.
+        """
+        return self._dsn(self.postgres_app_user, self.postgres_app_password.get_secret_value())
+
+    def _dsn(self, user: str, password: str) -> str:
         return (
-            f"postgresql://{self.postgres_user}:{pwd}"
+            f"postgresql+psycopg://{user}:{password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 

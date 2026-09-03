@@ -386,6 +386,19 @@ ctx-backup:  ## W3-04: nén + băm artifact ngữ cảnh để commit (chạy l�
 ctx-verify:  ## W3-04: bản trong git có khớp bản trên đĩa không
 	$(PY) python -m pipeline.indexing.backup_contexts --check
 
+.PHONY: db-up
+db-up:  ## W4-05: alembic upgrade head (chạy bằng role owner)
+	$(PY) alembic upgrade head
+	$(PY) alembic current
+
+.PHONY: db-down
+db-down:  ## W4-05: alembic downgrade base. ⚠️ XOA het du lieu
+	$(PY) alembic downgrade base
+
+.PHONY: db-rev
+db-rev:  ## W4-05: sinh migration moi. M="mo ta"
+	$(PY) alembic revision --autogenerate -m "$(M)"
+
 .PHONY: api-key
 api-key:  ## W4-04: cấp API key mới. TENANT=acme [SCOPE=admin] [RPM=60]. In ra MỘT lần
 	$(PY) python -m serving.core.auth mint --tenant $(TENANT) $(if $(SCOPE),--scope $(SCOPE),) $(if $(RPM),--rpm $(RPM),)

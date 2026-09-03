@@ -109,7 +109,12 @@ def _parse_rerank(retriever_name: str, branch_options: dict[str, Any]) -> Rerank
             f"không bóc được `max_length`/`candidates` từ tên nhánh {retriever_name!r}. "
             "Đoán giá trị ở đây sẽ tạo ra một bundle mô tả sai hệ thống đã đo."
         )
-    top_n = int(branch_options.get("rerank_top_n", 6))
+    # ⚠️ **Không** mặc định. Bản đầu viết `.get("rerank_top_n", 6)` — tức bịa ra
+    # một giá trị ngay dưới docstring nói rằng đoán ở đây tạo ra bundle mô tả sai
+    # hệ thống đã đo. Thiếu `rerank_top_n` nghĩa là lần eval **không cắt**, và
+    # `None` là cách nói ra điều đó.
+    raw_top_n = branch_options.get("rerank_top_n")
+    top_n = int(raw_top_n) if raw_top_n is not None else None
     return RerankComponent(model=model, candidates=candidates, top_n=top_n, max_length=max_length)
 
 
@@ -177,7 +182,13 @@ def build_bundle(
     _check_provenance(config, index_report, eval_run)
 
     eval_config: dict[str, Any] = eval_run.get("config", {})
-    branch_options: dict[str, Any] = dict(eval_config.get("branch_options", {}))
+    # ⚠️ Giữ **bản gốc**: `_parse_rerank` cần `rerank_top_n`, mà mấy dòng dưới lại
+    # `pop` nó ra khỏi `branch_options` (đúng — nó thuộc khối `rerank`, không phải
+    # option của nhánh nền). Bản đầu truyền nhầm `eval_config` cho `_parse_rerank`
+    # thay vì dict này, nên `rerank_top_n` **không bao giờ** được đọc: dù lần eval
+    # có nêu hay không, bundle luôn ghi giá trị bịa.
+    raw_options: dict[str, Any] = dict(eval_config.get("branch_options", {}))
+    branch_options: dict[str, Any] = dict(raw_options)
     # `base` mô tả nhánh nền của reranked; nó là `mode`, không phải một option.
     base_mode = str(branch_options.pop("base", eval_config.get("retrieval_mode", "dense")))
     branch_options.pop("rerank_candidates", None)
@@ -208,7 +219,7 @@ def build_bundle(
             top_k=int(eval_config.get("top_k", 20)),
             options=branch_options,
         ),
-        rerank=_parse_rerank(str(eval_config.get("retriever", "")), eval_config),
+        rerank=_parse_rerank(str(eval_config.get("retriever", "")), raw_options),
         # ⭐ `TD-38`: chép nguyên tên retriever của lần eval. Không suy lại từ các
         # trường ở trên — suy lại là dựng một *bản sao thứ hai* của quy ước đặt
         # tên, và hai bản sao sẽ lệch nhau ở đúng lúc không ai nhìn. Đây là chuỗi
