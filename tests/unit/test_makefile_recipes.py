@@ -10,6 +10,8 @@ chưa từng được chạy lần nào.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -57,3 +59,26 @@ def test_paid_targets_declare_a_cost_cap(target: str) -> None:
     text = MAKEFILE.read_text(encoding="utf-8")
     body = text.split(f"\n{target}:", 1)[1].split("\n.PHONY", 1)[0]
     assert "--cost-cap" in body
+
+
+def test_make_can_actually_parse_the_makefile() -> None:
+    """⭐⭐ Test đắt giá nhất file này, và nó tồn tại vì lỗi **ngược lại** với lỗi
+    đã sinh ra cả file test.
+
+    `test_no_literal_backslash_n_in_recipes` bắt ca "`\n` nằm nguyên trong công
+    thức". `W4-03` mắc ca đối xứng: một `\n` **đã bị diễn dịch thành xuống dòng
+    thật** ngay giữa một tham số `curl -w`, nên dòng tiếp theo bắt đầu bằng dấu
+    nháy thay vì TAB. `make` coi đó là một luật mới và chết với
+    `*** target pattern contains no '%'` — **toàn bộ** Makefile không dùng được,
+    không riêng target ấy.
+
+    Mọi test dạng "target có được khai không" đều xanh trong ca đó, vì chúng đọc
+    Makefile như văn bản. Chỉ có `make` biết `make` có parse được hay không.
+    """
+    if shutil.which("make") is None:  # pragma: no cover - phụ thuộc máy
+        pytest.skip("không có `make` trên PATH")
+    # `-n` chỉ in ra chứ không chạy, nhưng nó vẫn parse **cả file** trước đã.
+    done = subprocess.run(
+        ["make", "-n", "help"], cwd=MAKEFILE.parent, capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr.strip()

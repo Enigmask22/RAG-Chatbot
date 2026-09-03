@@ -88,6 +88,15 @@ class Settings(BaseSettings):
     lùi khỏi.
     """
 
+    api_keys_file: Path | None = Path("secrets/api-keys.json")
+    """Kho API key của Serving Plane (`W4-04`) — chứa **digest**, không chứa key.
+
+    Thiếu file = **không có key nào**, tức mọi route cần xác thực trả 401. Cố ý
+    không có key mặc định: một key mặc định cho tiện lúc dev là đường ngắn nhất
+    để credential của môi trường test đi thẳng vào production, và nó không để
+    lại dấu vết nào trong diff.
+    """
+
     # ------------------------------------------------------------ Model
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"
     embedding_device: str = "auto"

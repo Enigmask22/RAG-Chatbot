@@ -37,8 +37,11 @@ from rag_core.bundle import latest_bundle
 from rag_core.settings import Settings, get_settings
 from serving.api import admin, health
 from serving.api.middleware import RequestContextMiddleware
+from serving.api.security import AuthMiddleware
+from serving.core.auth import ApiKeyStore
 from serving.core.logging import configure_logging
 from serving.core.probes import Check, ReadinessProbes
+from serving.core.ratelimit import RateLimiter
 from serving.core.registry import BundleRegistry, RuntimeBuilder
 from serving.core.runtime import QdrantRuntimeBuilder
 
@@ -171,10 +174,17 @@ def create_app(
     )
     api.state.registry = registry
     api.state.probes = probe_factory(registry)
-    # ⚠️ ASGI thuần, thêm qua `add_middleware` để nó nằm **ngoài** router nhưng
-    # **trong** `ServerErrorMiddleware`. Lý do không dùng `BaseHTTPMiddleware`
-    # nằm ở docstring của `middleware.py` — nó liên quan trực tiếp tới SSE của
-    # `W4-06`.
+    # ⚠️ **Thứ tự quan trọng và nó ngược trực giác.** `add_middleware` *chèn lên
+    # đầu*, nên cái thêm **sau** nằm **ngoài**. Auth phải thêm trước để
+    # `RequestContextMiddleware` bọc ngoài nó — nếu ngược lại thì mọi phản hồi
+    # 401/403/429 do auth gửi sẽ không đi qua chỗ gắn `X-Request-ID`, tức đúng
+    # những phản hồi mà người vận hành cần truy vết lại là những phản hồi không
+    # truy được. Có test ghim (`test_a_401_still_carries_a_request_id`).
+    api.state.keys = ApiKeyStore.load(resolved.api_keys_file)
+    api.state.limiter = RateLimiter()
+    api.add_middleware(AuthMiddleware, keys=api.state.keys, limiter=api.state.limiter)
+    # ASGI thuần, không `BaseHTTPMiddleware` — lý do ở docstring của
+    # `middleware.py`, nó liên quan trực tiếp tới SSE của `W4-06`.
     api.add_middleware(RequestContextMiddleware)
     api.include_router(health.router)
     api.include_router(admin.router)

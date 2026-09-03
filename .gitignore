@@ -14,6 +14,11 @@ venv/
 
 # Secrets & runtime
 .env
+
+# W4-04: kho API key. Chỉ chứa **digest** chứ không chứa key thô, nhưng digest
+# của một key đang dùng vẫn là thứ đủ để đối chiếu — và file này khác nhau ở mỗi
+# môi trường, nên nó là cấu hình vận hành chứ không phải mã nguồn.
+secrets/
 .run/
 *.log
 

@@ -11,6 +11,7 @@ toàn bộ replica, và cái đó không có test nào ngoài chỗ này bắt �
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ from rag_core.bundle import RagBundle
 from rag_core.reranking.base import Reranker
 from rag_core.settings import Settings
 from serving.api.app import create_app
+from serving.core.auth import digest_of
 from serving.core.probes import ReadinessProbes
 from serving.core.registry import BundleRegistry
 from serving.core.runtime import BundleRuntimeError
@@ -73,10 +75,41 @@ def bundles(tmp_path: Path) -> Path:
     return root
 
 
+ADMIN_KEY = "rag_test_admin_key"
+
+
+def keys_file(tmp: Path) -> Path:
+    """Kho key cho test: một key admin, hạn mức rộng để không vướng `W4-04`.
+
+    Ghi **digest** đúng như production — test đi qua chính đường tra key thật
+    chứ không qua một cửa sau chỉ có trong test.
+    """
+    path = tmp / "api-keys.json"
+    path.write_text(
+        json.dumps(
+            {
+                digest_of(ADMIN_KEY): {
+                    "tenant_id": "test",
+                    "key_id": "test-admin",
+                    "scopes": ["admin"],
+                    "rate_limit_per_minute": 10_000,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def make_client(root: Path, world: World, *, pin: str | None = None) -> TestClient:
-    settings = Settings(bundle_root=root, bundle_version=pin, log_level="CRITICAL")
+    settings = Settings(
+        bundle_root=root,
+        bundle_version=pin,
+        log_level="CRITICAL",
+        api_keys_file=keys_file(root.parent),
+    )
     app = create_app(settings=settings, build_runtime=world.build, probe_factory=world.probes)
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": f"Bearer {ADMIN_KEY}"})
 
 
 @pytest.fixture
@@ -267,7 +300,9 @@ def test_the_test_client_cannot_prove_streaming_works(bundles: Path, world: Worl
     """
     from fastapi.responses import StreamingResponse
 
-    settings = Settings(bundle_root=bundles, log_level="CRITICAL")
+    settings = Settings(
+        bundle_root=bundles, log_level="CRITICAL", api_keys_file=keys_file(bundles.parent)
+    )
     app = create_app(settings=settings, build_runtime=world.build, probe_factory=world.probes)
 
     @app.get("/sse")
@@ -276,7 +311,7 @@ def test_the_test_client_cannot_prove_streaming_works(bundles: Path, world: Worl
             iter([b"data: mot\n\n", b"data: hai\n\n"]), media_type="text/event-stream"
         )
 
-    with TestClient(app) as client, client.stream("GET", "/sse") as response:
+    with TestClient(app, headers=_auth()) as client, client.stream("GET", "/sse") as response:
         first = next(response.iter_bytes())
     assert b"hai" in first, "TestClient đã stream thật — viết lại test này thành phép kiểm thật"
 
@@ -285,14 +320,16 @@ def test_a_500_still_carries_the_request_id(bundles: Path, world: World) -> None
     """⭐ Đúng phản hồi mà người vận hành cần truy vết lại là phản hồi dễ thiếu
     mã nhất: `ServerErrorMiddleware` của Starlette nằm **ngoài** middleware này
     nên 500 do nó gửi không đi qua `send` đã bọc."""
-    settings = Settings(bundle_root=bundles, log_level="CRITICAL")
+    settings = Settings(
+        bundle_root=bundles, log_level="CRITICAL", api_keys_file=keys_file(bundles.parent)
+    )
     app = create_app(settings=settings, build_runtime=world.build, probe_factory=world.probes)
 
     @app.get("/nổ")
     def boom() -> None:
         raise RuntimeError("vỡ")
 
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, raise_server_exceptions=False, headers=_auth()) as client:
         response = client.get("/nổ", headers={"X-Request-ID": "trace-9"})
     assert response.status_code == 500
     assert response.headers["x-request-id"] == "trace-9"
@@ -368,7 +405,12 @@ def test_an_unclassified_failure_is_still_a_refusal_not_a_500(bundles: Path, wor
     class ResponseHandlingException(Exception):
         pass
 
-    settings = Settings(bundle_root=bundles, bundle_version="0.2.0", log_level="CRITICAL")
+    settings = Settings(
+        bundle_root=bundles,
+        bundle_version="0.2.0",
+        log_level="CRITICAL",
+        api_keys_file=keys_file(bundles.parent),
+    )
     fails = False
 
     def build(bundle: RagBundle) -> tuple[Any, None]:
@@ -377,7 +419,7 @@ def test_an_unclassified_failure_is_still_a_refusal_not_a_500(bundles: Path, wor
         return world.build(bundle)
 
     app = create_app(settings=settings, build_runtime=build, probe_factory=world.probes)
-    with TestClient(app) as client:
+    with TestClient(app, headers=_auth()) as client:
         fails = True
         response = client.post("/admin/bundle/reload", json={"version": "0.1.0"})
     assert response.status_code == 503
@@ -388,13 +430,5 @@ def test_an_unclassified_failure_is_still_a_refusal_not_a_500(bundles: Path, wor
     assert detail["detail"] == "ResponseHandlingException: timed out"
 
 
-def test_admin_routes_are_still_open(client: TestClient) -> None:
-    """🔓 Ghim lỗ hổng, không ghim hành vi mong muốn.
-
-    Ba route trên đổi được hệ thống đang phục vụ và hiện ai gọi cũng được. Test
-    này sẽ **đỏ** khi `W4-04` gắn auth — cố ý: buộc phải xoá nó một cách có ý
-    thức, thay vì để nó nằm im như một xác nhận rằng cửa mở là bình thường.
-    """
-    assert client.get("/admin/bundle").status_code == 200, (
-        "nếu chỗ này đã 401 thì `W4-04` đã xong — xoá test này và viết bộ test auth"
-    )
+def _auth() -> dict[str, str]:
+    return {"Authorization": f"Bearer {ADMIN_KEY}"}
