@@ -70,6 +70,24 @@ class Settings(BaseSettings):
     thư mục tạm mà không phải nới lỏng hàng rào.
     """
 
+    # ------------------------------------------------------------ Serving
+    bundle_root: Path = Path("bundles")
+    """Thư mục chứa các `rag-bundle-v*/` mà Serving Plane được nạp từ đó (`W4-03`).
+
+    Là **toàn bộ** đường nối giữa hai plane: pipeline ghi vào đây, serving đọc từ
+    đây, và không có kênh nào khác. Cấu hình được vì trong container nó là một
+    volume mount, còn trong test nó là `tmp_path`.
+    """
+
+    bundle_version: str | None = None
+    """Bundle kích hoạt lúc khởi động. `None` = bản semver cao nhất tìm thấy.
+
+    Ghim tường minh là cách duy nhất để một lần rollback **sống sót qua restart**:
+    `BundleRegistry.rollback()` chỉ đổi trạng thái trong bộ nhớ, nên nếu deploy
+    vẫn để `None` thì container khởi động lại sẽ lặng lẽ quay về đúng bản vừa bị
+    lùi khỏi.
+    """
+
     # ------------------------------------------------------------ Model
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"
     embedding_device: str = "auto"

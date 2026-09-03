@@ -386,6 +386,17 @@ ctx-backup:  ## W3-04: nén + băm artifact ngữ cảnh để commit (chạy l�
 ctx-verify:  ## W3-04: bản trong git có khớp bản trên đĩa không
 	$(PY) python -m pipeline.indexing.backup_contexts --check
 
+.PHONY: serve
+serve:  ## W4-03: chạy API serving (đọc BUNDLE_ROOT / BUNDLE_VERSION từ .env)
+	$(PY) uvicorn serving.api.app:app --host 127.0.0.1 --port 8000
+
+.PHONY: serve-check
+serve-check:  ## W4-03: hỏi /health + /ready của một tiến trình đang chạy
+	curl -fsS http://127.0.0.1:8000/health && echo
+	curl -sS -o /dev/null -w 'ready: HTTP %{http_code}
+' http://127.0.0.1:8000/ready
+	curl -sS http://127.0.0.1:8000/admin/bundle && echo
+
 .PHONY: job-bundle
 job-bundle:  ## W0-08: dựng gói job cho RunPod (git archive + gói request)
 	bash scripts/runpod_job.sh bundle
