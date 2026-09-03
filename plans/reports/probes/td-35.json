@@ -1,0 +1,505 @@
+{
+  "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+  "device": "cuda",
+  "seed": 20260820,
+  "pool": 50.0,
+  "contextual": {
+    "config": "configs\\indexing\\bgem3-contextual.yaml",
+    "base": "hybrid",
+    "branch": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20",
+    "n_queries": 242.0,
+    "truncation": {
+      "max_length": 512.0,
+      "overall": {
+        "pairs": 12100.0,
+        "p50_tokens": 365.0,
+        "p95_tokens": 453.0,
+        "max_tokens": 895.0,
+        "truncated_ratio": 0.0071900826446281
+      },
+      "by_category": {
+        "adversarial": {
+          "pairs": 1700.0,
+          "p50_tokens": 381.0,
+          "p95_tokens": 463.0,
+          "max_tokens": 875.0,
+          "truncated_ratio": 0.007058823529411765
+        },
+        "aggregation": {
+          "pairs": 1300.0,
+          "p50_tokens": 365.0,
+          "p95_tokens": 450.0,
+          "max_tokens": 539.0,
+          "truncated_ratio": 0.0015384615384615385
+        },
+        "cross_lingual": {
+          "pairs": 2150.0,
+          "p50_tokens": 361.0,
+          "p95_tokens": 451.0,
+          "max_tokens": 895.0,
+          "truncated_ratio": 0.011162790697674419
+        },
+        "factoid": {
+          "pairs": 3400.0,
+          "p50_tokens": 361.0,
+          "p95_tokens": 448.0,
+          "max_tokens": 878.0,
+          "truncated_ratio": 0.006764705882352941
+        },
+        "multi_hop": {
+          "pairs": 1700.0,
+          "p50_tokens": 382.0,
+          "p95_tokens": 461.0,
+          "max_tokens": 891.0,
+          "truncated_ratio": 0.006470588235294118
+        },
+        "table_lookup": {
+          "pairs": 200.0,
+          "p50_tokens": 360.0,
+          "p95_tokens": 432.0,
+          "max_tokens": 634.0,
+          "truncated_ratio": 0.005
+        },
+        "unanswerable": {
+          "pairs": 1650.0,
+          "p50_tokens": 343.0,
+          "p95_tokens": 441.0,
+          "max_tokens": 864.0,
+          "truncated_ratio": 0.008484848484848486
+        }
+      },
+      "by_doc_language": {
+        "en": {
+          "pairs": 5357.0,
+          "p50_tokens": 346.0,
+          "p95_tokens": 410.0,
+          "max_tokens": 597.0,
+          "truncated_ratio": 0.00037334328915437746
+        },
+        "vi": {
+          "pairs": 6743.0,
+          "p50_tokens": 391.0,
+          "p95_tokens": 465.0,
+          "max_tokens": 895.0,
+          "truncated_ratio": 0.012605665134213259
+        }
+      }
+    },
+    "ceiling_by_category": {
+      "adversarial": {
+        "n": 34.0,
+        "hit_rate@50": 0.7352941176470589
+      },
+      "aggregation": {
+        "n": 26.0,
+        "hit_rate@50": 0.9230769230769231
+      },
+      "cross_lingual": {
+        "n": 43.0,
+        "hit_rate@50": 0.5813953488372093
+      },
+      "factoid": {
+        "n": 68.0,
+        "hit_rate@50": 0.9411764705882353
+      },
+      "multi_hop": {
+        "n": 34.0,
+        "hit_rate@50": 0.9705882352941176
+      },
+      "table_lookup": {
+        "n": 4.0,
+        "hit_rate@50": 0.5
+      }
+    },
+    "ceiling_by_branch": {
+      "dense": {
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@50": 0.7647058823529411
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@50": 0.9230769230769231
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@50": 0.6744186046511628
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@50": 0.8970588235294118
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@50": 0.9411764705882353
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@50": 0.5
+        }
+      },
+      "sparse": {
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@50": 0.5294117647058824
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@50": 0.7692307692307693
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@50": 0.023255813953488372
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@50": 0.8676470588235294
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@50": 0.7352941176470589
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@50": 0.5
+        }
+      },
+      "hybrid": {
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@50": 0.7352941176470589
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@50": 0.9230769230769231
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@50": 0.5813953488372093
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@50": 0.9411764705882353
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@50": 0.9705882352941176
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@50": 0.5
+        }
+      }
+    },
+    "ablation": {
+      "n_pairs": 12100.0,
+      "n_texts_identical": 0.0,
+      "identical_ratio": 0.0,
+      "enriched": {
+        "__all__": {
+          "n": 209.0,
+          "hit_rate@1": 0.6076555023923444,
+          "hit_rate@5": 0.8086124401913876,
+          "hit_rate@6": 0.8086124401913876,
+          "mrr": 0.6912073572360654,
+          "ndcg@10": 0.6888239512768619
+        },
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@1": 0.5,
+          "hit_rate@5": 0.7352941176470589,
+          "hit_rate@6": 0.7352941176470589,
+          "mrr": 0.5906862745098039,
+          "ndcg@10": 0.6235494451213475
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@1": 0.6923076923076923,
+          "hit_rate@5": 0.8846153846153846,
+          "hit_rate@6": 0.8846153846153846,
+          "mrr": 0.7852564102564104,
+          "ndcg@10": 0.679736955935949
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@1": 0.4418604651162791,
+          "hit_rate@5": 0.5581395348837209,
+          "hit_rate@6": 0.5581395348837209,
+          "mrr": 0.4866102889358704,
+          "ndcg@10": 0.5040700377815596
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@1": 0.6617647058823529,
+          "hit_rate@5": 0.9264705882352942,
+          "hit_rate@6": 0.9264705882352942,
+          "mrr": 0.7715686274509804,
+          "ndcg@10": 0.8149589706524869
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@1": 0.7647058823529411,
+          "hit_rate@5": 0.9411764705882353,
+          "hit_rate@6": 0.9411764705882353,
+          "mrr": 0.8403361344537815,
+          "ndcg@10": 0.7646512411596318
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@1": 0.5,
+          "hit_rate@5": 0.5,
+          "hit_rate@6": 0.5,
+          "mrr": 0.5,
+          "ndcg@10": 0.5
+        }
+      },
+      "stripped": {
+        "__all__": {
+          "n": 209.0,
+          "hit_rate@1": 0.5645933014354066,
+          "hit_rate@5": 0.784688995215311,
+          "hit_rate@6": 0.784688995215311,
+          "mrr": 0.6582611832611832,
+          "ndcg@10": 0.6651987833305694
+        },
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@1": 0.4117647058823529,
+          "hit_rate@5": 0.7058823529411765,
+          "hit_rate@6": 0.7058823529411765,
+          "mrr": 0.5357142857142857,
+          "ndcg@10": 0.5698007653854837
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@1": 0.6538461538461539,
+          "hit_rate@5": 0.8461538461538461,
+          "hit_rate@6": 0.8461538461538461,
+          "mrr": 0.7444832944832945,
+          "ndcg@10": 0.6462228929407818
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@1": 0.4418604651162791,
+          "hit_rate@5": 0.5581395348837209,
+          "hit_rate@6": 0.5581395348837209,
+          "mrr": 0.49436222692036647,
+          "ndcg@10": 0.5101525713922418
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@1": 0.6323529411764706,
+          "hit_rate@5": 0.8970588235294118,
+          "hit_rate@6": 0.8970588235294118,
+          "mrr": 0.7426200025464731,
+          "ndcg@10": 0.7865790525663227
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@1": 0.6764705882352942,
+          "hit_rate@5": 0.9117647058823529,
+          "hit_rate@6": 0.9117647058823529,
+          "mrr": 0.7720588235294118,
+          "ndcg@10": 0.7478702450631146
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@1": 0.5,
+          "hit_rate@5": 0.5,
+          "hit_rate@6": 0.5,
+          "mrr": 0.5,
+          "ndcg@10": 0.5
+        }
+      }
+    }
+  },
+  "baseline": {
+    "config": "configs\\indexing\\bgem3.yaml",
+    "base": "hybrid",
+    "branch": "qdrant-hybrid:rag_bgem3:rrf1-c20",
+    "n_queries": 242.0,
+    "truncation": {
+      "max_length": 512.0,
+      "overall": {
+        "pairs": 12100.0,
+        "p50_tokens": 287.0,
+        "p95_tokens": 352.0,
+        "max_tokens": 542.0,
+        "truncated_ratio": 8.264462809917356e-05
+      },
+      "by_category": {
+        "adversarial": {
+          "pairs": 1700.0,
+          "p50_tokens": 303.0,
+          "p95_tokens": 359.0,
+          "max_tokens": 440.0,
+          "truncated_ratio": 0.0
+        },
+        "aggregation": {
+          "pairs": 1300.0,
+          "p50_tokens": 284.0,
+          "p95_tokens": 358.0,
+          "max_tokens": 461.0,
+          "truncated_ratio": 0.0
+        },
+        "cross_lingual": {
+          "pairs": 2150.0,
+          "p50_tokens": 283.0,
+          "p95_tokens": 349.0,
+          "max_tokens": 477.0,
+          "truncated_ratio": 0.0
+        },
+        "factoid": {
+          "pairs": 3400.0,
+          "p50_tokens": 283.0,
+          "p95_tokens": 344.0,
+          "max_tokens": 542.0,
+          "truncated_ratio": 0.0002941176470588235
+        },
+        "multi_hop": {
+          "pairs": 1700.0,
+          "p50_tokens": 302.5,
+          "p95_tokens": 360.0,
+          "max_tokens": 469.0,
+          "truncated_ratio": 0.0
+        },
+        "table_lookup": {
+          "pairs": 200.0,
+          "p50_tokens": 290.0,
+          "p95_tokens": 334.0,
+          "max_tokens": 358.0,
+          "truncated_ratio": 0.0
+        },
+        "unanswerable": {
+          "pairs": 1650.0,
+          "p50_tokens": 274.0,
+          "p95_tokens": 339.0,
+          "max_tokens": 438.0,
+          "truncated_ratio": 0.0
+        }
+      },
+      "by_doc_language": {
+        "en": {
+          "pairs": 5281.0,
+          "p50_tokens": 266.0,
+          "p95_tokens": 319.0,
+          "max_tokens": 461.0,
+          "truncated_ratio": 0.0
+        },
+        "vi": {
+          "pairs": 6819.0,
+          "p50_tokens": 310.0,
+          "p95_tokens": 359.0,
+          "max_tokens": 542.0,
+          "truncated_ratio": 0.00014664906877841325
+        }
+      }
+    },
+    "ceiling_by_category": {
+      "adversarial": {
+        "n": 34.0,
+        "hit_rate@50": 0.7058823529411765
+      },
+      "aggregation": {
+        "n": 26.0,
+        "hit_rate@50": 0.8846153846153846
+      },
+      "cross_lingual": {
+        "n": 43.0,
+        "hit_rate@50": 0.6046511627906976
+      },
+      "factoid": {
+        "n": 68.0,
+        "hit_rate@50": 0.8823529411764706
+      },
+      "multi_hop": {
+        "n": 34.0,
+        "hit_rate@50": 0.8235294117647058
+      },
+      "table_lookup": {
+        "n": 4.0,
+        "hit_rate@50": 0.5
+      }
+    },
+    "ceiling_by_branch": {
+      "dense": {
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@50": 0.7058823529411765
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@50": 0.8461538461538461
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@50": 0.627906976744186
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@50": 0.7941176470588235
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@50": 0.8235294117647058
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@50": 0.25
+        }
+      },
+      "sparse": {
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@50": 0.4411764705882353
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@50": 0.7692307692307693
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@50": 0.023255813953488372
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@50": 0.8088235294117647
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@50": 0.6764705882352942
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@50": 0.5
+        }
+      },
+      "hybrid": {
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@50": 0.7058823529411765
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@50": 0.8846153846153846
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@50": 0.6046511627906976
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@50": 0.8823529411764706
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@50": 0.8235294117647058
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@50": 0.5
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,343 @@
+{
+  "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+  "device": "cuda",
+  "seed": 20260820,
+  "pool": 50.0,
+  "contextual": {
+    "config": "configs\\indexing\\bgem3-contextual.yaml",
+    "branch": "qdrant-dense:rag_bgem3_ctx",
+    "n_queries": 242.0,
+    "truncation": {
+      "max_length": 512.0,
+      "overall": {
+        "pairs": 12100.0,
+        "p50_tokens": 358.0,
+        "p95_tokens": 446.0,
+        "max_tokens": 878.0,
+        "truncated_ratio": 0.004710743801652892
+      },
+      "by_category": {
+        "adversarial": {
+          "pairs": 1700.0,
+          "p50_tokens": 374.0,
+          "p95_tokens": 457.0,
+          "max_tokens": 875.0,
+          "truncated_ratio": 0.004705882352941176
+        },
+        "aggregation": {
+          "pairs": 1300.0,
+          "p50_tokens": 361.0,
+          "p95_tokens": 442.0,
+          "max_tokens": 513.0,
+          "truncated_ratio": 0.0007692307692307692
+        },
+        "cross_lingual": {
+          "pairs": 2150.0,
+          "p50_tokens": 351.5,
+          "p95_tokens": 438.0,
+          "max_tokens": 866.0,
+          "truncated_ratio": 0.005581395348837209
+        },
+        "factoid": {
+          "pairs": 3400.0,
+          "p50_tokens": 358.0,
+          "p95_tokens": 444.0,
+          "max_tokens": 878.0,
+          "truncated_ratio": 0.006176470588235294
+        },
+        "multi_hop": {
+          "pairs": 1700.0,
+          "p50_tokens": 375.0,
+          "p95_tokens": 457.0,
+          "max_tokens": 872.0,
+          "truncated_ratio": 0.005294117647058823
+        },
+        "table_lookup": {
+          "pairs": 200.0,
+          "p50_tokens": 348.0,
+          "p95_tokens": 426.0,
+          "max_tokens": 483.0,
+          "truncated_ratio": 0.0
+        },
+        "unanswerable": {
+          "pairs": 1650.0,
+          "p50_tokens": 331.0,
+          "p95_tokens": 429.0,
+          "max_tokens": 763.0,
+          "truncated_ratio": 0.0036363636363636364
+        }
+      },
+      "by_doc_language": {
+        "en": {
+          "pairs": 5962.0,
+          "p50_tokens": 344.0,
+          "p95_tokens": 411.0,
+          "max_tokens": 597.0,
+          "truncated_ratio": 0.0006709158000670916
+        },
+        "vi": {
+          "pairs": 6138.0,
+          "p50_tokens": 386.0,
+          "p95_tokens": 460.0,
+          "max_tokens": 878.0,
+          "truncated_ratio": 0.008634734441186055
+        }
+      }
+    },
+    "ceiling_by_category": {
+      "adversarial": {
+        "n": 34.0,
+        "hit_rate@50": 0.7647058823529411
+      },
+      "aggregation": {
+        "n": 26.0,
+        "hit_rate@50": 0.9230769230769231
+      },
+      "cross_lingual": {
+        "n": 43.0,
+        "hit_rate@50": 0.6744186046511628
+      },
+      "factoid": {
+        "n": 68.0,
+        "hit_rate@50": 0.8970588235294118
+      },
+      "multi_hop": {
+        "n": 34.0,
+        "hit_rate@50": 0.9411764705882353
+      },
+      "table_lookup": {
+        "n": 4.0,
+        "hit_rate@50": 0.5
+      }
+    },
+    "ablation": {
+      "n_pairs": 12100.0,
+      "n_texts_identical": 0.0,
+      "identical_ratio": 0.0,
+      "enriched": {
+        "__all__": {
+          "n": 209.0,
+          "hit_rate@1": 0.6076555023923444,
+          "hit_rate@5": 0.8038277511961722,
+          "hit_rate@6": 0.8038277511961722,
+          "mrr": 0.6880232606309161,
+          "ndcg@10": 0.6936973046246766
+        },
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@1": 0.5,
+          "hit_rate@5": 0.7352941176470589,
+          "hit_rate@6": 0.7352941176470589,
+          "mrr": 0.5920868347338936,
+          "ndcg@10": 0.6235494451213475
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@1": 0.6923076923076923,
+          "hit_rate@5": 0.8846153846153846,
+          "hit_rate@6": 0.8846153846153846,
+          "mrr": 0.7833333333333333,
+          "ndcg@10": 0.7014806774530697
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@1": 0.4883720930232558,
+          "hit_rate@5": 0.627906976744186,
+          "hit_rate@6": 0.627906976744186,
+          "mrr": 0.5406800563777309,
+          "ndcg@10": 0.5669146350843566
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@1": 0.6470588235294118,
+          "hit_rate@5": 0.8823529411764706,
+          "hit_rate@6": 0.8823529411764706,
+          "mrr": 0.7421568627450981,
+          "ndcg@10": 0.7816963308415616
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@1": 0.7352941176470589,
+          "hit_rate@5": 0.9117647058823529,
+          "hit_rate@6": 0.9117647058823529,
+          "mrr": 0.8112745098039216,
+          "ndcg@10": 0.7650258268470068
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@1": 0.5,
+          "hit_rate@5": 0.5,
+          "hit_rate@6": 0.5,
+          "mrr": 0.5,
+          "ndcg@10": 0.5
+        }
+      },
+      "stripped": {
+        "__all__": {
+          "n": 209.0,
+          "hit_rate@1": 0.569377990430622,
+          "hit_rate@5": 0.7751196172248804,
+          "hit_rate@6": 0.7751196172248804,
+          "mrr": 0.6627942434509807,
+          "ndcg@10": 0.6730184614419381
+        },
+        "adversarial": {
+          "n": 34.0,
+          "hit_rate@1": 0.4411764705882353,
+          "hit_rate@5": 0.7352941176470589,
+          "hit_rate@6": 0.7352941176470589,
+          "mrr": 0.5731792717086834,
+          "ndcg@10": 0.5960854594771113
+        },
+        "aggregation": {
+          "n": 26.0,
+          "hit_rate@1": 0.6538461538461539,
+          "hit_rate@5": 0.8076923076923077,
+          "hit_rate@6": 0.8076923076923077,
+          "mrr": 0.7406637717121588,
+          "ndcg@10": 0.6739611888514964
+        },
+        "cross_lingual": {
+          "n": 43.0,
+          "hit_rate@1": 0.4883720930232558,
+          "hit_rate@5": 0.6046511627906976,
+          "hit_rate@6": 0.6046511627906976,
+          "mrr": 0.5467800932917212,
+          "ndcg@10": 0.5714168348572956
+        },
+        "factoid": {
+          "n": 68.0,
+          "hit_rate@1": 0.6029411764705882,
+          "hit_rate@5": 0.8529411764705882,
+          "hit_rate@6": 0.8529411764705882,
+          "mrr": 0.7095476827094475,
+          "ndcg@10": 0.7465763152050303
+        },
+        "multi_hop": {
+          "n": 34.0,
+          "hit_rate@1": 0.6764705882352942,
+          "hit_rate@5": 0.8823529411764706,
+          "hit_rate@6": 0.8823529411764706,
+          "mrr": 0.7652310924369747,
+          "ndcg@10": 0.7509661345940767
+        },
+        "table_lookup": {
+          "n": 4.0,
+          "hit_rate@1": 0.5,
+          "hit_rate@5": 0.5,
+          "hit_rate@6": 0.5,
+          "mrr": 0.5,
+          "ndcg@10": 0.5
+        }
+      }
+    }
+  },
+  "baseline": {
+    "config": "configs\\indexing\\bgem3.yaml",
+    "branch": "qdrant-dense:rag_bgem3",
+    "n_queries": 242.0,
+    "truncation": {
+      "max_length": 512.0,
+      "overall": {
+        "pairs": 12100.0,
+        "p50_tokens": 283.0,
+        "p95_tokens": 351.0,
+        "max_tokens": 780.0,
+        "truncated_ratio": 0.00041322314049586776
+      },
+      "by_category": {
+        "adversarial": {
+          "pairs": 1700.0,
+          "p50_tokens": 298.0,
+          "p95_tokens": 360.0,
+          "max_tokens": 780.0,
+          "truncated_ratio": 0.001176470588235294
+        },
+        "aggregation": {
+          "pairs": 1300.0,
+          "p50_tokens": 283.0,
+          "p95_tokens": 355.0,
+          "max_tokens": 461.0,
+          "truncated_ratio": 0.0
+        },
+        "cross_lingual": {
+          "pairs": 2150.0,
+          "p50_tokens": 277.0,
+          "p95_tokens": 347.0,
+          "max_tokens": 501.0,
+          "truncated_ratio": 0.0
+        },
+        "factoid": {
+          "pairs": 3400.0,
+          "p50_tokens": 280.0,
+          "p95_tokens": 344.0,
+          "max_tokens": 722.0,
+          "truncated_ratio": 0.0008823529411764706
+        },
+        "multi_hop": {
+          "pairs": 1700.0,
+          "p50_tokens": 296.5,
+          "p95_tokens": 358.0,
+          "max_tokens": 469.0,
+          "truncated_ratio": 0.0
+        },
+        "table_lookup": {
+          "pairs": 200.0,
+          "p50_tokens": 280.0,
+          "p95_tokens": 329.0,
+          "max_tokens": 349.0,
+          "truncated_ratio": 0.0
+        },
+        "unanswerable": {
+          "pairs": 1650.0,
+          "p50_tokens": 267.0,
+          "p95_tokens": 338.0,
+          "max_tokens": 412.0,
+          "truncated_ratio": 0.0
+        }
+      },
+      "by_doc_language": {
+        "en": {
+          "pairs": 5906.0,
+          "p50_tokens": 266.0,
+          "p95_tokens": 324.0,
+          "max_tokens": 461.0,
+          "truncated_ratio": 0.0
+        },
+        "vi": {
+          "pairs": 6194.0,
+          "p50_tokens": 307.0,
+          "p95_tokens": 359.0,
+          "max_tokens": 780.0,
+          "truncated_ratio": 0.0008072328059412334
+        }
+      }
+    },
+    "ceiling_by_category": {
+      "adversarial": {
+        "n": 34.0,
+        "hit_rate@50": 0.7058823529411765
+      },
+      "aggregation": {
+        "n": 26.0,
+        "hit_rate@50": 0.8461538461538461
+      },
+      "cross_lingual": {
+        "n": 43.0,
+        "hit_rate@50": 0.627906976744186
+      },
+      "factoid": {
+        "n": 68.0,
+        "hit_rate@50": 0.7941176470588235
+      },
+      "multi_hop": {
+        "n": 34.0,
+        "hit_rate@50": 0.8235294117647058
+      },
+      "table_lookup": {
+        "n": 4.0,
+        "hit_rate@50": 0.25
+      }
+    }
+  }
+}

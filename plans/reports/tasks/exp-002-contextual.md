@@ -64,29 +64,37 @@ ngẫu nhiên dễ bỏ qua.
 0,3172, mức tăng lớn thứ hai bảng). Nên nguyên nhân **không** nằm ở việc dán ngữ
 cảnh, mà nằm ở **quãng giữa dense và reranked**.
 
-### Đo được cái gì ở quãng đó
+### ✅ Đã truy ra nguyên nhân — xem `td-35-cross-lingual.md`
 
-Reranker có cửa sổ cứng **512 token**. Dán ngữ cảnh làm chunk dài thêm 32,2%
-(`inflation` = 1,3217), và đo lại bằng `rerank_probe`:
+⚠️⚠️ **Đoạn dưới đây là giả thuyết ĐÃ BỊ PHẢN CHỨNG.** Giữ nguyên văn thay vì
+xoá, vì cách nó sai là phần đáng đọc nhất: hai sự thật nhất quán với nhau, và
+tôi đã suýt để chúng đi vào báo cáo như một lời giải thích.
 
-| | không ngữ cảnh | có ngữ cảnh |
-|---|---:|---:|
-| token p50 | 287 | **365** |
-| token p95 | 352 | **453** |
-| token max | 542 | **895** |
-| tỉ lệ cặp bị cắt | 0,008% | **0,72%** |
+> Reranker có cửa sổ cứng **512 token**. Dán ngữ cảnh làm chunk dài thêm 32,2%
+> (`inflation` = 1,3217), và tỉ lệ cặp bị cắt tăng **87×** (0,008% → 0,72%),
+> token p95 352 → 453/512 — phân bố đã áp sát trần.
 
-Tỉ lệ cắt tăng **87×**, và p95 giờ ở 453/512 — phân bố đã áp sát trần.
+**Vì sao nó sai:** cắt theo nhóm thì `cross_lingual` chỉ đứng hạng 3/7 về tỉ lệ
+cắt (0,558%), **thấp hơn `factoid`** (0,618%) — mà `factoid` là nhóm cải thiện
+nhiều nhất. Nhóm cắt nhiều nhất là nhóm được lợi nhiều nhất; không có quan hệ
+nào ở đây.
 
-⚠️⚠️ **Nhưng 0,72% quá nhỏ để giải thích một nhóm 43 câu đổi dấu ở 11/15
-metric.** Hai sự thật này nhất quán với nhau và **chưa** chứng minh nhân quả.
-Ghi lại ở `TD-35` kèm phép đo cần làm: tỉ lệ cắt **theo nhóm** và **theo ngôn
-ngữ tài liệu** (tiếng Việt tokenise tệ hơn nên chạm trần trước). Nếu tỉ lệ cắt
-của `cross_lingual` không cao hơn hẳn thì giả thuyết này sai và phải tìm chỗ khác.
+**Nguyên nhân thật nằm ở tầng tôi không nhìn tới.** Câu "nguyên nhân nằm ở quãng
+giữa dense và reranked" ở trên **đúng về vị trí, sai về cơ chế**: quãng ấy có
+*hai* tầng, và thủ phạm là tầng **hợp nhất RRF**, không phải reranker.
 
-⚠️ Cũng phải nói: `W2-09` đã đo ngưỡng phân giải giữa hai nhóm là **~±0,22**, cần
-golden set **~440 câu**. Với `n = 43` thì `cross_lingual` **không thể** kết luận
-được ở bảng này dù kết quả thế nào — đó là `TD-13`, không phải phát hiện mới.
+* Trần pool `hit_rate@50` của `cross_lingual`: dense **+0,0465**, sparse **0**,
+  hybrid **−0,0233** — ô âm duy nhất trong bảng 18 ô.
+* Ablation cùng pool khác văn bản: bóc ngữ cảnh ra chỉ đổi **−0,0061** nDCG cho
+  nhóm này, `hit_rate@1`/`@5` hoà tuyệt đối. Reranker được minh oan.
+* Sparse tìm được **1/43** câu `cross_lingual`, nhưng RRF `k=1` vẫn cho hạng 1
+  của nó trọng số ½. Ngữ cảnh thêm 32% chữ tiếng Việt = thêm khối lượng từ vựng
+  để nhánh ấy **sai một cách tự tin hơn**.
+
+⭐ Và đây là **lần thứ tư** cùng một phát hiện xuất hiện: `W2-04`, `W2-08-prep`
+(sống sót Bonferroni 90 phép kiểm), `W2-09` (bậc hybrid là bậc *duy nhất* làm một
+nhóm tệ đi, **17↔1**), `W2-05`. Contextual Retrieval không tạo ra vấn đề mới —
+nó làm to một vấn đề đã đo được ba lần.
 
 ## 4. Chi phí của phần thắng này
 

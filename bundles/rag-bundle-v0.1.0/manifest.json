@@ -1,0 +1,77 @@
+{
+  "bundle_version": "0.1.0",
+  "created_at": "2026-09-03T09:51:34.913609Z",
+  "git_sha": "e833015be0",
+  "components": {
+    "chunking": {
+      "strategy": "hybrid",
+      "chunk_size": 1000,
+      "chunk_overlap": 100,
+      "contextual": true,
+      "chunking_fingerprint": "c7ca3e6fc4da29a5"
+    },
+    "embedding": {
+      "model": "BAAI/bge-m3",
+      "dim": 1024,
+      "normalize": true,
+      "revision": null
+    },
+    "index": {
+      "backend": "qdrant",
+      "collection": "rag_bgem3_ctx",
+      "fingerprint": "ff0828fecae7998ad2bf04a389fbe2194ee62506468a6ceb6e9660a981eac52f",
+      "n_chunks": 15814,
+      "n_documents": 60,
+      "snapshot": null
+    },
+    "retrieval": {
+      "mode": "hybrid",
+      "top_k": 20,
+      "options": {
+        "k": 1,
+        "candidate_k": 20
+      }
+    },
+    "rerank": {
+      "max_length": 512,
+      "model": "BAAI/bge-reranker-v2-m3",
+      "candidates": 50,
+      "top_n": 6
+    },
+    "prompt": null,
+    "generation": null
+  },
+  "eval": {
+    "golden_set": "golden_v1",
+    "n_queries": 209,
+    "evaluated_with_generator": "deepseek-chat@2026-09",
+    "judge": null,
+    "retrieval_metrics": {
+      "hit_rate@1": 0.6076555023923444,
+      "hit_rate@10": 0.8133971291866029,
+      "hit_rate@20": 0.8277511961722488,
+      "hit_rate@5": 0.8086124401913876,
+      "map@20": 0.6449386026926134,
+      "mrr": 0.6912073572360654,
+      "ndcg@10": 0.6888239512768619,
+      "precision@1": 0.6076555023923444,
+      "precision@10": 0.10669856459330145,
+      "precision@20": 0.055502392344497616,
+      "precision@5": 0.21052631578947367,
+      "recall@1": 0.48564593301435405,
+      "recall@10": 0.7759170653907496,
+      "recall@20": 0.7966507177033493,
+      "recall@5": 0.7663476874003189
+    },
+    "generation_metrics": {},
+    "p95_latency_ms": 809.2729999989388,
+    "cost_per_query_usd": null
+  },
+  "gate": {
+    "status": "NOT_RUN",
+    "champion_compared": null,
+    "report": null
+  },
+  "notes": "Điểm vận hành W3: dense+sparse RRF k=1 -> reranker pool 50. Chưa có tầng sinh (W4-08/W4-11).",
+  "checksum": "sha256:d41845e588640af6bf38fe87bde5672b9886a8e35ad79f9d0f72a298306677ee"
+}
