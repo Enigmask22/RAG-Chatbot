@@ -19,6 +19,11 @@ phép ngoài `LICENSE_ALLOWLIST`. Danh sách ấy **loại cả giấy phép có
 (NoDerivatives): pipeline này cắt tài liệu thành chunk rồi sinh context bằng LLM,
 và đó là tạo tác phẩm phái sinh theo đúng nghĩa của điều khoản.
 
+`contexts/contexts.jsonl.gz` **là** một tác phẩm phái sinh như thế, và nó có
+trong repo. Nó thừa hưởng cùng nghĩa vụ ghi công: mỗi dòng mang `doc_id`, và
+`corpus_manifest.csv` ánh xạ `doc_id` → `source_url` + `license` của tài liệu
+gốc. Văn bản do LLM sinh ra thì repo không đòi bản quyền.
+
 ## Thư mục
 
 | | |
@@ -28,3 +33,5 @@ và đó là tạo tác phẩm phái sinh theo đúng nghĩa của điều kho�
 | `golden/golden_v1.jsonl` | 242 câu hỏi, nhãn neo theo **span** ký tự. Có checksum đi kèm; `make goldenset-verify` để đối chiếu |
 | `golden/draft_v1.jsonl` | Bản nháp trước review, giữ lại để truy vết |
 | `golden/review/` | Quyết định review từng câu |
+| `contexts/contexts.jsonl.gz` | **Tác phẩm phái sinh**: 15.814 câu định vị do GLM-5.3-Flash sinh cho từng chunk (`W3-04`). **Có** commit — 1,8 MB nén, và sinh lại tốn ~$5,90 tiền API. Kiểm bằng `make ctx-verify` |
+| `contexts/` (còn lại) | Gói request, dry-run, lô bị từ chối. **Không** commit — sinh lại miễn phí bằng `make ctx-prepare` |
