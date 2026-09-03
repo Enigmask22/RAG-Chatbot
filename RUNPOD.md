@@ -4,44 +4,85 @@ Hướng dẫn từng bước để sinh ngữ cảnh cho 15.814 chunk bằng `Q
 pod RunPod. Mọi con số trong này đều đo được, không phải ước lượng — trừ những
 chỗ ghi rõ là **tính**.
 
-> **Đọc trước khi bắt đầu:** bạn **có thể không cần pod này**. Đường API đã chạy
-> thật và rẻ hơn nhiều so với dự kiến ban đầu — xem [§0](#0-cân-nhắc-trước-có-cần-thuê-gpu-không).
+> **Đọc trước khi bắt đầu:** bảng quyết định dưới đây đã được **viết lại ngày
+> 03/09/2026** sau khi chạy thật 860 request. Kết luận cũ ("đường API rẻ hơn
+> nhiều, ~$2,9") là **sai** — nó dựa trên một phép đo cache không hợp lệ. Xem
+> [§0](#0-cân-nhắc-trước-có-cần-thuê-gpu-không).
 
 ---
 
 ## 0. Cân nhắc trước: có cần thuê GPU không?
 
-Ba đường đều cho ra cùng một artifact `contexts.jsonl`. Số đo trên **40 request
-giống hệt nhau**, cache đã ấm:
+Ba đường đều cho ra cùng một artifact `contexts.jsonl`.
 
-| đường | cost/1000 chunk | cả corpus (15.814) | tốc độ (conc=6) | cả corpus |
-|---|---:|---:|---:|---:|
-| **GLM-5.3-Flash** | **$0,1818** | **~$2,9** | 1,54 req/s | ~2,9 h |
-| DeepSeek-v4-flash | $0,3949 | ~$6,2 | 4,40 req/s | ~1,0 h |
-| vLLM Qwen3-8B trên 4090 | — (theo giờ) | tiền thuê × ~2,5–3,5 h *(tính)* | — | 2,5–3,5 h *(tính)* |
+### ⭐⭐ GLM không làm prefix caching — và đó là chuyện quyết định tất cả
 
-Nâng `--concurrency` lên 16–24 rút thời gian của cả hai đường API xuống đáng kể;
-cost/1000 không đổi vì nó tính theo token.
+Prompt của job này chia sẻ tiền tố rất lớn: các chunk liền kề trong cùng một tài
+liệu dùng chung khối `<document_head>`, đo được **p50 = 9.006 ký tự ≈ 54,8%** mỗi
+prompt. Toàn corpus: 64,37M token prefill, trong đó 31,3M (48,7%) là tiền tố
+dùng chung. Đường nào tái sử dụng được phần đó thì rẻ hơn gần hai lần.
 
-**Khi nào nên chạy API thay vì thuê pod:**
-- Chỉ cần xong `W3-04` để mở khoá `W3-09`. `make ctx-run-glm` là đủ, ~$3.
-- Không muốn quản lý một máy tính tiền theo giờ.
+Đo trên GLM-5.3-Flash:
 
-**Khi nào pod đáng làm:**
-- `W5-11` (ablation generator) **bắt buộc** cần vLLM, không thay thế được bằng API.
-- Muốn con số "tự host được" trong hồ sơ.
-- Muốn `W0-05` (dựng môi trường GPU) xong luôn, vì nó là điều kiện của `W5-11`.
+| phép đo | request | concurrency | cache trúng |
+|---|---:|---:|---:|
+| chạy thật, 5 tài liệu | 800 | 16 | **2,1%** |
+| chạy thật, tuần tự | 60 | **1** | **0,1%** |
+| *trần lý thuyết từ tiền tố chung* | — | — | *~55%* |
 
-Nếu chọn đường API, dừng ở đây và chạy:
+Chạy `--concurrency 1` là phép thử quyết định: request thứ k+1 chỉ gửi sau khi k
+đã xong, nên tiền tố chắc chắn đã nằm trong cache nếu cache tồn tại. Vẫn 0,1%.
+**GLM chỉ cache khi request trùng gần như toàn bộ, không cache theo tiền tố.**
 
-```bash
-make ctx-prepare              # nếu chưa có data/contexts/requests.jsonl.gz
-make ctx-run-glm CONC=16      # trần chi phí mặc định $6
-```
+⚠️ Con số "94,8% cache trúng" trong bản trước của tài liệu này đến từ việc chạy
+**lại đúng 40 request giống hệt nhau**. Đó là chặn trên của lợi ích cache và nó
+không bao giờ xảy ra khi chạy thật, vì khi chạy thật mọi request đều khác nhau.
+Cùng họ sai lầm với ba lần fixture đồng nhất của `W3-01`/`W3-05`/`W3-07`: **một
+phép đo lặp lại chính nó đo khả năng ghi nhớ, không đo khả năng làm việc.**
 
-Job có checkpoint: đứt giữa chừng thì chạy lại đúng lệnh đó, nó bỏ qua phần đã xong.
+Ngược lại, DeepSeek đo được **49,1%** trên tập request khác nhau — sát trần 55%.
+Nên DeepSeek **có** prefix caching thật, và lần trước tôi đã đọc nhầm con số đó
+thành "cache còn nguội".
 
----
+### Bảng quyết định (đo thật, 03/09/2026)
+
+| đường | cache tiền tố | cost/1000 chunk | cả corpus 15.814 |
+|---|---|---:|---:|
+| GLM-5.3-Flash | ❌ không | **$0,6196** *(đo, 800 req)* | **~$10,6** |
+| DeepSeek-v4-flash | ✅ 49,1% | $0,78 *(chiếu từ hồ sơ token)* | ~$12,4 |
+| vLLM Qwen3-8B trên 4090 | ✅ tự động, theo tiền tố | theo giờ | tiền thuê × 2,5–3,5 h *(tính)* |
+
+**Hệ quả: đường API không còn là lựa chọn rẻ.** Với workload chia sẻ 48,7% tiền
+tố, pod chạy vLLM là đường duy nhất thực sự thu được khoản đó — automatic prefix
+caching của vLLM là prefix trie thật.
+
+### Đã thử cắt prompt cho rẻ, và nó hỏng
+
+Nếu không có cache thì khối `<document_head>` (49% mỗi prompt) bị trả tiền lại từ
+đầu cho từng chunk. Cắt `--head-tokens 500 --window-tokens 800` làm prompt nhỏ
+2,06× và cost/1000 xuống **$0,3113**. Nhưng chất lượng sụp:
+
+| | ngữ cảnh nêu đúng tên tài liệu |
+|---|---:|
+| head 2000 (mặc định) | 256/260 — **sai 1,5%** |
+| head 500 | 12/260 — **sai 95%** |
+
+Bìa tài liệu là OCR lẫn banner chương trình «Việt Nam 2035…» đứng **trước** tên
+báo cáo thật «THỊ TRƯỜNG LAO ĐỘNG…». Head 500 token thấy cả hai nhưng chọn nhầm
+cái nổi bật hơn; head 2000 có thêm tiêu đề chạy và mục lục phía sau để phân định.
+
+⚠️ **Hai chỉ số bề mặt tôi dùng lúc đầu đều đạt 100% trên chính những ngữ cảnh
+bịa đặt** — "có nêu tên tổ chức" 354/354, "có nêu năm" 354/354. Ngữ cảnh bịa vẫn
+nói "Ngân hàng Thế giới" và vẫn có một năm trong đó. Proxy chất lượng đo cái dễ
+đo chứ không đo cái cần đo; phải so tên tài liệu với sự thật mới thấy.
+
+### Còn một đường chưa làm: gộp nhiều chunk mỗi request
+
+Gửi 8 chunk liền kề trong một request thì `<document_head>` được chia cho 8, và
+vùng lân cận của chúng chồng lấn nhau nên gộp lại gần như một dải liền. Ước tính
+đưa corpus về **~$2–2,5** trên GLM. Đây là cách chữa đúng về kinh tế, nhưng nó
+đổi định dạng artifact, cần bóc tách 8 ngữ cảnh trả về, cần chốt chặn chống lệch
+thứ tự, và một response hỏng làm mất 8 chunk thay vì 1. Chưa làm — ghi ở `TD-32`.
 
 ## 1. Chuẩn bị ở laptop (~5 phút, $0)
 

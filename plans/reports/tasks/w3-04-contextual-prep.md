@@ -199,7 +199,14 @@ cùng một ý định. Nên hằng số được đổi tên từ `NO_THINKING`
 gọi là "tắt" khi có nhà không tắt được là gieo một hiểu nhầm vào mọi báo cáo chi
 phí về sau.
 
-### ⭐⭐ Phép so sánh đầu tiên sai, vì nó đo vùng khởi động cache
+### ⚠️ ĐÃ BỊ THAY THẾ — đọc §6bis trước
+
+> Toàn bộ tiểu mục này và bảng quyết định của nó **sai**. Phép "chạy lại đúng
+> 40 request đó" không đo cache tiền tố mà đo cache khớp-nguyên-request, thứ
+> không bao giờ xảy ra khi chạy thật. Giữ lại nguyên văn để đối chiếu; kết luận
+> đúng ở **§6bis**.
+
+### ~~Phép so sánh đầu tiên sai, vì nó đo vùng khởi động cache~~
 
 Lượt đo đầu: GLM **$0,5954**/1000 vs DeepSeek **$0,7492**/1000 — chỉ rẻ 20%, mâu
 thuẫn với bảng giá. Nguyên nhân nằm ngay trong báo cáo: **cache trúng 4,0% (GLM)
@@ -241,6 +248,112 @@ là fallback. Pod vẫn cần cho `W5-11` (ablation generator bắt buộc có v
 
 Chất lượng ngang nhau: GLM cho **40/40 EN · 20/20 VI** đúng ngôn ngữ, độ dài p50
 447 ký tự (DeepSeek 433), nội dung nêu đúng tên báo cáo, tổ chức, năm, và mục.
+
+## 6bis. ⭐⭐ GLM không có prefix caching, và cách tôi phát hiện ra
+
+Chạy thật 860 request ngày 03/09/2026. Kết quả đảo ngược §6.
+
+### Phép đo quyết định
+
+Prompt của job chia sẻ tiền tố rất lớn — đo trực tiếp trên file request, không
+đoán: giữa hai request liền kề cùng tài liệu, tiền tố chung **p50 = 9.006 ký tự
+≈ 54,8%** mỗi prompt. Đó là trần lý thuyết của cache.
+
+| phép đo | request | concurrency | cache trúng | cost/1000 |
+|---|---:|---:|---:|---:|
+| chạy thật, 5 tài liệu | 800 | 16 | **2,1%** | **$0,6196** |
+| chạy thật, tuần tự | 60 | **1** | **0,1%** | $0,6777 |
+| *trần lý thuyết* | — | — | *~55%* | — |
+
+`--concurrency 1` là phép thử tách bạch: request thứ k+1 chỉ gửi **sau khi** k
+trả về, nên nếu cache tiền tố tồn tại thì tiền tố chắc chắn đã nằm sẵn trong đó.
+Vẫn 0,1%. Không phải chuyện đua tranh giữa các request song song — **GLM chỉ
+cache khi request trùng gần như toàn bộ.**
+
+Điều đó giải thích cả hai con số của §6: 94,8% là vì tôi gửi lại **request giống
+hệt**; 4,0% là vì các request khác nhau. Cả hai đều đúng, và cả hai đều không
+phải chế độ vận hành.
+
+Ngược lại DeepSeek đo được **49,1%** trên tập request *khác nhau* — sát trần 55%.
+Nên DeepSeek **có** prefix caching thật, và ở §6 tôi đã đọc nhầm chính con số đó
+thành "cache còn nguội". Bằng chứng bác bỏ nằm trong bảng tôi tự in ra, cách chỗ
+tôi viết kết luận sai đúng ba dòng.
+
+⭐ **Bài học chung với `W3-01`/`W3-05`/`W3-07` nhưng ở dạng mới:** một phép đo lặp
+lại chính nó đo **khả năng ghi nhớ**, không đo khả năng làm việc. Muốn đo cache
+tiền tố thì đầu vào phải *khác nhau ở phần đuôi và giống nhau ở phần đầu* — đúng
+hình dạng của workload thật, chứ không phải bản sao của một mẫu.
+
+### Bảng quyết định (thay cho bảng ở §6)
+
+| đường | cache tiền tố | cost/1000 | cả corpus 15.814 |
+|---|---|---:|---:|
+| GLM-5.3-Flash | ❌ không | $0,6196 *(đo)* | **~$10,6** |
+| DeepSeek-v4-flash | ✅ 49,1% | $0,78 *(chiếu)* | ~$12,4 |
+| vLLM Qwen3-8B / 4090 | ✅ tự động | theo giờ | tiền thuê × 2,5–3,5 h *(tính)* |
+
+⭐ **Hệ quả cho kế hoạch — ngược hẳn §6:** đường API **không** rẻ. Với workload
+chia sẻ 48,7% tiền tố, pod chạy vLLM là đường duy nhất thu được khoản đó, vì
+automatic prefix caching của vLLM là prefix trie thật. `W3-04` **bị ngân sách
+chặn lại**, không còn "không bị GPU chặn" như §6 kết luận.
+
+### ⭐⭐ Cắt prompt cho rẻ: rẻ đúng 2× và hỏng 95%
+
+Không có cache thì `<document_head>` (49% mỗi prompt) bị trả tiền lại từ đầu cho
+từng chunk trong ~185 chunk của tài liệu. Nên thử `--head-tokens 500
+--window-tokens 800`: prompt nhỏ **2,06×**, cost/1000 xuống **$0,3113**, cả
+corpus còn ~$5,2.
+
+40 request đầu trông hoàn hảo — cùng độ dài, cùng nội dung, 40/40 nêu đúng tổ
+chức và năm. Nhưng 40 request đó **đều là chunk đầu tài liệu**. Chạy hết 385
+request để có cả chunk sâu thì:
+
+| | ngữ cảnh nêu **đúng tên tài liệu** |
+|---|---:|
+| head 2000 (mặc định) | 256/260 — sai **1,5%** |
+| head 500 | 12/260 — sai **95%** |
+
+Bản `slim` bịa tên báo cáo là «Việt Nam 2035: Từ chiến lược đến hành động» trong
+khi tài liệu thật là «Thị trường lao động và sự bùng phát đại dịch COVID-19 ở
+Việt Nam». Bìa là OCR lẫn banner chương trình đứng **trước** tên báo cáo thật;
+head 500 thấy cả hai và chọn nhầm cái nổi bật hơn, head 2000 có thêm tiêu đề
+chạy và mục lục phía sau để phân định.
+
+⚠️⚠️ **Hai chỉ số bề mặt của tôi đạt 100% trên chính những ngữ cảnh bịa đặt.**
+"Có nêu tên tổ chức" 354/354, "có nêu năm" 354/354 — vì ngữ cảnh bịa vẫn nói
+"Ngân hàng Thế giới" và vẫn có một năm trong đó. Proxy đo cái **dễ đo** chứ không
+đo cái **cần đo**; phải đối chiếu tên tài liệu với sự thật mới thấy. Cùng khuôn
+với `KHÔNG SO ĐƯỢC` đi chung đường với "hoà" ở `W2-08`: một nhãn xanh trên một
+thứ chưa từng được kiểm.
+
+⭐ Và bẫy vị trí mẫu **lặp lại lần thứ hai trong cùng một buổi** — 40 chunk đầu
+cho kết luận ngược với 385 chunk đủ. Lần này tôi đã ngờ và chạy tiếp; đó là khác
+biệt duy nhất giữa nó và §6.
+
+### Chất lượng lượt chạy thật (860 chunk, head 2000)
+
+0 lỗi · 0 rỗng · 0 cắt lời · độ dài p50 389 ký tự · đúng ngôn ngữ tài liệu.
+
+⚠️ Hai khiếm khuyết đo được, cả hai chưa chữa:
+- **0,35% rò token tiếng Trung** giữa câu tiếng Việt (`討论`, `免责`) — GLM là
+  model Trung Quốc. Ở quy mô corpus là ~55 chunk. Phát hiện bằng regex CJK nên
+  chữa rẻ → `TD-33`.
+- **1,5% nêu sai tên tài liệu** ngay cả với head 2000 → `TD-34`.
+
+### Đường chưa làm: gộp nhiều chunk mỗi request
+
+Gửi 8 chunk liền kề trong một request thì `<document_head>` chia cho 8, và vùng
+lân cận của chúng chồng lấn nên gộp lại gần như một dải liền. Ước tính đưa corpus
+về **~$2–2,5**. Đúng về kinh tế, nhưng đổi định dạng artifact, cần bóc tách 8 ngữ
+cảnh trả về, cần chốt chặn chống lệch thứ tự, và một response hỏng làm mất 8
+chunk thay vì 1 → `TD-32`.
+
+### Đã chi
+
+$0,6617 cho 860 ngữ cảnh dùng được + 385 ngữ cảnh `slim` để bác bỏ đường cắt
+prompt.
+
+---
 
 ### ⚠️ Một mặc định duy nhất cho ba backend là một cái bẫy
 
