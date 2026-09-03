@@ -1,0 +1,23 @@
+{
+  "n_requests": 3980,
+  "n_done": 3956,
+  "n_skipped": 2700,
+  "n_failed": 828,
+  "n_rejected": 207,
+  "n_empty": 0,
+  "n_truncated": 0,
+  "prompt_tokens": 5126410,
+  "completion_tokens": 483195,
+  "cached_tokens": 8704,
+  "reasoning_tokens": 2273,
+  "api_cost_usd": 1.0095145200000004,
+  "gpu_cost_usd": 0.0,
+  "elapsed_s": 1132.0849688000017,
+  "models_served": [
+    "glm-5.3-flash"
+  ],
+  "stopped_early": "W3-04/glm: đã tiêu $0.9957, lời gọi kế ước $0.0048, trần $1.0000",
+  "total_cost_usd": 1.009515,
+  "cost_per_1000_usd": 0.255186,
+  "cache_hit_rate": 0.0017
+}

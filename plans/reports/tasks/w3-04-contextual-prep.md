@@ -355,6 +355,181 @@ prompt.
 
 ---
 
+## 6ter. `TD-32` — gộp 8 chunk mỗi lời gọi, và hai lần chốt chặn hỏi sai câu
+
+`§6bis` để lại `W3-04` bị ngân sách chặn: ~$10,6 cho cả corpus, số dư $5,62.
+Đòn bẩy duy nhất còn lại là **đừng gửi lại `<document_head>` cho từng chunk**.
+
+### Số học của việc gộp
+
+Các chunk trong một nhóm liền kề nhau nên chúng **đã là vùng lân cận của nhau** —
+chunk giữa nhóm nhìn thấy hàng xóm thật ngay trong `<passages>`. Chỉ hai đầu nhóm
+còn thiếu, và đó là phần `<before>`/`<after>` bù vào. Nên gộp không chỉ chia nhỏ
+head mà còn **bỏ được phần lân cận chồng lấn**:
+
+| | token/chunk | cost/1000 | cả corpus |
+|---|---:|---:|---:|
+| một chunk mỗi lời gọi | 4.070 | $0,6196 | ~$10,6 |
+| gộp 4 | 1.176 | ~$0,26 *(chiếu)* | ~$4,1 |
+| **gộp 8** | **728** | **$0,1603** | **~$2,5** |
+
+### ⭐⭐ Lỗi mà chế độ gộp mở ra, và vì sao nó im lặng
+
+Model trả về N dòng cho N passage. Nếu nó gán ngữ cảnh của passage 2 cho dòng 1
+thì **không có gì đỏ**: đủ số dòng, đúng số thứ tự, mỗi dòng một câu hợp lệ.
+Chunk nhận nhầm ngữ cảnh đi thẳng vào vector và chỉ hiện ra dưới dạng metric tệ
+hơn mà không ai truy được vì sao.
+
+Chốt chặn: mỗi dòng phải **chép lại 4 từ đầu** của passage nó mô tả. Không có gì
+kiểm được thứ tự bằng cấu trúc, nhưng chuỗi chép lại thì kiểm được. Giá: ~24
+token output mỗi lô, tức **~$0,02 cho cả corpus**.
+
+**Đo được: chốt chặn bắt ~17% số lô lệch thứ tự.** Bằng chứng từng ca rất rõ —
+dòng `[7]` echo giống passage `[8]` ở mức 0,83 trong khi giống passage `[7]` của
+chính nó ở mức 0,08. Không có chốt chặn thì từng ấy chunk đã nhận ngữ cảnh sai.
+
+### ⚠️⚠️ Nhưng chốt chặn hỏi sai câu, hai lần
+
+**Lần một — so bằng nhau đúng từng chữ.** Từ chối **109/110 lô** ở lượt canary
+đầu. Đọc lại 18 ca không phải tiền tố thì **không ca nào lệch thật**: model đang
+*dọn* văn bản OCR.
+
+| model chép | passage thật |
+|---|---|
+| `"phụ lục 2: phân tích tác động"` | `"55 phụ lục 2"` *(bỏ số trang)* |
+| `"tương đương trước đại dịch"` | `"tương trướcđại đươngtrước đạidịch"` *(gỡ chữ đan xen hai cột)* |
+
+Chốt chặn hỏi *"có chép đúng từng chữ không"* trong khi câu cần hỏi là **"có chỉ
+đúng passage không"**. Hai câu ấy chỉ trùng nhau khi văn bản sạch, mà corpus này
+là OCR hai cột. Sửa: so với **mọi** passage trong lô và đòi passage đúng phải là
+cực đại — hoán đổi làm cực đại rơi sang passage kia nên bị bắt, còn nhiễu OCR tác
+động lên mọi phép so như nhau nên không đổi thứ hạng.
+
+**Lần hai — cho qua khi echo không giống passage nào.** Lý lẽ nghe hợp lý: "không
+có bằng chứng lệch thì đừng từ chối". Nhưng một ca thật phá nó — echo `"hiện có.
+Việt Nam có thể"` trong khi passage `[2]` mở đầu bằng `"hỗ trợ theo các"`, hai
+đoạn khác hẳn nhau. **Không có bằng chứng lệch không phải bằng chứng không
+lệch.** Đường lùi một-chunk *không thể* lệch và giá của nó biết trước, nên khi
+không xác nhận được thì trả về đường lùi: đổi một rủi ro im lặng không chặn trên
+lấy một khoản chi đo được.
+
+### ⭐⭐ Và prompt gộp đầu tiên làm tụt chất lượng ở chỗ không ai nghĩ tới
+
+Trên **cùng 286 chunk**, đối chiếu ba đường:
+
+| | dài p50 | nêu tên tổ chức | nêu năm |
+|---|---:|---:|---:|
+| một chunk mỗi lời gọi | 400 ký tự | **285/286 (100%)** | 286/286 |
+| gộp, prompt v1 | 233 ký tự | **200/286 (70%)** | 218/286 (76%) |
+| gộp, prompt v2 | 311 ký tự | **286/286 (100%)** | 286/286 |
+
+Prompt v1 cho ra *"Đoạn này nằm ở cuối mục 1.2.2…"* thay vì *"Trong báo cáo
+'Thúc đẩy phát triển kinh tế biển Việt Nam bền vững' của Ngân hàng Thế giới
+(2025), đoạn này…"*.
+
+Model làm điều **hợp lý**: không lặp lại tên tài liệu tám lần trong một câu trả
+lời. Nhưng mỗi ngữ cảnh được **embed độc lập**, nên đúng những từ mà câu hỏi sẽ
+dùng lại bị bỏ đi ở 30% chunk — tức chính thứ Contextual Retrieval sinh ra để
+thêm vào. Sửa bằng cách nói thẳng điều model không thể tự biết:
+
+> *Each sentence you write is stored separately and later read ON ITS OWN, with
+> no access to the other passages, to your other answers, or to this prompt.*
+
+⚠️ Bài học rộng hơn: **gộp lời gọi không chỉ đổi chi phí, nó đổi cả ngữ cảnh mà
+model dùng để quyết định viết gì.** Kiểm "định dạng có đúng không" hoàn toàn không
+bắt được điều này — v1 đạt 100% về định dạng.
+
+### Vì sao phát hiện được
+
+Chỉ vì có **860 ngữ cảnh một-chunk sinh trước đó trên cùng chunk** để đối chiếu.
+Nhìn riêng bản gộp thì nó đọc rất trôi chảy và không có gì gợi ý là thiếu. Một
+artifact cũ tưởng là bỏ đi lại thành nhóm đối chứng.
+
+### Ba sửa đổi kèm theo, đều sinh ra từ tiền đã mất
+
+- **File lỗi lưu cả câu trả lời thô.** Bản đầu chỉ ghi lý do; sau khi sửa chốt
+  chặn thì 92/109 lô lẽ ra bóc được nhưng văn bản đã không còn, nên phải gọi lại.
+  Lưu lại biến "sửa parser" từ việc **mua lại** dữ liệu thành **bóc lại** dữ liệu
+  đã mua.
+- **`--max-tokens` nhân theo số chunk của lô.** Lô 8 chunk chạy với trần của một
+  chunk sẽ cắt lời ở chunk thứ hai, và triệu chứng là `BatchParseError` hàng loạt
+  — một thông báo không nói ra nguyên nhân.
+- **`--skip-done-chunks`** nối lượt gộp với lượt lùi. Sai một chiều thì trả tiền
+  lại cho 13.000 chunk đã xong; sai chiều kia thì ~2.800 chunk bị bỏ lại vĩnh
+  viễn và chỉ hiện ra thành `coverage` thiếu vài phần trăm.
+
+`run_requests` trước đó **không có test nào** dù nó quyết định cả hai điều trên.
+Giờ có 17.
+
+---
+
+## 6quater. Lượt chạy thật — 95,2% corpus trong $5,62
+
+Ngân sách cứng: $5,62, không nạp thêm.
+
+| lượt | chunk sinh được | cost/1000 | chi phí | lô bị từ chối |
+|---|---:|---:|---:|---:|
+| đo lường + canary | — | — | $0,93 | — |
+| ⚠️ b8 prompt v1 *(vứt đi)* | 9.355 | ~$0,16 | **~$1,50** | ~18% |
+| b8 prompt v2 | 11.839 | $0,1724 | $2,04 | 20,4% |
+| b4 lùi | 3.956 | $0,2552 | $1,00 *(chạm trần)* | 207 lô |
+| | **15.058 / 15.814 = 95,2%** | | **~$5,47** | |
+
+### Chất lượng artifact cuối
+
+| | giá trị |
+|---|---:|
+| độ dài p50 | 349 ký tự |
+| nêu tên tổ chức | **92,2%** |
+| nêu năm | 99,9% |
+| rò token tiếng Trung (`TD-33`) | **0,07%** *(từ 0,35%)* |
+| nêu sai tên tài liệu (`TD-34`), trên tài liệu từng hỏng | **0,4%** *(một-chunk: 1,5%)* |
+
+756 chunk (4,8%) không có ngữ cảnh, rải trên 39/60 tài liệu, nhiều nhất 76 chunk
+ở một tài liệu. `apply_contexts` giữ nguyên chunk khi thiếu — đúng nửa "fail 1
+chunk không làm sập cả job" của DoD.
+
+### ⚠️⚠️ Một phần tư ngân sách đi vào thùng rác vì tôi tin `TaskStop`
+
+Khi phát hiện prompt v1 làm tụt chất lượng, tôi dừng lượt đang chạy rồi sửa
+prompt. Lệnh dừng báo thành công — **nhưng nó giết shell bao ngoài, không giết
+tiến trình python.** Tiến trình ấy chạy tiếp gần một giờ.
+
+Điều làm nó thành lỗi im lặng thay vì lỗi ồn ào: `_append_contexts` mở file
+**theo từng lần ghi**, nên sau khi tôi `mv` artifact sang thư mục bằng chứng, mỗi
+lần ghi tiếp lại **tạo lại file ở đúng đường dẫn cũ**. Hai lượt, hai gói request,
+một file — và không có gì báo.
+
+Phát hiện ra chỉ vì một con số không cộng lại đúng: **16.309 dòng cho 15.814
+chunk**. Cùng khuôn với bug 64 ms của `W2-04`, tìm ra vì các con số không khớp
+chứ không vì có ai báo lỗi.
+
+Giá: **~$1,50, tức 27% ngân sách**, đổi lấy 9.355 ngữ cảnh phải vứt đi.
+
+⭐ Cứu được là nhờ một quyết định thiết kế có từ trước: `load_contexts(path,
+keys=...)` lọc theo tập khoá của lượt hiện tại. Nó được viết để xử lý "artifact
+lẫn hai cấu hình", và đây đúng là ca ấy — chỉ khác là tôi không hề định tạo ra
+nó. Tách hai lượt ra khỏi nhau là một phép lọc, không phải một cuộc điều tra.
+
+**Bài học vận hành:** dừng một job tính tiền phải **kiểm bằng danh sách tiến
+trình**, không tin giá trị trả về của lệnh dừng. Và một job ghi nối vào file thì
+đổi tên file **không** tách được nó khỏi tiến trình đang ghi.
+
+### Cache: lần thứ ba cùng một lỗi đo
+
+Giữa chừng tôi thấy canary b8 báo **41,8% cache trúng** và đã viết rằng gộp làm
+cache hoạt động trở lại. Sai. Canary ấy chạy **lại đúng 110 lô vừa gọi vài phút
+trước**, nên nó lại đo cache khớp-nguyên-request.
+
+Lượt chạy thật trên 2.009 lô khác nhau: **0,9%**. Lượt b4: **0,2%**.
+
+Đây là lần thứ ba trong cùng một task tôi đo cache bằng cách gửi lại thứ vừa
+gửi. Hai lần đầu còn có thể gọi là bất cẩn; lần thứ ba nghĩa là **phép đo cache
+mặc định của tôi có hình dạng sai** — nó phải bắt đầu từ "đầu vào này đã từng
+được gửi chưa", chứ không từ "con số báo bao nhiêu".
+
+---
+
 ### ⚠️ Một mặc định duy nhất cho ba backend là một cái bẫy
 
 `--backend glm` mà quên `--model` gửi slug mặc định `Qwen/Qwen3-8B` sang Z.ai và

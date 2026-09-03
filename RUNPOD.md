@@ -76,13 +76,42 @@ bịa đặt** — "có nêu tên tổ chức" 354/354, "có nêu năm" 354/354.
 nói "Ngân hàng Thế giới" và vẫn có một năm trong đó. Proxy chất lượng đo cái dễ
 đo chứ không đo cái cần đo; phải so tên tài liệu với sự thật mới thấy.
 
-### Còn một đường chưa làm: gộp nhiều chunk mỗi request
+### ✅ Đường đã làm: gộp 8 chunk mỗi request (`TD-32`)
 
 Gửi 8 chunk liền kề trong một request thì `<document_head>` được chia cho 8, và
-vùng lân cận của chúng chồng lấn nhau nên gộp lại gần như một dải liền. Ước tính
-đưa corpus về **~$2–2,5** trên GLM. Đây là cách chữa đúng về kinh tế, nhưng nó
-đổi định dạng artifact, cần bóc tách 8 ngữ cảnh trả về, cần chốt chặn chống lệch
-thứ tự, và một response hỏng làm mất 8 chunk thay vì 1. Chưa làm — ghi ở `TD-32`.
+vùng lân cận của chúng chồng lấn nên gộp lại gần như một dải liền.
+
+| | token/chunk | cost/1000 | cả corpus |
+|---|---:|---:|---:|
+| một chunk mỗi lời gọi | 4.070 | $0,6196 | ~$10,6 |
+| **gộp 8** | **728** | **$0,1724** | **~$2,7** |
+
+⭐ **Kết quả: `W3-04` chạy xong trên laptop trong ngân sách $5,62** — 15.058/15.814
+chunk (95,2%), hết ~$5,47. **Không cần pod cho `W3-04`.**
+
+⚠️ Gộp mở ra một lỗi im lặng: model trả đủ N dòng, đúng số thứ tự, mỗi dòng hợp
+lệ, nhưng gán ngữ cảnh của passage 2 cho dòng 1. Chốt chặn là bắt mỗi dòng chép
+lại 4 từ đầu của passage nó mô tả; **đo được nó bắt ~17–20% số lô**. Lô bị từ
+chối lùi sang `b4` rồi `b1` qua `--skip-done-chunks`.
+
+```bash
+make ctx-prepare CTX_B=8        # corpus → data/contexts/requests-b8.jsonl.gz
+make ctx-run-glm CTX_B=8 CAP=2.6
+make ctx-fallback               # b4 rồi b1 cho phần bị từ chối
+make ctx-coverage               # còn thiếu chunk nào
+```
+
+⚠️ **Dừng job phải kiểm bằng danh sách tiến trình.** Lệnh dừng của trình bao có
+thể giết shell mà không giết python, và vì job mở file theo từng lần ghi nên đổi
+tên artifact **không** tách nó khỏi tiến trình đang ghi. Một tiến trình zombie đã
+tiêu 27% ngân sách vào ngữ cảnh phải vứt đi trước khi bị phát hiện.
+
+### Pod còn cần cho việc gì
+
+`W5-11` (ablation generator) **bắt buộc** có vLLM, không thay thế được bằng API.
+`W0-05` (dựng môi trường GPU) là điều kiện của nó. Phần còn lại của tài liệu này
+vẫn dùng được nguyên vẹn cho lượt ấy — chỉ đổi `--backend glm` thành
+`--backend vllm`.
 
 ## 1. Chuẩn bị ở laptop (~5 phút, $0)
 
