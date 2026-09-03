@@ -13,11 +13,13 @@ import pytest
 
 from pipeline.indexing.contextualize import (
     DEFAULT_MODEL,
-    MIN_REASONING,
     VLLM_BASE_URL,
     build_provider,
 )
-from rag_core.llm import DEEPSEEK_PRICING, GLM_BASE_URL, GLM_PRICING
+
+# `MIN_REASONING` chuyển sang `rag_core.llm` ở `W4-06`: đường serving cần đúng
+# bảng số đo này, và `serving` không được import `pipeline`.
+from rag_core.llm import DEEPSEEK_PRICING, GLM_BASE_URL, GLM_PRICING, MIN_REASONING
 
 BACKENDS = ("glm", "deepseek", "vllm")
 

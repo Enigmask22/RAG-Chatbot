@@ -29,21 +29,33 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
 from rag_core.bundle import latest_bundle
+from rag_core.llm import (
+    DEFAULT_DEEPSEEK_MODEL,
+    DEFAULT_GLM_MODEL,
+    MIN_REASONING,
+    StreamingLLM,
+    build_deepseek_provider,
+    build_glm_provider,
+)
 from rag_core.settings import Settings, get_settings
-from serving.api import admin, health
+from serving.api import admin, chat, health
 from serving.api.middleware import RequestContextMiddleware
 from serving.api.security import AuthMiddleware
 from serving.core.auth import ApiKeyStore
+from serving.core.chat import ChatService
 from serving.core.logging import configure_logging
 from serving.core.probes import Check, ReadinessProbes
 from serving.core.ratelimit import RateLimiter
 from serving.core.registry import BundleRegistry, RuntimeBuilder
 from serving.core.runtime import QdrantRuntimeBuilder
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 __all__ = ["create_app"]  # `app` do `__getattr__` ở cuối file cấp
 
@@ -127,6 +139,60 @@ def _postgres_check() -> Check:
     return check
 
 
+def build_llm(settings: Settings) -> StreamingLLM | None:
+    """Nguồn sinh text của `POST /chat` — `W4-06`.
+
+    ⭐ Trả `None` thay vì ném khi thiếu key. Cùng lý lẽ với việc bundle nạp lỗi
+    không giết tiến trình (§đầu module): một container không lên được thì không
+    có `/ready` nào để hỏi vì sao, và ở đây còn tệ hơn vì `/health`, `/ready`,
+    `/admin/bundle` đều còn dùng được bình thường mà không cần LLM. Thiếu key
+    làm hỏng đúng **một** endpoint, nên nó phải hỏng đúng một endpoint.
+    """
+    if settings.chat_provider == "none":
+        return None
+    key = (
+        settings.deepseek_api_key if settings.chat_provider == "deepseek" else settings.glm_api_key
+    )
+    if key is None:
+        logger.warning(
+            "chat_provider=%s nhưng chưa có API key — POST /chat sẽ trả 503, "
+            "phần còn lại của API vẫn chạy",
+            settings.chat_provider,
+        )
+        return None
+    if settings.chat_provider == "deepseek":
+        return build_deepseek_provider(
+            settings.chat_model or DEFAULT_DEEPSEEK_MODEL,
+            api_key=key.get_secret_value(),
+            base_url=settings.deepseek_base_url,
+        )
+    return build_glm_provider(
+        settings.chat_model or DEFAULT_GLM_MODEL,
+        api_key=key.get_secret_value(),
+        base_url=settings.glm_base_url,
+    )
+
+
+def build_sessions() -> async_sessionmaker[AsyncSession] | None:
+    """Factory phiên async cho đường request (`W4-06`).
+
+    Engine dựng ở đây và sống suốt vòng đời tiến trình — `create_async_engine`
+    không mở kết nối nào cho tới lượt dùng đầu, nên nó rẻ lúc khởi động và
+    không kéo dài thời gian tới lúc `/health` trả lời.
+
+    Tách khỏi engine **đồng bộ** của `_postgres_check`: probe chạy trong
+    threadpool với `pool_size=1`, đường request chạy trên vòng lặp sự kiện. Dùng
+    chung một pool thì một `/ready` chậm giữ mất kết nối của một `/chat`.
+    """
+    try:
+        from serving.db.engine import async_session_factory, make_async_engine
+
+        return async_session_factory(make_async_engine())
+    except Exception:
+        logger.exception("không dựng được engine async — POST /chat sẽ trả 503")
+        return None
+
+
 def build_probes(registry: BundleRegistry) -> ReadinessProbes:
     """Tập phép thử của `/ready` — bundle + Qdrant + Postgres, đủ DoD `W4-03`."""
     return ReadinessProbes(
@@ -190,6 +256,15 @@ def create_app(
     )
     api.state.registry = registry
     api.state.probes = probe_factory(registry)
+    api.state.chat = ChatService(
+        registry=registry,
+        sessions=build_sessions(),
+        llm=build_llm(resolved),
+        top_k=resolved.chat_top_k,
+        max_tokens=resolved.chat_max_tokens,
+        # Bảng đo được ở `W3-04`, dùng lại nguyên vẹn — xem `ChatService.extra_body`.
+        extra_body=MIN_REASONING.get(resolved.chat_provider),
+    )
     # ⚠️ **Thứ tự quan trọng và nó ngược trực giác.** `add_middleware` *chèn lên
     # đầu*, nên cái thêm **sau** nằm **ngoài**. Auth phải thêm trước để
     # `RequestContextMiddleware` bọc ngoài nó — nếu ngược lại thì mọi phản hồi
@@ -204,6 +279,7 @@ def create_app(
     api.add_middleware(RequestContextMiddleware)
     api.include_router(health.router)
     api.include_router(admin.router)
+    api.include_router(chat.router)
     return api
 
 

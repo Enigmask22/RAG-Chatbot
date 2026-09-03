@@ -136,6 +136,29 @@ class Message(Base, _Tenanted):
     khi ghi, nên cái nằm ở đây đã là dữ liệu đã kiểm."""
 
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+
+    model: Mapped[str | None] = mapped_column(String(128))
+    """Model **thực tế** đã sinh ra `content` — `W4-06`.
+
+    ⭐ Quy tắc cứng #1 của dự án ("log model thực tế đã phục vụ request") tới giờ
+    chỉ sống trong một dòng log, tức nó biến mất theo chính sách giữ log. Câu hỏi
+    mà trường này trả lời là câu hỏi của tháng sau: *"cái câu trả lời tệ mà khách
+    hàng vừa gửi lại — nó do model nào sinh ra?"* Sau khi `W4-08` bật fallback,
+    một phần traffic sẽ do model dự phòng phục vụ, và không có cột này thì không
+    cách nào tách hai nhóm ấy ra để so.
+
+    `NULL` cho message của người dùng.
+    """
+
+    finish_reason: Mapped[str | None] = mapped_column(String(32))
+    """Vì sao dòng token dừng: `stop`, `length`, `client_disconnect`, `error`.
+
+    ⚠️ Không có trường này thì một câu trả lời **cụt** không phân biệt được với
+    một câu trả lời **ngắn** — cả hai chỉ là text trong `content`. Và ba trong
+    bốn giá trị trên chỉ xảy ra ở đường stream, tức chúng không tồn tại cho tới
+    đúng hạng mục này.
+    """
+
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
     __table_args__ = (

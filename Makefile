@@ -405,7 +405,10 @@ api-key:  ## W4-04: cấp API key mới. TENANT=acme [SCOPE=admin] [RPM=60]. In 
 
 .PHONY: serve
 serve:  ## W4-03: chạy API serving (đọc BUNDLE_ROOT / BUNDLE_VERSION từ .env)
-	$(PY) uvicorn serving.api.app:app --host 127.0.0.1 --port 8000
+# `python -m serving`, KHÔNG `uvicorn` trực tiếp (W4-06): trên Windows uvicorn
+# dựng `ProactorEventLoop`, thứ mà driver async của psycopg không chạy được —
+# nên `POST /chat` trả 503 ở mọi request. Xem docstring `serving/__main__.py`.
+	$(PY) python -m serving --host 127.0.0.1 --port 8000
 
 .PHONY: serve-check
 serve-check:  ## W4-03: hỏi /health + /ready của một tiến trình đang chạy

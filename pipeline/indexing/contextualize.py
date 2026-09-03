@@ -50,6 +50,7 @@ from rag_core.chunking.contextual import (
     parse_response,
 )
 from rag_core.chunking.tokens import TokenCounter
+from rag_core.llm import MIN_REASONING
 from rag_core.llm.base import ChatMessage, LLMError, LLMProvider
 from rag_core.llm.budget import BudgetExceeded, CostBudget
 
@@ -80,38 +81,7 @@ modelCode: does not exist`. Ở laptop thì vô hại — xử lý lỗi đúng 
 20 lỗi ghi ra file riêng, artifact chính không bẩn, chạy lại là thử lại. Trên
 pod thì đó là mấy phút tiền thuê đổi lấy một file lỗi."""
 
-MIN_REASONING: dict[str, dict[str, Any]] = {
-    # `deepseek-v4-flash`, đo 2026-09-03, cùng prompt, `max_tokens=512`:
-    #   khong dat                    -> reasoning 275, completion 328
-    #   thinking={"type":"disabled"} -> reasoning   0, completion 138
-    #   reasoning_effort="none"      -> reasoning   0, completion  87
-    #   chat_template_kwargs=...     -> reasoning 159, completion 219  (NHAN roi BO QUA)
-    "deepseek": {"thinking": {"type": "disabled"}},
-    # `glm-5.3-flash`, cung prompt, cung ngay. Model nay **khong tat duoc** suy
-    # luan -- API tra HTTP 400 ma`1210`: "This model always engages in thinking
-    # and cannot be disabled; please use low, high, or max". Ba muc hop le, do
-    # tren cung mot prompt:
-    #   khong dat            -> reasoning 165, completion 243, content 401 ky tu
-    #   reasoning_effort=low -> reasoning   0, completion  70, content 383
-    #   reasoning_effort=high-> reasoning  40, completion 118, content 393
-    #   reasoning_effort=max -> reasoning 180, completion 255, content 411
-    # `low` cho `reasoning_content` **rong that** (0 ky tu), khong phai field bi
-    # giau di -- da doc response tho de kiem. Do dai content khong doi dang ke,
-    # nen 3,5x output do la tiet kiem sach.
-    "glm": {"reasoning_effort": "low"},
-    # vLLM/Qwen3: chat template cua Qwen3 doc `enable_thinking`. Day moi la cho
-    # tham so ay CO tac dung -- DeepSeek nhan no roi bo qua.
-    "vllm": {"chat_template_kwargs": {"enable_thinking": False}},
-}
-"""Tham số **giảm suy luận tới mức thấp nhất provider cho phép**, đã đo từng cái.
-
-Tên là `MIN_REASONING` chứ không phải `NO_THINKING` vì GLM-5.3-Flash **không tắt
-được**: nó chỉ nhận `low`/`high`/`max`. Gọi tên sai ở đây sẽ dẫn tới đọc sai một
-báo cáo chi phí về sau.
-
-⚠️ Hai trong bốn dòng trên là **tham số được nhận, không lỗi, và không có tác
-dụng** nếu đặt nhầm nhà: `chat_template_kwargs` với DeepSeek (vẫn 159 token suy
-luận), và `thinking={"type":...}` với GLM (HTTP 400). Không đo thì tưởng đã tắt."""
+# `MIN_REASONING` đã chuyển sang `rag_core.llm` — xem `_reasoning_note` ở đó.
 
 
 # ---------------------------------------------------------------- artifact

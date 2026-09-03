@@ -20,14 +20,22 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
-from typing import Any, Literal
+from collections.abc import AsyncIterator, Mapping, Sequence
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..schemas import TokenUsage
 
-__all__ = ["ChatMessage", "LLMError", "LLMProvider", "LLMResponse", "ModelPricing"]
+__all__ = [
+    "ChatMessage",
+    "LLMChunk",
+    "LLMError",
+    "LLMProvider",
+    "LLMResponse",
+    "ModelPricing",
+    "StreamingLLM",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +95,62 @@ class LLMResponse(BaseModel):
     def model_drifted(self) -> bool:
         """`True` khi provider phục vụ bằng model khác model đã yêu cầu."""
         return self.model.split(":")[0] != self.model_requested.split(":")[0]
+
+
+class LLMChunk(BaseModel):
+    """Một mẩu của phản hồi dạng dòng — `W4-06`.
+
+    **Một** kiểu thay vì hai (`Delta` | `End`) là quyết định có chủ đích: người
+    tiêu thụ viết `async for` một vòng và kiểm `chunk.final is not None` để biết
+    đã hết, thay vì phải `isinstance` trong vòng lặp nóng nhất của hệ thống.
+
+    ⭐ `final` mang nguyên một `LLMResponse` chứ không chỉ `usage`, vì đúng ba
+    điều mà docstring module ép ở đường không-stream cũng phải đúng ở đây —
+    nhất là điều 1: **model thực tế đã phục vụ**. Provider trả `model` trong
+    *từng* mẩu SSE, nên bỏ qua nó ở đường stream là mở lại đúng cái lỗ mà đường
+    `complete()` đã đóng, ở chỗ 100% traffic production sẽ đi qua.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    delta: str = ""
+    """Phần text mới. Rỗng là hợp lệ: mẩu cuối của OpenAI-compat chỉ mang `usage`."""
+
+    final: LLMResponse | None = None
+    """Khác `None` **chỉ ở mẩu cuối cùng**, và `text` của nó là toàn bộ câu trả lời."""
+
+
+@runtime_checkable
+class StreamingLLM(Protocol):
+    """Khả năng *tuỳ chọn*: sinh text theo dòng.
+
+    ⚠️ Cố ý **không** thêm `astream` thành `@abstractmethod` của `LLMProvider`.
+    Streaming là nhu cầu của **serving**; pipeline plane (sinh golden set, judge,
+    contextualize) chỉ cần một câu trả lời đầy đủ và sẽ không cài nó bao giờ.
+    Ép nó vào ABC thì mọi provider giả trong test — và mọi provider tương lai chỉ
+    phục vụ offline — phải viết một hàm rỗng, tức interface nói dối về cái nó đòi.
+
+    `W4-08` (LLM Router) sẽ cài đúng Protocol này, nên `ChatService` không phải
+    đổi một dòng nào khi router thay chỗ provider đơn.
+    """
+
+    name: str
+    model: str
+
+    def astream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+        extra_body: Mapping[str, Any] | None = None,
+    ) -> AsyncIterator[LLMChunk]:
+        """Mẩu cuối **bắt buộc** có `final`; thiếu nó là vi phạm hợp đồng.
+
+        Người gọi dựa vào điều đó để biết phân biệt "model nói xong" với "kết nối
+        đứt giữa chừng" — hai thứ trông y hệt nhau nếu chỉ nhìn dòng token.
+        """
+        ...
 
 
 class LLMProvider(ABC):

@@ -34,13 +34,19 @@ tải (lúc pool thật sự tái dùng kết nối), tức không bao giờ x�
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session, sessionmaker
 
 from rag_core.settings import get_settings
@@ -48,7 +54,10 @@ from serving.db.models import TENANT_SETTING
 
 __all__ = [
     "MigrationStateError",
+    "async_session_factory",
+    "atenant_session",
     "expected_revision",
+    "make_async_engine",
     "make_engine",
     "postgres_check",
     "tenant_session",
@@ -125,6 +134,64 @@ def tenant_session(factory: sessionmaker[Session], tenant_id: str) -> Iterator[S
             # `SET` không nhận placeholder, nên nối chuỗi là con đường duy nhất
             # còn lại — và `tenant_id` đến từ token, nhưng "đến từ token" không
             # phải một lý do để bỏ phép tham số hoá.
+            text(f"SELECT set_config('{TENANT_SETTING}', :tenant, true)"),
+            {"tenant": tenant_id},
+        )
+        yield session
+
+
+# --------------------------------------------------------------------- async
+#
+# `W4-06` là hạng mục đầu tiên chạm DB **trên đường request**, và đường đó là
+# async. `psycopg` v3 nói được cả hai chế độ với **cùng một DSN** — đó chính là
+# lý do `W4-05` chọn nó thay `asyncpg` (xem docstring `pyproject`).
+
+
+def make_async_engine(dsn: str | None = None, **kwargs: Any) -> AsyncEngine:
+    """Engine async của **ứng dụng** — cùng role `rag_app`, cùng lý do."""
+    return create_async_engine(dsn or get_settings().postgres_app_dsn, pool_pre_ping=True, **kwargs)
+
+
+def async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """⚠️ `expire_on_commit=False` là bắt buộc, không phải để cho tiện.
+
+    Mặc định của SQLAlchemy là hết hạn mọi thuộc tính sau `commit()`, nên lần
+    đọc kế tiếp là một lần `SELECT` **lười** — và ở async, lazy load ngoài phiên
+    ném `MissingGreenlet`, một thông báo không nói gì về nguyên nhân. Ở đây nó
+    còn tệ hơn thế: câu `SELECT` lười ấy chạy trong một transaction **mới**, tức
+    một transaction **không có** `app.tenant_id`, nên RLS trả rỗng.
+    """
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@asynccontextmanager
+async def atenant_session(
+    factory: async_sessionmaker[AsyncSession], tenant_id: str
+) -> AsyncIterator[AsyncSession]:
+    """Bản async của `tenant_session`.
+
+    ## ⭐⭐ Phiên này có giá trị đúng **một** transaction
+
+    `set_config(..., true)` là `SET LOCAL`: nó chết khi transaction kết thúc.
+    Nên `commit()` **ở giữa** block này không phải là "lưu tiến độ" — nó là
+    **tháo tenant ra**. Mọi câu sau đó chạy trong một transaction mới mà
+    `app.tenant_id` rỗng, và policy `tenant_id = current_setting(...)` khớp
+    không hàng nào.
+
+    Hướng hỏng lại tốt (rỗng, không phải dữ liệu người khác — đúng lý lẽ của
+    `W2-06`), nhưng triệu chứng thì đánh lừa: `SELECT` trả rỗng và `INSERT` bị
+    từ chối bởi `WITH CHECK`, cả hai **sau khi** một lệnh ghi đã thành công.
+    Trông y hệt một bug logic ở tầng trên.
+
+    Vì thế `W4-06` mở **hai** block ngắn quanh một stream dài thay vì một block
+    dài ôm cả stream — và điều đó hoá ra cũng đúng vì một lý do thứ hai, độc
+    lập: giữ một transaction mở suốt 30 giây sinh token là ghim một kết nối
+    Postgres cho mỗi người dùng đang gõ chuyện.
+
+    Có test ghim (`test_committing_midway_silently_drops_the_tenant`).
+    """
+    async with factory() as session:
+        await session.execute(
             text(f"SELECT set_config('{TENANT_SETTING}', :tenant, true)"),
             {"tenant": tenant_id},
         )

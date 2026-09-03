@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -118,6 +119,22 @@ class Settings(BaseSettings):
     để credential của môi trường test đi thẳng vào production, và nó không để
     lại dấu vết nào trong diff.
     """
+
+    # ------------------------------------------------------------ Chat (W4-06)
+    chat_provider: Literal["deepseek", "glm", "none"] = "deepseek"
+    """Nguồn sinh text của `POST /chat`. `none` = tắt hẳn đường sinh.
+
+    ⚠️ `none` **không** làm `/ready` đỏ. Một phép thử sẵn sàng gọi API trả tiền
+    là một phép thử tự sinh hoá đơn, nhân với số replica nhân với tần suất poll.
+    Thiếu key biểu hiện ở `POST /chat` bằng `503` kèm lý do, và ở một dòng cảnh
+    báo lúc khởi động. `W4-08` sẽ có circuit breaker để nói được nhiều hơn.
+    """
+
+    chat_model: str | None = None
+    """`None` = mặc định của provider (`DEFAULT_DEEPSEEK_MODEL` / `DEFAULT_GLM_MODEL`)."""
+
+    chat_top_k: int = Field(default=5, ge=1, le=50)
+    chat_max_tokens: int = Field(default=1024, ge=1)
 
     # ------------------------------------------------------------ Model
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"

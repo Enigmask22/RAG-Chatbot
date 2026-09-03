@@ -242,5 +242,20 @@ def test_ready_means_migrated_not_merely_reachable(migrated: Engine, owner_engin
 
 def test_the_expected_revision_comes_from_the_migration_folder() -> None:
     """Ghim một hằng số trong mã thì phải sửa tay mỗi lần thêm migration, và lần
-    quên đầu tiên biến phép thử sẵn sàng thành một phép thử luôn xanh."""
-    assert expected_revision() == "0001_initial"
+    quên đầu tiên biến phép thử sẵn sàng thành một phép thử luôn xanh.
+
+    ⚠️ Bản đầu của chính test này ghim `"0001_initial"` — tức nó mắc đúng cái nó
+    tồn tại để chặn, chỉ ở một file khác. `W4-06` thêm `0002` và nó đỏ ngay, nên
+    lần này cái giá chỉ là một phút. Nếu `0002` được thêm bởi ai đó sẵn sàng sửa
+    hằng số cho test xanh lại thì hằng số ấy sống thêm nhiều migration nữa.
+
+    Phép kiểm đúng là **quan hệ** giữa head và thư mục, không phải một giá trị.
+    """
+    from serving.db.engine import _ALEMBIC_DIR
+
+    files = sorted(p.stem for p in (_ALEMBIC_DIR / "versions").glob("[0-9]*.py"))
+
+    assert expected_revision() == files[-1], (
+        "head phải là revision mới nhất trong `alembic/versions/`; lệch nghĩa là "
+        "`down_revision` của file mới trỏ sai chỗ"
+    )
