@@ -72,7 +72,13 @@ HYBRID_OPTIONS = frozenset({"k", "candidate_k", "weights"})
 #: Cố ý không sửa mặc định của thư viện ở đây: một giá trị thắng theo số đo thuộc
 #: về **config của thí nghiệm** (`W2-07`), không thuộc về hằng số thư viện, và
 #: `retriever.name` mang `rrf60` nên chuyện đó không im lặng. Muốn cấu hình
-#: thắng thì truyền `--rrf-k 1 --candidate-k 20`.
+#: thắng thì truyền `--rrf-k 1 --candidate-k 20 --rrf-weights 1 0.25`.
+#:
+#: ⭐ `--rrf-weights 1 0.25` là kết quả của `TD-37` (2026-09-03): trọng số **đều**
+#: cho hạng 1 của nhánh sparse nửa số phiếu kể cả khi nhánh ấy mù với loại truy
+#: vấn đó (`cross_lingual`: sparse `hit_rate@50` = 0,0233). Hạ xuống 0,25 được
+#: `cross_lingual` nDCG@10 **+0,0622** và chỉ mất `factoid` −0,0093 — cùng mức
+#: lợi như định tuyến sang nền dense nhưng **1/3,6** cái giá.
 DEFAULT_RERANK_BASE = RetrievalMode.HYBRID
 
 

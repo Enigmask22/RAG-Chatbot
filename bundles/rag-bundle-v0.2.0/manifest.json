@@ -1,0 +1,82 @@
+{
+  "bundle_version": "0.2.0",
+  "created_at": "2026-09-03T15:42:07.239099Z",
+  "git_sha": "456c6a62d7",
+  "components": {
+    "chunking": {
+      "strategy": "hybrid",
+      "chunk_size": 1000,
+      "chunk_overlap": 100,
+      "contextual": true,
+      "chunking_fingerprint": "c7ca3e6fc4da29a5"
+    },
+    "embedding": {
+      "model": "BAAI/bge-m3",
+      "dim": 1024,
+      "normalize": true,
+      "revision": null
+    },
+    "index": {
+      "backend": "qdrant",
+      "collection": "rag_bgem3_ctx",
+      "fingerprint": "ff0828fecae7998ad2bf04a389fbe2194ee62506468a6ceb6e9660a981eac52f",
+      "n_chunks": 15814,
+      "n_documents": 60,
+      "snapshot": null
+    },
+    "retrieval": {
+      "mode": "hybrid",
+      "top_k": 20,
+      "options": {
+        "k": 1,
+        "candidate_k": 20,
+        "weights": [
+          1.0,
+          0.25
+        ]
+      }
+    },
+    "rerank": {
+      "max_length": 512,
+      "model": "BAAI/bge-reranker-v2-m3",
+      "candidates": 50,
+      "top_n": null
+    },
+    "retriever_name": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+    "prompt": null,
+    "generation": null
+  },
+  "eval": {
+    "golden_set": "golden_v1",
+    "n_queries": 209,
+    "evaluated_with_generator": "deepseek-chat@2026-09",
+    "judge": null,
+    "retrieval_metrics": {
+      "hit_rate@1": 0.6220095693779905,
+      "hit_rate@10": 0.8325358851674641,
+      "hit_rate@20": 0.84688995215311,
+      "hit_rate@5": 0.8229665071770335,
+      "map@20": 0.6635634163920119,
+      "mrr": 0.7046976946498478,
+      "ndcg@10": 0.7078808968492386,
+      "precision@1": 0.6220095693779905,
+      "precision@10": 0.1105263157894737,
+      "precision@20": 0.0576555023923445,
+      "precision@5": 0.215311004784689,
+      "recall@1": 0.5,
+      "recall@10": 0.8022328548644337,
+      "recall@20": 0.8245614035087719,
+      "recall@5": 0.784688995215311
+    },
+    "generation_metrics": {},
+    "p95_latency_ms": 759.034700000484,
+    "cost_per_query_usd": null
+  },
+  "gate": {
+    "status": "NOT_RUN",
+    "champion_compared": null,
+    "report": null
+  },
+  "notes": "TD-37: weighted RRF w_sparse=0.25. cross_lingual ndcg@10 +0.0622, factoid -0.0093; 15/15 metric tong duong, 6 co y nghia.",
+  "checksum": "sha256:fbb6063c95e76ea1baa0d9cdd41b631eb3eaf4d23cc86d1d298a2dbf6727ab57"
+}
