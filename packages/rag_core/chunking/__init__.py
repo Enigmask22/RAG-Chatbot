@@ -3,6 +3,14 @@
 from ..embedding.base import EmbeddingProvider
 from .base import Chunker, ChunkingConfig, ChunkingStrategy
 from .cache import CachedChunker, CacheStats, SQLiteChunkCache
+from .contextual import (
+    ContextRequest,
+    ContextualConfig,
+    EnrichStats,
+    apply_contexts,
+    build_requests,
+    original_content,
+)
 from .fixed import FixedSizeChunker, split_recursive
 from .hybrid import HybridChunker
 from .parent_child import ParentChildChunker, parent_id
@@ -16,6 +24,9 @@ __all__ = [
     "Chunker",
     "ChunkingConfig",
     "ChunkingStrategy",
+    "ContextRequest",
+    "ContextualConfig",
+    "EnrichStats",
     "FixedSizeChunker",
     "HybridChunker",
     "ParentChildChunker",
@@ -24,10 +35,13 @@ __all__ = [
     "StructureChunker",
     "TokenCounter",
     "TokenSizingUnavailable",
+    "apply_contexts",
     "build_chunker",
+    "build_requests",
     "calibrate_density",
     "common_ancestor",
     "fit_to_budget",
+    "original_content",
     "parent_id",
     "section_boundaries",
     "split_recursive",

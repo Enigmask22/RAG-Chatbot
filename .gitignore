@@ -51,3 +51,6 @@ data/raw/
 #   · `triage_summary.json` — bằng chứng của lần chạy
 data/golden/review/queue_*.md
 data/golden/review/triage_*.jsonl
+
+# W3-04: gói request (~285 MB thô) + ngữ cảnh sinh ra. Artifact, không phải mã nguồn.
+data/contexts/

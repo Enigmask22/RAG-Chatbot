@@ -8,13 +8,18 @@ chi phí dùng chung một nguồn, và để lúc giá đổi thì chỉ sửa 
 import logging
 
 from .base import ChatMessage, LLMError, LLMProvider, LLMResponse, ModelPricing
+from .budget import BudgetExceeded, CostBudget
 from .openai_compat import OpenAICompatProvider
+from .tokenizer import HFTokenCounter
 
 __all__ = [
     "DEEPSEEK_ALIASES",
     "DEEPSEEK_PRICING",
     "DEFAULT_DEEPSEEK_MODEL",
+    "BudgetExceeded",
     "ChatMessage",
+    "CostBudget",
+    "HFTokenCounter",
     "LLMError",
     "LLMProvider",
     "LLMResponse",
