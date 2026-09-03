@@ -53,5 +53,22 @@ data/golden/review/queue_*.md
 data/golden/review/triage_*.jsonl
 
 # W3-04: gói request (~285 MB thô) + ngữ cảnh sinh ra. Artifact, không phải mã nguồn.
-data/contexts/
+# ⚠️ `data/contexts/*` chứ KHÔNG phải `data/contexts/`: git không re-include được
+# file nằm trong một *thư mục* đã bị loại, nên dạng có gạch chéo làm mọi dòng `!`
+# bên dưới thành vô hiệu — im lặng, không cảnh báo.
+data/contexts/*
+# ...NHƯNG artifact ngữ cảnh là ngoại lệ, và luật trên quét nhầm nó.
+#
+# Luật "artifact không vào git" viết cho gói request: 285 MB, sinh lại **miễn
+# phí** trong vài giây từ corpus + mã. Artifact ngữ cảnh có kinh tế ngược hẳn —
+# **1,8 MB** khi nén, và sinh lại tốn **~$5,90 tiền API thật**. Cùng thư mục,
+# cùng đuôi file, hai loại hoàn toàn khác nhau.
+#
+# Nên bản nén được commit. `_resolve_contexts_path` đọc thẳng `.gz`, không giải
+# nén ra đĩa — hai bản cạnh nhau là hai nguồn sự thật cho một artifact.
+# Sinh lại bản nén sau khi đổi ngữ cảnh: `make ctx-backup`.
+!data/contexts/contexts.jsonl.gz
+!data/contexts/contexts.jsonl.sha256
+!data/contexts/contexts-single-probe.jsonl.gz
+!data/contexts/contexts-single-probe.jsonl.sha256
 dist/

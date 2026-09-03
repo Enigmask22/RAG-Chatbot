@@ -348,6 +348,31 @@ def _stale_point_ids(doc_id: str, old_count: int, new_count: int) -> list[str]:
     return [chunk_point_id(f"{doc_id}::{i:05d}") for i in range(new_count, old_count)]
 
 
+def _resolve_contexts_path(path: Path) -> Path:
+    """Chấp nhận bản nén khi bản thô không có mặt.
+
+    ⚠️ Tồn tại vì một lý do rất cụ thể: artifact ngữ cảnh tốn **$5,90** tiền API
+    để sinh, còn `data/contexts/` thì nằm trong `.gitignore` (luật ấy viết cho
+    gói request 285 MB, và nó quét luôn cả thứ có kinh tế hoàn toàn khác). Bản
+    nén **1,8 MB** được commit, nên một clone mới build được index ngay mà không
+    phải trả tiền lần nữa — nhưng chỉ khi hàm này biết tìm nó.
+
+    Không tự giải nén ra đĩa: `_open_text` đọc thẳng `.gz`, và ghi thêm một bản
+    12 MB cạnh bản nén là tạo ra hai nguồn sự thật cho cùng một artifact.
+    """
+    if path.exists():
+        return path
+    packed = path.with_suffix(path.suffix + ".gz")
+    if packed.exists():
+        logger.info("Ngữ cảnh: dùng bản nén %s (không thấy %s)", packed, path)
+        return packed
+    raise FileNotFoundError(
+        f"`contextual.enabled` bật nhưng không có {path} lẫn {packed}. "
+        "Bản nén lẽ ra nằm trong git — nếu clone mới mà thiếu thì kiểm `.gitignore`; "
+        "sinh lại từ đầu tốn ~$5,90 tiền API (`make ctx-prepare` rồi `make ctx-run-glm`)."
+    )
+
+
 def _load_contexts(config: IndexConfig) -> dict[str, str] | None:
     """Nạp artifact ngữ cảnh `W3-04`, hoặc `None` khi tắt.
 
@@ -366,12 +391,7 @@ def _load_contexts(config: IndexConfig) -> dict[str, str] | None:
 
     from .contextualize import load_contexts
 
-    path = config.contextual.contexts_path
-    if not path.exists():
-        raise FileNotFoundError(
-            f"`contextual.enabled` bật nhưng không có {path}. "
-            "Chạy `make ctx-prepare` rồi `make ctx-run-glm` trước."
-        )
+    path = _resolve_contexts_path(config.contextual.contexts_path)
     want = config.chunking_fingerprint if config.contextual.require_fingerprint else None
     contexts = load_contexts(path, fingerprint=want)
     if not contexts:

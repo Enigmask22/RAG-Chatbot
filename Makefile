@@ -374,6 +374,18 @@ ctx-coverage:  ## W3-04: bao nhiêu chunk đã có ngữ cảnh, và thiếu ở
 		--requests data/contexts/requests-b1.jsonl.gz --out $(CTX_OUT)
 
 
+# Sao lưu artifact ngữ cảnh vào git. Nó tốn ~$5,90 tiền API thật để sinh, và
+# `data/contexts/*` nằm trong .gitignore vì luật ấy viết cho gói request 285 MB
+# sinh lại miễn phí — hai loại có kinh tế ngược nhau, cùng một thư mục.
+# Nén xuống 1,8 MB nên vào git thẳng được, không cần DVC remote.
+.PHONY: ctx-backup
+ctx-backup:  ## W3-04: nén + băm artifact ngữ cảnh để commit (chạy lại sau khi sinh lại ngữ cảnh)
+	$(PY) python -m pipeline.indexing.backup_contexts
+
+.PHONY: ctx-verify
+ctx-verify:  ## W3-04: bản trong git có khớp bản trên đĩa không
+	$(PY) python -m pipeline.indexing.backup_contexts --check
+
 .PHONY: job-bundle
 job-bundle:  ## W0-08: dựng gói job cho RunPod (git archive + gói request)
 	bash scripts/runpod_job.sh bundle
