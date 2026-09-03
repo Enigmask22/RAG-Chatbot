@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     lùi khỏi.
     """
 
+    bundle_allow_runtime_drift: bool = False
+    """Cho chạy bundle mà runtime không khớp `components.retriever_name` (`TD-38`).
+
+    Chỉ dành cho máy dev không có GPU muốn chạy thử bundle đã eval trên
+    `cuda:float16`. Bật ở production nghĩa là mọi số trong manifest có thể đang
+    nói về một hệ thống khác hệ thống đang phục vụ.
+    """
+
     api_keys_file: Path | None = Path("secrets/api-keys.json")
     """Kho API key của Serving Plane (`W4-04`) — chứa **digest**, không chứa key.
 

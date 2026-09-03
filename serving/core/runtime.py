@@ -49,7 +49,19 @@ from rag_core.bundle import RagBundle
 from rag_core.reranking.base import Reranker
 from rag_core.retrieval.base import Retriever
 
-__all__ = ["BundleRuntimeError", "QdrantRuntimeBuilder"]
+__all__ = ["BundleRuntimeError", "QdrantRuntimeBuilder", "drift_of"]
+
+_DRIFT: dict[str, dict[str, str]] = {}
+"""Lệch tên retriever đã bị bỏ qua, theo version bundle.
+
+Ở tầng module chứ không trong builder: người cần đọc nó là route
+`GET /admin/bundle`, và route đó cầm `ActiveBundle` chứ không cầm builder.
+"""
+
+
+def drift_of(version: str) -> dict[str, str] | None:
+    return _DRIFT.get(version)
+
 
 logger = logging.getLogger(__name__)
 
@@ -74,22 +86,43 @@ class QdrantRuntimeBuilder:
     Qdrant hay việc máy này có GPU hay không là *chỗ nó chạy*. Trộn hai loại vào
     một file thì cùng một bundle không đem sang môi trường khác được nữa.
 
-    ⚠️ `device` và `dtype` của reranker rơi vào **khe hở** giữa hai loại ấy: bản
+    ⭐ `device` và `dtype` của reranker rơi vào **khe hở** giữa hai loại ấy: bản
     fp16 và bản fp32 của cross-encoder là hai model khác nhau *về số* (`W2-05` đo
     được trùng top-1 98,3%), nên chúng đổi kết quả — tức thuộc về bundle — nhưng
-    chúng cũng là thuộc tính của phần cứng. Hiện `RerankComponent` không ghi
-    chúng, nên phục vụ trên CPU một bundle đã eval trên GPU **không có gì báo**.
-    Xem `TD-38`.
+    chúng cũng là thuộc tính của phần cứng. `TD-38` đóng khe hở ấy bằng
+    `components.retriever_name`, và phép so ở `_check_identity` bắt được **cả**
+    trường hợp phục vụ trên CPU một bundle đã eval trên GPU.
     """
 
     url: str
     api_key: str | None = None
     device: str = "auto"
     batch_size: int = 32
+    allow_runtime_drift: bool = False
+    """Cho phép chạy một bundle mà runtime dựng ra **không khớp** tên đã đo.
+
+    Tồn tại cho đúng một tình huống: máy dev không có GPU muốn chạy thử một
+    bundle đã eval trên `cuda:float16`. Refuse cứng ở đó thì không ai chạy được
+    hệ thống trên laptop, và cái giá của việc *không chạy thử được* lớn hơn.
+
+    ⚠️ Tắt theo mặc định, phải bật tường minh cho từng môi trường, và khi bật thì
+    **mỗi lần kích hoạt** ghi một dòng WARNING kèm cả hai tên — đồng thời
+    `GET /admin/bundle` trả `runtime_drift`, nên nó không chỉ nằm trong log mà
+    còn nằm ở chỗ người vận hành nhìn. Một cửa thoát im lặng mới là cửa thoát
+    nguy hiểm.
+    """
     #: Ngắn hơn hẳn `ReadinessProbes.timeout_s` để luồng của probe tự quay về
     #: trước khi `wait_for` bỏ chờ — nếu ngược lại thì mỗi chu kỳ probe rò một
     #: luồng đang chờ socket.
     qdrant_timeout_s: float = 1.5
+    client: Any = None
+    """Client Qdrant dựng sẵn, thay cho việc tự mở kết nối từ `url`.
+
+    Có mặt để **đường `__call__` chạy được trong test**. Không có nó thì mọi test
+    của builder buộc phải gọi thẳng từng hàm con, và phép **nối** chúng lại — thứ
+    dễ đứt nhất — không được kiểm: bỏ hẳn dòng gọi `_check_identity` khỏi
+    `__call__` vẫn xanh toàn bộ. Đó đúng là kết quả của lần tiêm lỗi đầu tiên.
+    """
 
     def __call__(self, bundle: RagBundle) -> tuple[Retriever, Reranker | None]:
         from rag_core.embedding import build_embedding_provider
@@ -118,6 +151,7 @@ class QdrantRuntimeBuilder:
             url=self.url,
             api_key=self.api_key,
             timeout=self.qdrant_timeout_s,
+            client=self.client,
         )
 
         retriever = build_branch(
@@ -140,6 +174,7 @@ class QdrantRuntimeBuilder:
         # phép gọi bình thường.
         cast("_SchemaAware", retriever).verify_schema()
         _check_size(store, bundle)
+        self._check_identity(retriever, bundle)
 
         # Log `retriever.name` chứ không log lại từng trường: quy ước đặt tên của
         # `rag_core` gom **đúng những cần điều khiển làm đổi kết quả** vào một
@@ -152,6 +187,35 @@ class QdrantRuntimeBuilder:
             extra={"bundle_version": bundle.bundle_version, "retriever": retriever.name},
         )
         return retriever, reranker
+
+    def _check_identity(self, retriever: Retriever, bundle: RagBundle) -> None:
+        """⭐⭐ `TD-38`: runtime vừa dựng có **là** hệ thống đã được đo không.
+
+        Đây là phép kiểm mà ba phép kiểm kia không thay được. Số chiều, schema
+        collection và số điểm nói về **index**; chúng đều xanh khi bundle chạy
+        đúng index nhưng với `rrf_k` khác, `candidates` khác, hay reranker chạy
+        fp32 thay vì fp16 — tức khi mọi số trong `bundle.eval` nói về một hệ
+        thống khác hệ thống đang phục vụ.
+        """
+        expected = bundle.components.retriever_name
+        if expected is None:
+            logger.warning(
+                "bundle %s không khai `retriever_name` (sinh trước TD-38) — "
+                "không kiểm được runtime có khớp hệ thống đã eval hay không",
+                bundle.bundle_version,
+            )
+            return
+        if retriever.name == expected:
+            return
+        message = (
+            f"bundle {bundle.bundle_version} được eval trên\n  {expected}\n"
+            f"nhưng máy này dựng ra\n  {retriever.name}\n"
+            "— mọi metric trong manifest nói về một hệ thống khác."
+        )
+        if not self.allow_runtime_drift:
+            raise BundleRuntimeError(message)
+        logger.warning("BUNDLE_ALLOW_RUNTIME_DRIFT đang bật: %s", message)
+        _DRIFT[bundle.bundle_version] = {"expected": expected, "actual": retriever.name}
 
 
 def _branch_options(options: dict[str, Any]) -> dict[str, Any]:

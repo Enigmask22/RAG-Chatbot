@@ -226,3 +226,27 @@ def test_the_sample_bundle_matches_the_real_index_config() -> None:
     config = load_index_config(Path("configs/indexing/bgem3-contextual.yaml"))
     assert raw["components"]["index"]["fingerprint"] == config.fingerprint
     assert raw["components"]["chunking"]["chunking_fingerprint"] == config.chunking_fingerprint
+
+
+# ---------------------------------------------------------------------------
+# TD-38 — bundle mới phải mang danh tính của hệ thống đã đo
+# ---------------------------------------------------------------------------
+
+
+def test_the_measured_retriever_name_is_copied_verbatim() -> None:
+    """⭐ Chép nguyên, **không** dựng lại từ các trường đã bóc ra.
+
+    Dựng lại nghĩa là có một *bản sao thứ hai* của quy ước đặt tên sống trong
+    `build_bundle`, và hai bản sao sẽ lệch nhau ở đúng lần `rag_core` đổi hậu tố
+    — lúc không ai nhìn, và theo hướng làm phép kiểm danh tính ở serving đỏ giả.
+    """
+    assert build().components.retriever_name == RERANKED_NAME
+
+
+def test_an_eval_report_without_a_retriever_name_cannot_be_packaged() -> None:
+    """Schema cho phép `None` để bundle sinh trước `TD-38` còn nạp được; phía
+    **sinh** thì không, vì một bundle mới thiếu trường này nạp xanh trên mọi cấu
+    hình sai. Chỗ duy nhất được phép để trống là quá khứ."""
+    config = make_config()
+    with pytest.raises(BundleValidationError, match="TD-38"):
+        build(config, eval_run=make_eval_run(config, retriever=""))

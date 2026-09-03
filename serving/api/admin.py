@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from rag_core.bundle import BundleValidationError
 from serving.api.health import RegistryDep
 from serving.core.registry import ActiveBundle, BundleRegistry, NothingToRollBackError
-from serving.core.runtime import BundleRuntimeError
+from serving.core.runtime import BundleRuntimeError, drift_of
 
 __all__ = ["router"]
 
@@ -56,6 +56,11 @@ def _describe(active: ActiveBundle) -> dict[str, Any]:
         "retrieval_mode": components.retrieval.mode,
         "rerank_model": components.rerank.model if components.rerank else None,
         "serves_generation": active.bundle.serves_generation,
+        "retriever_name": components.retriever_name,
+        # ⚠️ Khác `None` nghĩa là bundle đang chạy **không** phải hệ thống đã đo,
+        # và ai đó đã bật `BUNDLE_ALLOW_RUNTIME_DRIFT` để cho qua. Đặt ở đây chứ
+        # không chỉ trong log: một cửa thoát im lặng mới là cửa thoát nguy hiểm.
+        "runtime_drift": drift_of(active.version),
     }
 
 

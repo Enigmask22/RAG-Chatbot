@@ -113,6 +113,24 @@ def _parse_rerank(retriever_name: str, branch_options: dict[str, Any]) -> Rerank
     return RerankComponent(model=model, candidates=candidates, top_n=top_n, max_length=max_length)
 
 
+def _require_retriever_name(eval_config: dict[str, Any]) -> str:
+    """Tên retriever là **bắt buộc** ở phía sinh, dù schema cho phép `None`.
+
+    Hai chiều không đối xứng: schema phải chấp nhận `None` để bundle sinh trước
+    `TD-38` còn nạp được, nhưng một bundle **mới** thiếu trường này là một bundle
+    không tự kiểm được — và nó sẽ nạp xanh trên mọi cấu hình sai. Nên chỗ duy
+    nhất được phép để trống là quá khứ.
+    """
+    name = str(eval_config.get("retriever", "")).strip()
+    if not name:
+        raise BundleValidationError(
+            "báo cáo eval không có trường `config.retriever`, nên không đóng gói được "
+            "danh tính của hệ thống đã đo (`TD-38`). Chạy lại eval bằng "
+            "`pipeline.eval.retrieval` phiên bản hiện tại."
+        )
+    return name
+
+
 def _check_provenance(
     config: IndexConfig, index_report: dict[str, Any], eval_run: dict[str, Any]
 ) -> None:
@@ -191,6 +209,11 @@ def build_bundle(
             options=branch_options,
         ),
         rerank=_parse_rerank(str(eval_config.get("retriever", "")), eval_config),
+        # ⭐ `TD-38`: chép nguyên tên retriever của lần eval. Không suy lại từ các
+        # trường ở trên — suy lại là dựng một *bản sao thứ hai* của quy ước đặt
+        # tên, và hai bản sao sẽ lệch nhau ở đúng lúc không ai nhìn. Đây là chuỗi
+        # mà `QdrantRuntimeBuilder` sẽ so với runtime nó vừa dựng.
+        retriever_name=_require_retriever_name(eval_config),
         # Tầng sinh chưa được dựng (`W4-08`/`W4-11`). Bundle khai thiếu thay vì
         # bịa — xem `BundleComponents.prompt`.
         prompt=None,

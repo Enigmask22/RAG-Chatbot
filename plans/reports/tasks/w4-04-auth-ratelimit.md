@@ -171,3 +171,63 @@ tiêm lại đúng lỗi cũ thì nó đỏ.
 * **Chưa có JWT** — DoD viết "API key / JWT". API key đủ cho quan hệ
   service-to-service hiện có; JWT chỉ đáng khi có người dùng cuối đăng nhập, tức
   sớm nhất là khi có UI (`W5`). Chọn một cái và nói rõ, thay vì làm nửa vời cả hai.
+
+---
+
+## 11. Phụ lục — trả `TD-36` + `TD-38` (cùng ngày)
+
+### `TD-36`: hai tính chất tưởng loại trừ nhau, hoá ra giữ được cả hai
+
+Ghi chú nợ cũ kết luận *"không có cách nào giữ cả hai"* — giữ được
+*format-lại-vẫn-đúng* thì mất *schema-mọc-vẫn-đúng*. Kết luận đó sai, và chỗ sai
+nằm ở một giả định không được nói ra: rằng phép băm phải chạy trên **model**.
+
+Cả hai tính chất đều là câu về **payload trên đĩa**:
+
+* format lại — `canonical_blob` đã sắp khoá và bỏ khoảng trắng, nên thụt lề và
+  thứ tự khoá không vào hash dù băm từ đâu;
+* schema mọc thêm trường — chỉ hỏng khi pydantic được phép lấp mặc định **trước**
+  khi băm.
+
+Nên `verify_checksum(raw)` băm payload đúng như nó nằm trong file. Sửa tay vẫn bị
+bắt (raw đổi ⇒ chữ ký lệch). ⚠️ Cái mất: một phép sửa **giữ nguyên ngữ nghĩa
+nhưng đổi văn bản** (`…Z` → `…+00:00`) giờ làm vỡ chữ ký. Đánh đổi có lợi — vế
+kia là điều **chắc chắn xảy ra**, và nó vừa xảy ra ở `TD-38`.
+
+Test dựng lại **đúng** một manifest do pipeline cũ sinh: bỏ hẳn khoá
+`components.embedding.revision` rồi ký lên payload thiếu nó.
+
+### `TD-38`: một chuỗi thay cho năm trường có kiểu
+
+`components.retriever_name` chép **nguyên văn** tên retriever của lần eval. Lý do
+một chuỗi lại hơn năm trường: quy ước đặt tên của `rag_core` đã gom sẵn *đúng*
+những cần điều khiển làm đổi kết quả — `rrf1`, `c20`, `L512`, `float16` — và cố ý
+**bỏ** những cái không (`batch_size`). Mỗi lớp retriever tự quyết định điều ấy ở
+chỗ nó biết rõ nhất, và nó đã được canh bằng test từ `W2-03`.
+
+Chép nguyên chứ không dựng lại từ các trường: dựng lại là một *bản sao thứ hai*
+của quy ước đặt tên, và hai bản sao sẽ lệch nhau ở đúng lần `rag_core` đổi hậu
+tố — lúc không ai nhìn.
+
+Cửa thoát `BUNDLE_ALLOW_RUNTIME_DRIFT` cho máy dev không GPU: tắt mặc định,
+WARNING mỗi lần kích hoạt, **và** `GET /admin/bundle` trả `runtime_drift`. Một
+cửa thoát im lặng mới là cửa thoát nguy hiểm.
+
+### ⭐⭐ Hai lần tiêm lỗi đầu tiên **không có test nào đỏ**
+
+| lỗi tiêm vào | kết quả lần đầu |
+|---|---|
+| xoá dòng gọi `_check_identity` khỏi `__call__` | **không test nào đỏ** |
+| `build_bundle` điền `retriever_name=None` | **không test nào đỏ** |
+
+Nguyên nhân giống nhau: 10 test gọi **thẳng** `_check_identity`, nên phép kiểm
+còn nguyên vẹn và **không bao giờ chạy**. Đó là kiểm cái *đơn vị*, không kiểm cái
+*nối* — và cái nối là thứ dễ đứt hơn.
+
+Sửa: `QdrantRuntimeBuilder` nhận `client` tiêm được, rồi chạy **cả đường
+`__call__`** với provider `hashing:8` (dense-only, không GPU, không tải model) và
+một Qdrant giả trả lời đúng hai câu builder hỏi. Sau đó cả ba lần tiêm đỏ đúng
+chỗ. Đó cũng là lý do `client` tồn tại — nó không phải một tiện ích cho test mà
+là cái seam duy nhất làm cho phép nối kiểm được.
+
+Bundle mẫu `bundles/rag-bundle-v0.1.0` đã sinh lại và nạp + verify chữ ký OK.

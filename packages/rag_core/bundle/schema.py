@@ -22,28 +22,23 @@ chứ không mang nghĩa "dùng mặc định" — xem `RagBundle.rerank`.
 
 ## Checksum này chứng nhận cái gì
 
-⚠️ Nó băm **dạng chuẩn hoá của model đã validate**, không băm byte của file.
-Hệ quả phải nói rõ vì hai chiều đều quan trọng:
+Nó băm **dạng chuẩn hoá của payload đúng như nó nằm trên đĩa** — xem
+`RagBundle.verify_checksum`, nơi giải thích vì sao đó là điểm khác biệt quan
+trọng nhất giữa bản này và bản đầu (`TD-36`). Hệ quả:
 
 * Format lại JSON (đổi thụt lề, đổi thứ tự khoá, đổi cách escape unicode)
-  **không** làm hỏng checksum. Đó là hành vi đúng cho một file cấu hình đi qua
-  git, CI, và `docker cp`.
+  **không** làm hỏng checksum. Đó là hành vi đúng cho một file đi qua git, CI, và
+  `docker cp`.
+* Schema mọc thêm một trường có mặc định cũng **không** làm hỏng chữ ký của
+  bundle cũ — mặc định của hôm nay không lọt vào phép băm của một file viết hôm
+  qua. Không có tính chất này thì chữ ký chỉ dùng được tới lần đổi schema đầu
+  tiên, tức nó tự vô hiệu hoá chính mình.
+* Sửa tay vào manifest — đổi một số, xoá một trường — **bị bắt**.
 * Nhưng nó **không** chứng nhận rằng collection Qdrant mà bundle trỏ tới đúng là
   collection đã được đo. Checksum bảo vệ *manifest*, không bảo vệ *chỉ mục*.
-  Chỗ khớp hai thứ đó là `components.index.fingerprint`, và người kiểm là
-  serving lúc load (`W4-02`/`W4-03`) — không phải hàm này.
-
-Nói cách khác: checksum bắt được **sửa tay vào manifest**, và chỉ thế thôi.
-
-⚠️ **Hệ quả chưa xử lý — thêm trường vào schema làm hỏng chữ ký của mọi bundle
-cũ.** Băm trên model *đã validate* nghĩa là một trường mới có mặc định sẽ được
-pydantic lấp vào khi đọc manifest cũ, payload đem băm đổi, và bundle cũ thành
-"sai chữ ký" dù không ai chạm vào nó. Đây là mặt trái trực tiếp của tính chất
-"xoá một trường optional cũng bị bắt" — không có cách nào giữ cả hai.
-
-Lối ra **không** phải là ký lại bundle cũ: chữ ký khi ấy chứng nhận một nội dung
-mà pipeline chưa bao giờ sinh ra. Lối ra là sinh lại bundle từ artifact nguồn.
-Ghi ở `TD-36`, cần giải quyết trước khi có bundle thứ hai được promote.
+  Chỗ khớp hai thứ đó là `components.index.fingerprint` và
+  `components.retriever_name`, và người kiểm là serving lúc load
+  (`serving/core/runtime.py`) — không phải hàm này.
 """
 
 from __future__ import annotations
@@ -51,6 +46,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Self
@@ -294,6 +290,32 @@ class BundleComponents(_Component):
     ấy không ép được bằng type; nó được ghim bằng
     `test_bundle.py::test_absent_rerank_means_disabled_not_default`.
     """
+    retriever_name: str | None = None
+    """⭐⭐ Tên của retriever **đúng như lần eval đã chạy**. Cách giải `TD-38`.
+
+    Ví dụ thật:
+    `reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50`
+
+    Lý do một chuỗi lại đáng giá hơn năm trường có kiểu: quy ước đặt tên của
+    `rag_core` đã gom sẵn **đúng những cần điều khiển làm đổi kết quả** — và chỉ
+    những cái đó. `k` của RRF vào tên (`rrf1`), `candidate_k` vào tên (`c20`),
+    `max_length` vào tên (`L512`), `dtype` vào tên (`float16`); còn `batch_size`
+    thì **không**, vì nó không đổi điểm. Mỗi lớp retriever tự quyết định điều ấy
+    ở chỗ nó biết rõ nhất, và nó đã được canh bằng test từ `W2-03`.
+
+    Nhờ vậy một trường đóng cả hai lỗ mà `W4-03` §6 tìm ra:
+
+    * `rerank.dtype`/`device` **không** có trong schema dù chúng đổi kết quả
+      (fp16 vs fp32 trùng top-1 98,3%, `W2-05`) — chúng nằm trong chuỗi này;
+    * bundle không tự kiểm được rằng runtime dựng ra **đúng hệ thống đã đo** —
+      giờ kiểm được bằng một phép so chuỗi.
+
+    ⚠️ Vẫn `None`-được, và không phải vì lười: bundle sinh trước `TD-38` không có
+    trường này, và ép nó bắt buộc sẽ làm chúng không nạp được. Người đọc phải
+    hiểu `None` là *"bundle này không nói"*, không phải *"không cần kiểm"* —
+    `QdrantRuntimeBuilder` ghi một dòng WARNING đúng nghĩa đó.
+    """
+
     prompt: PromptComponent | None = None
     generation: GenerationComponent | None = None
     """⚠️ `None` ở hai trường này **không** giống `rerank=None`.
@@ -531,13 +553,44 @@ class RagBundle(BaseModel):
         """Bản sao có `checksum`. Ký lại một bundle đã ký cũng cho cùng kết quả."""
         return self.model_copy(update={"checksum": compute_checksum(self.unsigned_payload())})
 
-    def verify_checksum(self) -> None:
+    def verify_checksum(self, raw: Mapping[str, Any] | None = None) -> None:
+        """Đối chiếu chữ ký. `raw` là payload **đúng như nó nằm trên đĩa**.
+
+        ⭐⭐ Tham số này là cách giải `TD-36`, và nó đáng đọc kỹ.
+
+        Bản đầu luôn băm lại `self.unsigned_payload()` — tức **model đã validate**.
+        Tính chất tốt: format lại JSON không vỡ chữ ký. Tính chất chết người:
+        pydantic **lấp mặc định lúc đọc**, nên ngay khi schema mọc thêm một
+        trường có mặc định, payload đem băm của một manifest cũ đổi theo và một
+        bundle không ai chạm vào bỗng thành "sai chữ ký". Với một artifact mà cả
+        kiến trúc dựa vào tính bất biến, đó là lỗi vô hiệu hoá chính cơ chế.
+
+        Băm `raw` giữ được **cả hai**:
+
+        * format lại vẫn an toàn — `canonical_blob` sắp khoá và bỏ khoảng trắng,
+          nên thụt lề và thứ tự khoá không vào hash;
+        * schema mọc thêm trường vẫn an toàn — file cũ băm đúng những gì **có
+          trong file**, và mặc định của hôm nay không bao giờ lọt vào;
+        * và phép sửa tay vẫn bị bắt: xoá một trường khỏi manifest đã ký làm đổi
+          `raw`, nên chữ ký lệch (`test_deleting_a_defaulted_field_is_also_caught`).
+
+        ⚠️ Cái mất đi, nói cho đủ: một phép sửa **giữ nguyên ngữ nghĩa nhưng đổi
+        văn bản** — ví dụ viết lại `…Z` thành `…+00:00` trong `created_at` — giờ
+        làm vỡ chữ ký. Đó là một đánh đổi có lợi: schema mọc thêm trường là điều
+        **chắc chắn xảy ra** (nó vừa xảy ra ở `TD-38`), còn chuẩn hoá tay một
+        mốc thời gian trong manifest thì gần như không.
+
+        `raw=None` = tự kiểm một bundle vừa dựng trong bộ nhớ, chưa qua đĩa.
+        Đường nạp (`load_bundle`) **luôn** truyền `raw`.
+        """
         if not self.checksum:
             raise BundleChecksumError(
                 f"bundle {self.bundle_version} chưa ký: `checksum` rỗng. "
                 "Bundle chưa ký không được nạp — dùng `.signed()` lúc sinh."
             )
-        expected = compute_checksum(self.unsigned_payload())
+        payload = dict(raw) if raw is not None else self.unsigned_payload()
+        payload.pop("checksum", None)
+        expected = compute_checksum(payload)
         if self.checksum != expected:
             raise BundleChecksumError(
                 f"checksum không khớp cho bundle {self.bundle_version}:\n"

@@ -100,7 +100,9 @@ def load_bundle(path: Path, *, verify: bool = True) -> RagBundle:
         )
 
     if verify:
-        bundle.verify_checksum()
+        # ⭐ Truyền `raw` chứ không để nó băm lại model đã validate: đó là toàn bộ
+        # cách giải `TD-36`. Xem docstring của `RagBundle.verify_checksum`.
+        bundle.verify_checksum(raw)
     return bundle
 
 

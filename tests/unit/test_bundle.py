@@ -435,3 +435,85 @@ def test_naive_datetime_is_rejected() -> None:
 def test_git_sha_must_look_like_one(sha: str) -> None:
     with pytest.raises(ValidationError, match="git_sha"):
         make_bundle(git_sha=sha)
+
+
+# ---------------------------------------------------------------------------
+# TD-36 + TD-38 — chữ ký sống sót qua việc schema mọc thêm trường
+# ---------------------------------------------------------------------------
+
+
+def _sign_raw(payload: dict[str, Any]) -> dict[str, Any]:
+    """Ký một payload JSON thô, đúng như một pipeline **phiên bản cũ** đã làm."""
+    body = {k: v for k, v in payload.items() if k != "checksum"}
+    return {**body, "checksum": compute_checksum(body)}
+
+
+def test_a_bundle_signed_before_a_field_existed_still_verifies(tmp_path: Path) -> None:
+    """⭐⭐ `TD-36`. Đây là lỗi vô hiệu hoá chính cơ chế nó bảo vệ.
+
+    Dựng lại **đúng** một manifest do pipeline cũ sinh: bỏ hẳn khoá
+    `components.embedding.revision` (trường mới, có mặc định) rồi ký lên payload
+    thiếu nó — byte-for-byte giống thứ tồn tại trước khi trường ấy ra đời.
+
+    Bản đầu băm lại **model đã validate**, nên pydantic lấp `revision=None` lúc
+    đọc, payload đem băm đổi theo, và một bundle không ai chạm vào trở thành
+    "sai chữ ký". Hệ quả: mọi lần mở rộng schema làm hỏng toàn bộ bundle đã phát
+    hành, tức chữ ký chỉ dùng được cho tới lần đổi schema đầu tiên.
+    """
+    directory = tmp_path / "rag-bundle-v1.0.0"
+    directory.mkdir()
+    raw = json.loads(make_bundle().model_dump_json())
+    del raw["components"]["embedding"]["revision"]
+    (directory / "manifest.json").write_text(
+        json.dumps(_sign_raw(raw), ensure_ascii=False), encoding="utf-8"
+    )
+
+    loaded = load_bundle(directory)
+    assert loaded.components.embedding.revision is None
+
+
+def test_reformatting_a_manifest_still_does_not_break_the_signature(tmp_path: Path) -> None:
+    """Tính chất **cũ** phải sống sót qua cách sửa `TD-36`: thụt lề và thứ tự khoá
+    là chuyện hiển thị, không phải nội dung. Mất nó thì chữ ký bị tắt trong tuần
+    đầu (`W4-01` §4)."""
+    manifest = save_bundle(make_bundle(), tmp_path)
+    raw = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest.write_text(
+        json.dumps(dict(reversed(list(raw.items()))), indent=8, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    assert load_bundle(manifest).bundle_version == "1.0.0"
+
+
+def test_tampering_is_still_caught_after_the_td36_fix(tmp_path: Path) -> None:
+    """Nửa còn lại của đánh đổi: nới cho schema mọc **không** được nới cho sửa tay.
+
+    `test_deleting_a_defaulted_field_is_also_caught` ở trên đã ghim ca xoá; đây
+    là ca đổi **giá trị**, và nó phải vỡ vì `raw` đổi mà `checksum` thì không.
+    """
+    manifest = save_bundle(make_bundle(), tmp_path)
+    raw = json.loads(manifest.read_text(encoding="utf-8"))
+    raw["eval"]["retrieval_metrics"]["ndcg@10"] = 0.99
+    manifest.write_text(json.dumps(raw), encoding="utf-8")
+
+    with pytest.raises(BundleChecksumError):
+        load_bundle(manifest)
+
+
+def test_the_bundle_records_which_retriever_was_measured() -> None:
+    """⭐ `TD-38`. Một chuỗi thay cho năm trường, vì quy ước đặt tên của `rag_core`
+    đã gom sẵn **đúng** những cần điều khiển làm đổi kết quả — `rrf1`, `c20`,
+    `L512`, `float16` — và cố ý bỏ những cái không (`batch_size`)."""
+    name = "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50"
+    bundle = make_bundle(
+        components=make_bundle().components.model_copy(update={"retriever_name": name})
+    )
+    assert bundle.components.retriever_name == name
+
+
+def test_the_real_sample_bundle_carries_its_retriever_name() -> None:
+    """Bundle mẫu thật trong repo, không phải fixture: nó là thứ `W4-03` nạp lúc
+    khởi động, nên nếu nó thiếu trường này thì phép kiểm danh tính im lặng tắt."""
+    bundle = load_bundle(Path(__file__).resolve().parents[2] / "bundles" / "rag-bundle-v0.1.0")
+    assert bundle.components.retriever_name is not None
+    assert "float16" in bundle.components.retriever_name

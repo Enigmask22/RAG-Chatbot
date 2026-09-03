@@ -140,6 +140,7 @@ def create_app(
             ),
             device=resolved.embedding_device,
             batch_size=resolved.embedding_batch_size,
+            allow_runtime_drift=resolved.bundle_allow_runtime_drift,
         ),
     )
 
