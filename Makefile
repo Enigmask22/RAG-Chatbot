@@ -328,31 +328,51 @@ rerank-probe:  ## Trần vùng phủ + truncation + bão hoà sigmoid + độ tr
 	$(PY) python scripts/rerank_probe.py --config $(INDEX_CONFIG) \
 		--report plans/reports/probes/w2-05-rerank-probe.json
 
+# W3-04 — sinh ngữ cảnh. B = số chunk mỗi lời gọi (TD-32: gộp 8 rẻ hơn 4,6×).
+CTX_B ?= 8
+CTX_REQUESTS = data/contexts/requests-b$(CTX_B).jsonl.gz
+CTX_OUT ?= data/contexts/contexts.jsonl
+
 .PHONY: ctx-dry
 ctx-dry:  ## W3-04: in thống kê prefill + prompt mẫu, KHÔNG ghi gì, KHÔNG gọi LLM
-	$(PY) python -m pipeline.indexing.contextualize prepare --dry-run
+	$(PY) python -m pipeline.indexing.contextualize prepare \
+		--batch-size $(CTX_B) --dry-run
 
 .PHONY: ctx-prepare
-ctx-prepare:  ## W3-04: corpus → gói request cho GPU thuê (không gọi LLM)
-	$(PY) python -m pipeline.indexing.contextualize prepare
+ctx-prepare:  ## W3-04: corpus → gói request. CTX_B= (chunk mỗi lời gọi, mặc định 8)
+	$(PY) python -m pipeline.indexing.contextualize prepare \
+		--batch-size $(CTX_B) --out $(CTX_REQUESTS)
 
 .PHONY: ctx-run-glm
-ctx-run-glm:  ## W3-04: sinh ngữ cảnh bằng GLM — KHÔNG có prefix cache, ~$10,6 cả corpus. LIMIT= CAP= CONC=
+ctx-run-glm:  ## W3-04: sinh ngữ cảnh bằng GLM. CTX_B= LIMIT= CAP= CONC= FALLBACK=1
 	$(PY) python -m pipeline.indexing.contextualize run \
-		--backend glm \
-		$(if $(LIMIT),--limit $(LIMIT),) --cost-cap $(or $(CAP),6.0) \
+		--backend glm --requests $(CTX_REQUESTS) \
+		$(if $(LIMIT),--limit $(LIMIT),) --cost-cap $(or $(CAP),3.0) \
 		--concurrency $(or $(CONC),16) \
-		--out data/contexts/contexts.jsonl \
-		--report plans/reports/probes/w3-04-contexts-glm.json
+		$(if $(FALLBACK),--skip-done-chunks,) \
+		--out $(CTX_OUT) \
+		--report plans/reports/probes/w3-04-contexts-b$(CTX_B).json
 
 .PHONY: ctx-run-deepseek
-ctx-run-deepseek:  ## W3-04: sinh ngữ cảnh bằng DeepSeek — có prefix cache 49%, ~$12,4 cả corpus. LIMIT= CAP= CONC=
+ctx-run-deepseek:  ## W3-04: sinh ngữ cảnh bằng DeepSeek — có prefix cache thật, nhưng đắt hơn GLM
 	$(PY) python -m pipeline.indexing.contextualize run \
-		--backend deepseek \
-		$(if $(LIMIT),--limit $(LIMIT),) --cost-cap $(or $(CAP),10.0) \
+		--backend deepseek --requests $(CTX_REQUESTS) \
+		$(if $(LIMIT),--limit $(LIMIT),) --cost-cap $(or $(CAP),3.0) \
 		--concurrency $(or $(CONC),16) \
-		--out data/contexts/contexts.jsonl \
-		--report plans/reports/probes/w3-04-contexts-deepseek.json
+		$(if $(FALLBACK),--skip-done-chunks,) \
+		--out $(CTX_OUT) \
+		--report plans/reports/probes/w3-04-contexts-deepseek-b$(CTX_B).json
+
+.PHONY: ctx-fallback
+ctx-fallback:  ## W3-04: lượt lùi cho chunk mà lô gộp bị chốt chặn từ chối (TD-32)
+	$(MAKE) ctx-run-glm CTX_B=4 FALLBACK=1 CAP=$(or $(CAP),1.0)
+	$(MAKE) ctx-run-glm CTX_B=1 FALLBACK=1 CAP=$(or $(CAP),1.0)
+
+.PHONY: ctx-coverage
+ctx-coverage:  ## W3-04: bao nhiêu chunk đã có ngữ cảnh, và thiếu ở đâu
+	$(PY) python -m pipeline.indexing.contextualize coverage \
+		--requests data/contexts/requests-b1.jsonl.gz --out $(CTX_OUT)
+
 
 .PHONY: job-bundle
 job-bundle:  ## W0-08: dựng gói job cho RunPod (git archive + gói request)

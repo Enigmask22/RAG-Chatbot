@@ -106,7 +106,7 @@ def test_disabled_produces_no_calls() -> None:
 def test_one_request_per_chunk() -> None:
     chunks = [chunk_at(0, 0), chunk_at(1, 4000), chunk_at(2, 8000)]
     requests = build(chunks)
-    assert [r.chunk_id for r in requests] == [c.chunk_id for c in chunks]
+    assert [r.chunk_ids for r in requests] == [(c.chunk_id,) for c in chunks]
 
 
 def test_system_prompt_is_identical_across_requests() -> None:
@@ -239,7 +239,7 @@ def enriched(
 ) -> tuple[list[Chunk], EnrichStats, Chunk]:
     chunks = [chunk_at(0, 20000)]
     requests = build(chunks)
-    out, stats = apply_contexts(chunks, requests, {requests[0].key: context})
+    out, stats = apply_contexts(chunks, {requests[0].chunk_ids[0]: context})
     return out, stats, chunks[0]
 
 
@@ -255,7 +255,7 @@ def test_token_count_is_cleared_rather_than_left_stale() -> None:
     """Số cũ đếm trên văn bản cũ. Giữ lại là một con số sai trông như đúng."""
     chunks = [chunk_at(0, 20000).model_copy(update={"token_count": 77})]
     requests = build(chunks)
-    out, _ = apply_contexts(chunks, requests, {requests[0].key: "Bối cảnh."})
+    out, _ = apply_contexts(chunks, {requests[0].chunk_ids[0]: "Bối cảnh."})
     assert out[0].token_count is None
 
 
@@ -263,7 +263,7 @@ def test_missing_context_keeps_the_chunk_and_counts_it() -> None:
     """DoD: một chunk hỏng không làm sập job. Nó cũng không được biến mất im lặng."""
     chunks = [chunk_at(0, 4000), chunk_at(1, 8000)]
     requests = build(chunks)
-    out, stats = apply_contexts(chunks, requests, {requests[1].key: "Bối cảnh."})
+    out, stats = apply_contexts(chunks, {requests[1].chunk_ids[0]: "Bối cảnh."})
 
     assert len(out) == 2
     assert out[0].content == chunks[0].content
@@ -278,7 +278,7 @@ def test_blank_context_is_not_pasted(blank: str) -> None:
     """LLM trả rỗng → chunk giữ nguyên, và được đếm **riêng** với ca thiếu hẳn."""
     chunks = [chunk_at(0, 20000)]
     requests = build(chunks)
-    out, stats = apply_contexts(chunks, requests, {requests[0].key: blank})
+    out, stats = apply_contexts(chunks, {requests[0].chunk_ids[0]: blank})
     assert out[0].content == chunks[0].content
     assert stats.n_empty == 1 and stats.n_missing == 0
 

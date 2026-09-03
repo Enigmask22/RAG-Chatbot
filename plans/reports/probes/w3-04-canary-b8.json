@@ -1,0 +1,23 @@
+{
+  "n_requests": 110,
+  "n_done": 709,
+  "n_skipped": 0,
+  "n_failed": 152,
+  "n_rejected": 19,
+  "n_empty": 0,
+  "n_truncated": 0,
+  "prompt_tokens": 613902,
+  "completion_tokens": 72522,
+  "cached_tokens": 256448,
+  "reasoning_tokens": 250,
+  "api_cost_usd": 0.09757253999999997,
+  "gpu_cost_usd": 0.0,
+  "elapsed_s": 193.1500558000007,
+  "models_served": [
+    "glm-5.3-flash"
+  ],
+  "stopped_early": "",
+  "total_cost_usd": 0.097573,
+  "cost_per_1000_usd": 0.13762,
+  "cache_hit_rate": 0.4177
+}

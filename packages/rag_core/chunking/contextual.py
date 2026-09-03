@@ -53,8 +53,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,16 +65,22 @@ from ..schemas import Chunk, Document
 from .tokens import TokenCounter, calibrate_density
 
 __all__ = [
+    "BATCH_SYSTEM_PROMPT",
     "CONTEXT_SYSTEM_PROMPT",
+    "BatchParseError",
     "ContextRequest",
     "ContextualConfig",
     "EnrichStats",
     "apply_contexts",
     "build_requests",
     "original_content",
+    "parse_response",
 ]
 
 logger = logging.getLogger(__name__)
+
+_NUMBERED = re.compile(r"^\s*[\[(]?(\d{1,2})[\]).:]\s*(.*)$")
+"""Dấu mở đầu một dòng trả lời của chế độ gộp. Khoan dung với `[1]`, `1.`, `(1)`."""
 
 CONTEXT_KEY = "context"
 """Khoá trong `Chunk.extra` giữ câu ngữ cảnh đã dán."""
@@ -115,6 +123,69 @@ Rules:
 """
 
 
+ECHO_SEPARATOR = " || "
+"""Ngăn phần echo với phần ngữ cảnh trong một dòng trả lời của chế độ gộp.
+
+Chuỗi này phải là thứ **không xuất hiện trong văn bản tự nhiên**, vì parser cắt
+theo lần xuất hiện ĐẦU TIÊN của nó: ngữ cảnh có chứa `||` thì phần sau vẫn còn
+nguyên, còn echo có chứa `||` thì mới hỏng — và echo là 4 từ lấy từ chính tài
+liệu, nên rủi ro nằm ở phía đã được kiểm bởi `_check_echo`."""
+
+ECHO_WORDS = 4
+"""Số từ đầu passage mà model phải chép lại.
+
+⚠️⚠️ Đây là **chốt chặn chống lệch thứ tự**, không phải trang trí. Gộp N chunk
+vào một lời gọi thì model trả về N dòng, và nếu nó gán ngữ cảnh của passage 2 cho
+dòng 1 thì **không có gì đỏ**: đủ số dòng, đủ số thứ tự, mỗi dòng một câu hợp lệ.
+Chunk nhận nhầm ngữ cảnh đi thẳng vào vector và chỉ hiện ra dưới dạng metric tệ
+hơn mà không ai truy được vì sao.
+
+Bắt model chép lại 4 từ đầu của đúng passage nó đang mô tả biến lỗi im lặng ấy
+thành lỗi kiểm được: `_check_echo` so chuỗi ấy với văn bản thật. Giá phải trả là
+~24 token output mỗi lô, tức **~$0,02 cho cả corpus** — rẻ hơn một lần phải chạy
+lại vì nghi ngờ."""
+
+BATCH_SYSTEM_PROMPT = """\
+You situate passages inside the document they were taken from, so that a search \
+engine can find each passage from a question that does not reuse its wording.
+
+You are given:
+  <document_head>  the opening of the document — title, summary, framing
+  <before>         the text immediately preceding the passages (may be absent)
+  <passages>       numbered passages, in document order
+  <after>          the text immediately following the passages (may be absent)
+
+For EACH passage write ONE or TWO sentences saying what it is about and where \
+it sits in the document.
+
+⚠️ Each sentence you write is stored separately and later read ON ITS OWN, with \
+no access to the other passages, to your other answers, or to this prompt. So \
+EVERY line must stand alone and must name, whenever the material states them:
+  - the document title
+  - the organisation that published it
+  - the country and the time period
+  - the section or topic the passage belongs to
+Repeat those in every single line. It will feel redundant across the lines you \
+write together; it is not redundant, because no reader ever sees two of them \
+at once. A line saying only "this passage continues the previous section" is \
+useless on its own and counts as a failure.
+
+Rules:
+- Do not repeat sentences from the passage.
+- Do not state anything that is not in the material given.
+- Treat each passage separately. Do not merge them, do not skip any.\
+"""
+
+
+class BatchParseError(ValueError):
+    """Trả lời của chế độ gộp không bóc tách được, hoặc bóc ra sai passage.
+
+    Ném ra thay vì trả về phần bóc được: một lô hỏng nửa chừng nghĩa là **không
+    biết** dòng nào ứng với passage nào, và ghi bừa phần "có vẻ đúng" là đúng
+    kiểu lỗi mà `ECHO_WORDS` sinh ra để chặn.
+    """
+
+
 class ContextualConfig(BaseModel):
     """Tham số của bước sinh ngữ cảnh. Nằm trong khoá cache, nên đổi là sinh lại."""
 
@@ -131,6 +202,18 @@ class ContextualConfig(BaseModel):
     max_context_tokens: int = Field(default=120, ge=16)
     prompt_version: str = Field(default="ctx-v1", min_length=1)
 
+    batch_size: int = Field(default=1, ge=1, le=32)
+    """Số chunk mỗi lời gọi LLM. `1` là chế độ một-chunk-một-lời-gọi ban đầu.
+
+    ⭐ Đây là đòn bẩy chi phí lớn nhất khi nhà cung cấp **không** có prefix
+    caching. Đo được trên GLM-5.3-Flash: `<document_head>` chiếm 49% mỗi prompt
+    và bị trả tiền lại cho từng chunk trong ~185 chunk của tài liệu, vì cache
+    trúng chỉ 0,1% ngay cả khi chạy tuần tự. Gộp 8 chunk thì head chia cho 8, và
+    vùng lân cận của chúng chồng lấn nên gộp lại gần như một dải liền — đưa cả
+    corpus từ ~$10,6 xuống ~$2,5.
+
+    Nằm trong khoá cache vì đổi nó là đổi prompt, tức đổi ngữ cảnh sinh ra."""
+
 
 @dataclass(frozen=True)
 class ContextRequest:
@@ -144,14 +227,32 @@ class ContextRequest:
     """
 
     key: str
-    chunk_id: str
+    chunk_ids: tuple[str, ...]
     doc_id: str
     messages: tuple[ChatMessage, ...]
     est_prompt_tokens: int
+    echoes: tuple[str, ...] = ()
+    """4 từ đầu của từng chunk, để `parse_response` kiểm chốt chặn — xem `ECHO_WORDS`.
+
+    Nằm trong request chứ không tra lại từ corpus, vì pod **chỉ** nhận
+    `requests.jsonl` (quy tắc cứng #2). Bốn từ mỗi chunk là ~30 byte, tức cả
+    corpus thêm ~0,5 MB — rẻ hơn nhiều so với việc phải mang corpus lên pod chỉ
+    để kiểm được thứ tự.
+    """
 
     @property
     def user_text(self) -> str:
         return self.messages[-1].content
+
+    @property
+    def n_chunks(self) -> int:
+        """Số chunk lời gọi này phụ trách. `1` là chế độ một-chunk-một-lời-gọi.
+
+        Vòng chạy nhân `--max-tokens` với số này. Không nhân thì một lô 8 chunk
+        chạy với trần 256 token bị cắt lời ở chunk thứ hai, và triệu chứng là
+        `BatchParseError` hàng loạt chứ không phải một thông báo nói ra điều đó.
+        """
+        return len(self.chunk_ids)
 
 
 @dataclass
@@ -238,35 +339,103 @@ def build_requests(
     window_chars = int(config.window_tokens * density)
     head = text[: _snap_right(text, head_chars)].strip() if head_chars else ""
 
-    requests: list[ContextRequest] = []
     for chunk in chunks:
         if chunk.start_char is None or chunk.end_char is None:
             raise ValueError(
                 f"{chunk.chunk_id}: thiếu span, không dựng được cửa sổ lân cận. "
                 "Mọi chunker từ W1-11 đều sinh offset — chunk này tới từ đâu?"
             )
-        window = _window_for(
-            text,
-            start=chunk.start_char,
-            end=chunk.end_char,
-            head_chars=len(head),
-            window_chars=window_chars,
-        )
-        user = _render_user(head=head, window=window, chunk_text=chunk.content, language=language)
-        messages = (
-            ChatMessage(role="system", content=CONTEXT_SYSTEM_PROMPT),
-            ChatMessage(role="user", content=user),
+
+    groups = [
+        list(chunks[i : i + config.batch_size]) for i in range(0, len(chunks), config.batch_size)
+    ]
+    requests: list[ContextRequest] = []
+    for group in groups:
+        system, user = _render(
+            group, text=text, head=head, window_chars=window_chars, language=language
         )
         requests.append(
             ContextRequest(
-                key=_key_for(config, user),
-                chunk_id=chunk.chunk_id,
-                doc_id=chunk.doc_id,
-                messages=messages,
-                est_prompt_tokens=int((len(CONTEXT_SYSTEM_PROMPT) + len(user)) / max(density, 1.0)),
+                key=_key_for(config, system, user),
+                chunk_ids=tuple(c.chunk_id for c in group),
+                doc_id=group[0].doc_id,
+                messages=(
+                    ChatMessage(role="system", content=system),
+                    ChatMessage(role="user", content=user),
+                ),
+                est_prompt_tokens=int((len(system) + len(user)) / max(density, 1.0)),
+                echoes=tuple(_first_words(c.content) for c in group),
             )
         )
     return requests
+
+
+def _render(
+    group: Sequence[Chunk], *, text: str, head: str, window_chars: int, language: str
+) -> tuple[str, str]:
+    """Chọn giữa prompt một-chunk và prompt gộp, trả về `(system, user)`.
+
+    Nhóm một phần tử **vẫn đi đường một-chunk** chứ không phải đường gộp với
+    `n=1`: prompt một-chunk là thứ đã sinh ra 860 ngữ cảnh dùng được, và bắt nó
+    đi qua định dạng đánh số + echo chỉ để thống nhất hình thức là đổi một đường
+    đã kiểm lấy một đường chưa kiểm mà không được gì.
+    """
+    if len(group) == 1:
+        chunk = group[0]
+        window = _window_for(
+            text,
+            start=chunk.start_char or 0,
+            end=chunk.end_char or 0,
+            head_chars=len(head),
+            window_chars=window_chars,
+        )
+        return CONTEXT_SYSTEM_PROMPT, _render_user(
+            head=head, window=window, chunk_text=chunk.content, language=language
+        )
+    return BATCH_SYSTEM_PROMPT, _render_batch_user(
+        group, text=text, head=head, window_chars=window_chars, language=language
+    )
+
+
+def _render_batch_user(
+    group: Sequence[Chunk], *, text: str, head: str, window_chars: int, language: str
+) -> str:
+    """Prompt gộp: `<before>` và `<after>` là **phần ngoài** nhóm, không chồng lấn.
+
+    Các chunk trong nhóm liền kề nhau, nên chúng đã là vùng lân cận của nhau —
+    chunk giữa nhóm nhìn thấy hàng xóm thật của nó ngay trong `<passages>`. Chỉ
+    hai đầu nhóm là còn thiếu, và đó đúng là phần `<before>`/`<after>` bù vào.
+    Đưa cả một `<neighbourhood>` bao trùm như chế độ một-chunk sẽ lặp lại toàn bộ
+    văn bản của nhóm lần thứ hai trong cùng một prompt.
+    """
+    start = min(c.start_char or 0 for c in group)
+    end = max(c.end_char or 0 for c in group)
+    half = window_chars // 2
+
+    before_start = max(len(head), start - half)
+    before = text[_snap_left(text, before_start) : start].strip() if before_start < start else ""
+    after = text[end : _snap_right(text, min(len(text), end + half))].strip()
+
+    parts = [f"<document_head>\n{head}\n</document_head>"] if head else []
+    if before:
+        parts.append(f"<before>\n{before}\n</before>")
+    passages = "\n\n".join(f"[{i}]\n{chunk.content}" for i, chunk in enumerate(group, start=1))
+    parts.append(f"<passages>\n{passages}\n</passages>")
+    if after:
+        parts.append(f"<after>\n{after}\n</after>")
+
+    n = len(group)
+    name = LANGUAGE_NAMES.get(language)
+    in_language = f" Write in {name}." if name else " Write in the language of the passages."
+    parts.append(
+        f"Now write the situating sentences for each of the {n} passages.{in_language}\n"
+        f"Output exactly {n} lines and nothing else. Line i must be:\n"
+        f"[i] first {ECHO_WORDS} words of passage i{ECHO_SEPARATOR}the sentences\n"
+        f"Copy those first {ECHO_WORDS} words exactly as they appear in passage i.\n"
+        "Every line must name the document, the organisation and the period on its "
+        "own — the lines are stored separately and never read together."
+    )
+    return "\n\n".join(parts)
 
 
 def _render_user(*, head: str, window: str, chunk_text: str, language: str) -> str:
@@ -289,25 +458,183 @@ def _render_user(*, head: str, window: str, chunk_text: str, language: str) -> s
     return "\n\n".join(parts)
 
 
-def _key_for(config: ContextualConfig, user: str) -> str:
+def _key_for(config: ContextualConfig, system: str, user: str) -> str:
+    """Băm **cả** `system`, vì hai chế độ dùng hai chỉ dẫn khác nhau.
+
+    ⚠️ Bản đầu băm hằng số `CONTEXT_SYSTEM_PROMPT` thay vì `system` thực tế. Khi
+    chỉ có một chế độ thì hai thứ đó luôn bằng nhau nên lỗi không quan sát được;
+    thêm chế độ gộp thì nó thành "đổi chỉ dẫn mà khoá không đổi", tức artifact cũ
+    được dùng lại cho một prompt khác hẳn.
+    """
     payload = "\n".join(
         (
             config.prompt_version,
             config.model,
             str(config.max_context_tokens),
-            CONTEXT_SYSTEM_PROMPT,
+            system,
             user,
         )
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _normalise(text: str) -> str:
+    """Gấp khoảng trắng và bỏ dấu câu ở hai đầu, để so echo không vấp vào định dạng."""
+    return " ".join(text.split()).strip("\"'`*_-–—.,:;!?()[]{}").casefold()
+
+
+def _first_words(text: str, n: int = ECHO_WORDS) -> str:
+    return " ".join(text.split()[:n])
+
+
+def parse_response(request: ContextRequest, text: str) -> dict[str, str]:
+    """Bóc trả lời của LLM thành `chunk_id -> context`.
+
+    Chế độ một-chunk trả thẳng. Chế độ gộp thì bóc theo dấu `[i]` và **kiểm
+    echo**: dòng `i` phải chép lại đúng 4 từ đầu của passage `i`.
+
+    Raises:
+        BatchParseError: thiếu/thừa dòng, số thứ tự không phải `1..n`, dòng rỗng,
+            hoặc echo không khớp. Cả lô bị từ chối — xem `BatchParseError`.
+    """
+    body = text.strip()
+    if request.n_chunks == 1:
+        return {request.chunk_ids[0]: body} if body else {}
+
+    numbered = _split_numbered(body)
+    expected = set(range(1, request.n_chunks + 1))
+    if set(numbered) != expected:
+        raise BatchParseError(f"chờ {sorted(expected)} dòng, bóc ra {sorted(numbered)}")
+
+    out: dict[str, str] = {}
+    for index, chunk_id in enumerate(request.chunk_ids, start=1):
+        echo, _, context = numbered[index].partition(ECHO_SEPARATOR)
+        context = context.strip() if context else ""
+        if not context:
+            raise BatchParseError(f"dòng [{index}] không có phần ngữ cảnh sau {ECHO_SEPARATOR!r}")
+        _check_alignment(index, echo, request.echoes)
+        out[chunk_id] = context
+    return out
+
+
+def _split_numbered(body: str) -> dict[int, str]:
+    """Gom các dòng theo dấu `[i]`, nối cả phần xuống dòng vào dòng đang mở.
+
+    Nối thay vì đòi đúng một dòng mỗi passage: model xuống dòng giữa hai câu là
+    chuyện thường và hoàn toàn vô hại, còn từ chối cả lô vì một ký tự xuống dòng
+    là tự tạo ra tỉ lệ hỏng không cần thiết trên một job 15.814 chunk.
+    """
+    out: dict[int, list[str]] = {}
+    current: int | None = None
+    for raw in body.splitlines():
+        match = _NUMBERED.match(raw)
+        if match:
+            current = int(match.group(1))
+            out.setdefault(current, []).append(match.group(2).strip())
+        elif current is not None and raw.strip():
+            out[current].append(raw.strip())
+    return {i: " ".join(parts).strip() for i, parts in out.items() if " ".join(parts).strip()}
+
+
+MIN_ECHO_CHARS = 10
+"""Phần mở đầu của passage phải dài tối thiểu bằng này thì mới định danh được nó.
+
+Đo trên dữ liệu thật: `"g g n"` (3 ký tự sau khi ép) tình cờ giống passage 4
+(0,86) hơn passage 1 (0,75) mà nhìn bằng mắt thì rõ ràng là passage 1
+(`"hB g g N"`). Chuỗi càng ngắn thì `SequenceMatcher` càng dễ cho điểm cao ngẫu
+nhiên — theo **cả hai** chiều, nên nó vừa bỏ sót vừa báo động giả.
+
+Đây là ngoại lệ **duy nhất** được đi qua chốt chặn mà không bị xét: khi chính
+văn bản gốc không đủ để định danh thì không phép so nào cứu được."""
+
+MIN_CONFIRM = 0.30
+"""Điểm giống tối thiểu để coi là đã **xác nhận** dòng `i` nói về passage `i`.
+
+⚠️ Ranh giới quan trọng và nó đi ngược trực giác tiết kiệm: dưới ngưỡng này thì
+echo *không giống passage nào*, và tôi từng định cho qua với lý do "không có
+bằng chứng lệch". Nhưng không có bằng chứng lệch **không phải** bằng chứng không
+lệch — một ca thật trong lượt canary có echo `"hiện có. Việt Nam có thể"` trong
+khi passage `[2]` mở đầu bằng `"hỗ trợ theo các"`, tức hai đoạn khác hẳn nhau.
+
+Đường lùi một-chunk **không thể lệch** và giá của nó biết trước. Nên khi không
+xác nhận được, trả về đường lùi là đổi một rủi ro im lặng không chặn trên lấy
+một khoản chi đo được."""
+
+ALIGNMENT_MARGIN = 0.05
+"""Biên tuyệt đối khi so với passage giống nhất — chống nhiễu làm đổi thứ hạng sát nút."""
+
+ALIGNMENT_RELATIVE = 0.25
+"""Biên tương đối, cần thiết khi **nhiều passage cùng khớp cao**.
+
+Corpus có tiêu đề chạy lặp ở đầu nhiều đoạn, nên một echo hợp lệ có thể giống
+passage khác gần bằng: đo được `0,89` cho passage `[4]` so với `0,81` cho passage
+`[8]` đúng của nó. Biên tuyệt đối 0,05 từ chối ca ấy, còn biên tương đối thì
+không — vì `0,89 − 0,81` nhỏ so với chính `0,89`."""
+
+
+def _similarity(a: str, b: str) -> float:
+    """Độ giống ở mức ký tự, đã bỏ hết khoảng trắng.
+
+    Bỏ khoảng trắng vì corpus là OCR hai cột: `"tương đương trước đại dịch"` nằm
+    trong tài liệu dưới dạng `"tương trướcđại đươngtrước đạidịch"`. So theo từ
+    thì hai chuỗi ấy gần như không giao nhau, so theo ký tự thì chúng rất giống —
+    và chúng **đúng là** cùng một đoạn.
+    """
+    return SequenceMatcher(None, _squash(a), _squash(b)).ratio()
+
+
+def _squash(text: str) -> str:
+    return "".join(_normalise(text).split())[:60]
+
+
+def _check_alignment(index: int, echo: str, echoes: Sequence[str]) -> None:
+    """⭐⭐ Chốt chặn chống lệch thứ tự: dòng `i` phải **xác nhận được** là nói về passage `i`.
+
+    So chuỗi model chép lại với phần mở đầu của **mọi** passage trong lô, rồi đòi
+    passage `i` vừa đủ giống (`MIN_CONFIRM`) vừa không thua passage nào khác một
+    cách rõ rệt (`ALIGNMENT_MARGIN`/`ALIGNMENT_RELATIVE`).
+
+    ⚠️ Bản đầu so **bằng nhau đúng từng chữ** với 4 từ đầu, và nó từ chối
+    **109/110 lô** ở lượt canary. Đọc lại 18 ca thì không ca nào lệch thật —
+    model chỉ đang dọn văn bản OCR: bỏ số trang (`"55 phụ lục 2"` → `"phụ lục
+    2"`), gỡ chữ đan xen hai cột (`"tương trướcđại đươngtrước đạidịch"` → `"tương
+    đương trước đại dịch"`). Chốt chặn hỏi *"có chép đúng từng chữ không"* trong
+    khi câu cần hỏi là *"có chỉ đúng passage không"*; hai câu ấy chỉ trùng nhau
+    khi văn bản sạch.
+
+    So với **tất cả** passage thay vì chỉ passage `i` cũng mạnh hơn hẳn: hoán đổi
+    hai dòng làm cực đại rơi sang passage kia nên bị bắt, trong khi nhiễu OCR tác
+    động lên mọi phép so như nhau nên không đổi thứ hạng.
+    """
+    if index > len(echoes):
+        return
+    own = echoes[index - 1] if echoes else ""
+    if len(_squash(own)) < MIN_ECHO_CHARS:
+        return
+
+    scores = [_similarity(echo, other) for other in echoes]
+    mine = scores[index - 1]
+    best = max(scores)
+    if mine >= MIN_CONFIRM and mine >= best - max(ALIGNMENT_MARGIN, ALIGNMENT_RELATIVE * best):
+        return
+
+    winner = scores.index(best) + 1
+    raise BatchParseError(
+        f"dòng [{index}] echo {echo!r} không xác nhận được là passage [{index}] "
+        f"(giống {mine:.2f}; passage [{winner}] giống {best:.2f})"
+    )
+
+
 def apply_contexts(
     chunks: Sequence[Chunk],
-    requests: Sequence[ContextRequest],
     contexts: Mapping[str, str],
 ) -> tuple[list[Chunk], EnrichStats]:
     """Dán ngữ cảnh vào chunk. Thiếu ngữ cảnh thì **giữ nguyên chunk**, không ném.
+
+    `contexts` khoá theo **`chunk_id`**, không theo khoá băm của request. Ở chế
+    độ gộp, một request phụ trách nhiều chunk nên ánh xạ một-một không còn;
+    việc loại bỏ ngữ cảnh cũ sinh bởi cấu hình khác chuyển sang
+    `load_contexts(path, keys=...)`, nơi có đủ thông tin để làm.
 
     Đây là nửa "fail 1 chunk không làm sập cả job" của DoD, ở phía tiêu thụ: job
     sinh có thể bỏ sót vài chunk (LLM trả rỗng, lỗi tất định, chạm trần chi phí)
@@ -318,15 +645,13 @@ def apply_contexts(
     tiên sau khi bật sẽ embed lại toàn bộ — `W3-07` không mượn lại được gì. Từ
     lượt thứ hai trở đi thì bình thường, miễn là artifact ngữ cảnh ổn định.
     """
-    by_chunk = {r.chunk_id: r.key for r in requests}
     stats = EnrichStats(n_chunks=len(chunks))
     out: list[Chunk] = []
 
     for chunk in chunks:
-        key = by_chunk.get(chunk.chunk_id)
-        context = (contexts.get(key) or "").strip() if key else ""
+        context = (contexts.get(chunk.chunk_id) or "").strip()
         if not context:
-            if key is None or key not in contexts:
+            if chunk.chunk_id not in contexts:
                 stats.n_missing += 1
                 if len(stats.missing_chunk_ids) < 20:
                     stats.missing_chunk_ids.append(chunk.chunk_id)

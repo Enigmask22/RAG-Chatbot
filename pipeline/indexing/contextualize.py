@@ -36,14 +36,19 @@ import logging
 import sys
 import threading
 import time
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from itertools import pairwise
 from pathlib import Path
 from typing import IO, Any, cast
 
-from rag_core.chunking.contextual import ContextRequest, ContextualConfig
+from rag_core.chunking.contextual import (
+    BatchParseError,
+    ContextRequest,
+    ContextualConfig,
+    parse_response,
+)
 from rag_core.chunking.tokens import TokenCounter
 from rag_core.llm.base import ChatMessage, LLMError, LLMProvider
 from rag_core.llm.budget import BudgetExceeded, CostBudget
@@ -51,6 +56,7 @@ from rag_core.llm.budget import BudgetExceeded, CostBudget
 __all__ = [
     "RunReport",
     "build_provider",
+    "load_contexts",
     "load_done_keys",
     "read_requests",
     "run_requests",
@@ -140,7 +146,8 @@ def write_requests(path: Path, requests: Iterable[ContextRequest]) -> int:
                 json.dumps(
                     {
                         "key": request.key,
-                        "chunk_id": request.chunk_id,
+                        "chunk_ids": list(request.chunk_ids),
+                        "echoes": list(request.echoes),
                         "doc_id": request.doc_id,
                         "system": request.messages[0].content,
                         "user": request.messages[1].content,
@@ -164,7 +171,8 @@ def read_requests(path: Path) -> list[ContextRequest]:
             out.append(
                 ContextRequest(
                     key=row["key"],
-                    chunk_id=row["chunk_id"],
+                    chunk_ids=tuple(row.get("chunk_ids") or [row["chunk_id"]]),
+                    echoes=tuple(row.get("echoes") or ()),
                     doc_id=row["doc_id"],
                     messages=(
                         ChatMessage(role="system", content=row["system"]),
@@ -202,13 +210,23 @@ def load_done_keys(path: Path) -> set[str]:
     return keys
 
 
-def load_contexts(path: Path) -> dict[str, str]:
-    """`key -> context`, dạng mà `apply_contexts` nhận."""
+def load_contexts(path: Path, keys: Collection[str] | None = None) -> dict[str, str]:
+    """`chunk_id -> context`, dạng mà `apply_contexts` nhận.
+
+    `keys` là tập khoá request của **lần chạy hiện tại**. Truyền vào thì các dòng
+    sinh bởi cấu hình khác bị bỏ qua — đó là chỗ giữ lại tính vô hiệu hoá theo
+    cấu hình sau khi `apply_contexts` chuyển sang khoá theo `chunk_id`. Không
+    truyền thì lấy tất, và khi ấy artifact lẫn hai cấu hình sẽ cho kết quả tuỳ
+    theo dòng nào ghi sau.
+    """
     out: dict[str, str] = {}
-    for key_row in _iter_rows(path):
-        context = (key_row.get("context") or "").strip()
-        if context:
-            out[str(key_row["key"])] = context
+    for row in _iter_rows(path):
+        if keys is not None and str(row.get("key")) not in keys:
+            continue
+        context = (row.get("context") or "").strip()
+        chunk_id = row.get("chunk_id")
+        if context and isinstance(chunk_id, str):
+            out[chunk_id] = context
     return out
 
 
@@ -288,6 +306,14 @@ class RunReport:
     n_done: int = 0
     n_skipped: int = 0
     n_failed: int = 0
+    n_rejected: int = 0
+    """Số **lô** bị chốt chặn từ chối. Khác `n_failed`, thứ đếm theo chunk.
+
+    Tách riêng vì hai con số trả lời hai câu khác nhau: `n_failed` nói mất bao
+    nhiêu công, `n_rejected` nói định dạng lô có đáng tin không. Một tỉ lệ từ
+    chối vài phần trăm là chuyện thường và tự chữa ở lần chạy sau; vài chục phần
+    trăm nghĩa là prompt hoặc trần output sai, và chạy tiếp chỉ đốt tiền.
+    """
     n_empty: int = 0
     n_truncated: int = 0
     prompt_tokens: int = 0
@@ -333,6 +359,7 @@ def run_requests(
     gpu_hourly_usd: float = 0.0,
     progress_every: int = 50,
     extra_body: dict[str, Any] | None = None,
+    skip_done_chunks: bool = False,
 ) -> RunReport:
     """Gọi LLM cho từng request còn thiếu, ghi nối vào `out_path`.
 
@@ -349,7 +376,13 @@ def run_requests(
       để đốt thêm tiền cho tới khi hết request.
     """
     _warn_if_not_grouped_by_document(requests)
-    todo = [r for r in requests if r.key not in load_done_keys(out_path)]
+    done = load_done_keys(out_path)
+    todo = [r for r in requests if r.key not in done]
+    if skip_done_chunks:
+        # Lượt lùi: chunk nào đã có ngữ cảnh rồi thì thôi, bất kể nó được
+        # sinh bởi lô nào. Đây là chỗ nối lượt gộp với lượt một-chunk.
+        covered = set(load_contexts(out_path))
+        todo = [r for r in todo if not set(r.chunk_ids) <= covered]
     report = RunReport(n_requests=len(requests), n_skipped=len(requests) - len(todo))
     if not todo:
         logger.info("Không còn request nào — artifact đã đủ %d khoá", report.n_skipped)
@@ -371,11 +404,13 @@ def run_requests(
         response = provider.complete(
             request.messages,
             temperature=0.0,
-            max_tokens=max_tokens,
+            # Trần output phải theo SỐ CHUNK của lời gọi. Một lô 8 chunk chạy với
+            # trần của một chunk sẽ bị cắt lời ở chunk thứ hai, và triệu chứng là
+            # `BatchParseError` hàng loạt — một thông báo không hề nói ra nguyên nhân.
+            max_tokens=max_tokens * request.n_chunks,
             seed=seed,
             extra_body=extra_body,
         )
-        context = response.text.strip()
         cached = int(response.raw.get("cached_tokens", 0) or 0)
         reasoning = int(response.raw.get("reasoning_tokens", 0) or 0)
 
@@ -390,13 +425,30 @@ def run_requests(
 
             if response.finish_reason == "length":
                 report.n_truncated += 1
-            if not context:
-                report.n_empty += 1
+
+            try:
+                contexts = parse_response(request, response.text)
+            except BatchParseError as exc:
+                # Cả lô bị từ chối, kể cả phần bóc được. Ghi sang `.failures.jsonl`
+                # để lần chạy sau thử lại — xem docstring của `BatchParseError`.
+                report.n_rejected += 1
+                report.n_failed += request.n_chunks
+                _append(
+                    failures_path,
+                    request,
+                    reason=f"lô hỏng: {exc}",
+                    finish=response.finish_reason,
+                    text=response.text,
+                )
+                return
+
+            if not contexts:
+                report.n_empty += request.n_chunks
                 _append(failures_path, request, reason="rỗng", finish=response.finish_reason)
                 return
 
-            _append_context(out_path, request, context, response, cached)
-            report.n_done += 1
+            _append_contexts(out_path, request, contexts, response, cached)
+            report.n_done += len(contexts)
             if progress_every and report.n_done % progress_every == 0:
                 logger.info(
                     "%d/%d · $%.4f · %.0f%% cache",
@@ -452,40 +504,70 @@ def _warn_if_not_grouped_by_document(requests: Sequence[ContextRequest]) -> int:
     return switches
 
 
-def _append_context(
-    path: Path, request: ContextRequest, context: str, response: Any, cached: int
+def _append_contexts(
+    path: Path,
+    request: ContextRequest,
+    contexts: Mapping[str, str],
+    response: Any,
+    cached: int,
 ) -> None:
+    """Một dòng cho mỗi chunk, kèm **phần chia** của số liệu lời gọi.
+
+    Số token và chi phí là của cả lô, nên chia đều cho các chunk trong lô và ghi
+    `batch_size` để người đọc biết đó là phần chia chứ không phải số đo riêng của
+    chunk ấy. Tổng cộng lại vẫn đúng bằng chi phí thật; con số duy nhất mà DoD
+    hỏi — `cost/1000 chunk` — được tính từ `RunReport`, không từ những dòng này.
+    """
+    n = max(1, len(contexts))
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(
-            json.dumps(
-                {
-                    "key": request.key,
-                    "chunk_id": request.chunk_id,
-                    "doc_id": request.doc_id,
-                    "context": context,
-                    "model": response.model,
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "cached_tokens": cached,
-                    "cost_usd": round(response.usage.cost_usd, 8),
-                    "latency_ms": round(response.latency_ms, 1),
-                },
-                ensure_ascii=False,
+        for chunk_id, context in contexts.items():
+            handle.write(
+                json.dumps(
+                    {
+                        "key": request.key,
+                        "chunk_id": chunk_id,
+                        "doc_id": request.doc_id,
+                        "context": context,
+                        "model": response.model,
+                        "batch_size": len(request.chunk_ids),
+                        "prompt_tokens": round(response.usage.prompt_tokens / n, 1),
+                        "completion_tokens": round(response.usage.completion_tokens / n, 1),
+                        "cached_tokens": round(cached / n, 1),
+                        "cost_usd": round(response.usage.cost_usd / n, 8),
+                        "latency_ms": round(response.latency_ms, 1),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
             )
-            + "\n"
-        )
 
 
-def _append(path: Path, request: ContextRequest, *, reason: str, finish: str | None = None) -> None:
+def _append(
+    path: Path,
+    request: ContextRequest,
+    *,
+    reason: str,
+    finish: str | None = None,
+    text: str = "",
+) -> None:
+    """Ghi một lô hỏng, **kèm câu trả lời thô**.
+
+    ⚠️ Bản đầu chỉ ghi lý do. Lượt canary đầu tiên của `TD-32` từ chối 109/110 lô
+    vì chốt chặn quá chặt; sau khi sửa chốt chặn thì 92 lô trong số đó lẽ ra bóc
+    được — nhưng câu trả lời đã không còn, nên phải trả tiền gọi lại lần nữa.
+    Lưu lại văn bản biến "sửa parser" từ việc **mua lại dữ liệu** thành việc
+    **bóc lại dữ liệu đã mua**.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
                 {
                     "key": request.key,
-                    "chunk_id": request.chunk_id,
+                    "chunk_ids": list(request.chunk_ids),
                     "reason": reason,
                     "finish_reason": finish,
+                    "response_text": text,
                 },
                 ensure_ascii=False,
             )
@@ -531,6 +613,7 @@ def _prepare(args: argparse.Namespace) -> int:
         window_tokens=args.window_tokens,
         max_context_tokens=args.max_context_tokens,
         prompt_version=args.prompt_version,
+        batch_size=args.batch_size,
     )
     counter = HFTokenCounter(args.tokenizer, max_tokens=args.context_window)
 
@@ -541,9 +624,12 @@ def _prepare(args: argparse.Namespace) -> int:
 
     est = sum(r.est_prompt_tokens for r in requests)
     shared = _shared_prefix_tokens(requests, counter)
+    n_chunks = sum(r.n_chunks for r in requests)
     print(f"tài liệu           {len(documents)}")
-    print(f"request            {len(requests):,}")
+    print(f"chunk              {n_chunks:,}")
+    print(f"request            {len(requests):,} (gộp {args.batch_size} chunk/lời gọi)")
     print(f"prefill ước tính   {est:,} token (không cache tiền tố)")
+    print(f"  mỗi chunk        {est / max(n_chunks, 1):,.0f} token")
     print(f"  tiền tố dùng chung {shared:,} token → còn ~{est - shared:,} nếu cache trúng")
     print(f"trần cửa sổ        {args.context_window:,} token · dài nhất {_max_prompt(requests):,}")
 
@@ -621,6 +707,7 @@ def _run(args: argparse.Namespace) -> int:
         seed=args.seed,
         gpu_hourly_usd=args.gpu_hourly_usd,
         extra_body=None if args.thinking else MIN_REASONING.get(args.backend),
+        skip_done_chunks=args.skip_done_chunks,
     )
     _print_report(report)
 
@@ -632,12 +719,43 @@ def _run(args: argparse.Namespace) -> int:
     return 1 if report.stopped_early else 0
 
 
+def _coverage(args: argparse.Namespace) -> int:
+    """Bao nhiêu chunk đã có ngữ cảnh, và thiếu tập trung ở tài liệu nào.
+
+    Câu này phải trả lời được **trước** khi tuyên bố `W3-04` xong. `apply_contexts`
+    cố ý giữ nguyên chunk khi thiếu ngữ cảnh — nửa "fail 1 chunk không làm sập cả
+    job" của DoD — nên thiếu 2.000 chunk và thiếu 0 chunk **trông giống hệt nhau**
+    ở phía build index: cả hai đều chạy xong và không báo gì.
+    """
+    requests = read_requests(Path(args.requests))
+    if not requests:
+        raise SystemExit(f"Không đọc được request nào từ {args.requests}")
+    wanted = [cid for r in requests for cid in r.chunk_ids]
+    have = load_contexts(Path(args.out))
+    missing = [cid for cid in wanted if cid not in have]
+
+    by_doc: dict[str, int] = {}
+    for cid in missing:
+        by_doc[cid.split("::")[0]] = by_doc.get(cid.split("::")[0], 0) + 1
+
+    print(f"chunk cần      {len(wanted):,}")
+    print(f"đã có ngữ cảnh {len(wanted) - len(missing):,} ({1 - len(missing) / len(wanted):.1%})")
+    print(f"còn thiếu      {len(missing):,}")
+    if by_doc:
+        print("\nthiếu nhiều nhất:")
+        for doc, n in sorted(by_doc.items(), key=lambda kv: -kv[1])[:10]:
+            print(f"  {n:6,}  {doc}")
+    return 1 if missing else 0
+
+
 def _print_report(report: RunReport) -> None:
     empty_line = f"lỗi {report.n_failed:,} · rỗng {report.n_empty:,}"
     print()
     print(f"  request        {report.n_requests:,} (bỏ qua vì đã có {report.n_skipped:,})")
     print(f"  sinh được      {report.n_done:,}")
     print(f"  {empty_line} · cắt lời {report.n_truncated:,}")
+    if report.n_rejected:
+        print(f"  ⚠ lô bị từ chối {report.n_rejected:,} (chốt chặn echo/định dạng)")
     print(f"  token          prompt {report.prompt_tokens:,} · out {report.completion_tokens:,}")
     print(f"                 cache trúng {report.cached_tokens:,} ({report.cache_hit_rate:.1%})")
     if report.reasoning_tokens:
@@ -664,6 +782,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     prepare.add_argument("--window-tokens", type=int, default=1500)
     prepare.add_argument("--max-context-tokens", type=int, default=120)
     prepare.add_argument("--prompt-version", default="ctx-v1")
+    prepare.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="số chunk mỗi lời gọi. >1 bật prompt gộp + chốt chặn echo (TD-32)",
+    )
     prepare.add_argument("--limit-docs", type=int, default=None)
     prepare.add_argument("--dry-run", action="store_true", help="in thống kê + prompt mẫu")
     prepare.set_defaults(func=_prepare)
@@ -685,8 +809,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="BẬT lại suy luận (mặc định giảm tối đa — xem MIN_REASONING)",
     )
+    run.add_argument(
+        "--skip-done-chunks",
+        action="store_true",
+        help=(
+            "bỏ request mà MỌI chunk của nó đã có ngữ cảnh trong --out. "
+            "Dùng cho lượt lùi: sinh lại các chunk mà lượt gộp đã bị chốt chặn từ chối"
+        ),
+    )
     run.add_argument("--report", default="")
     run.set_defaults(func=_run)
+
+    coverage = subparsers.add_parser("coverage", help="đếm chunk còn thiếu ngữ cảnh")
+    coverage.add_argument("--requests", default="data/contexts/requests-b1.jsonl.gz")
+    coverage.add_argument("--out", default="data/contexts/contexts.jsonl")
+    coverage.set_defaults(func=_coverage)
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
