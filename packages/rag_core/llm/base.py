@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -104,8 +104,22 @@ class LLMProvider(ABC):
         max_tokens: int | None = None,
         json_mode: bool = False,
         seed: int | None = None,
+        extra_body: Mapping[str, Any] | None = None,
     ) -> LLMResponse:
-        """Gọi model một lượt. `temperature=0` là mặc định, cố ý."""
+        """Gọi model một lượt. `temperature=0` là mặc định, cố ý.
+
+        `extra_body` trộn thẳng vào payload để chạm tới tham số **ngoài chuẩn**
+        của từng provider. Có mặt vì một lý do đo được: model lai suy luận tiêu
+        phần lớn `max_tokens` vào chuỗi suy luận không xuất hiện trong `content`
+        — dry-run `W3-04` đo **83%** (9.003/10.885 token) và **6/30 request trả
+        rỗng** vì lý do đó. Tắt suy luận là tham số riêng của từng nhà: vLLM/Qwen3
+        dùng `chat_template_kwargs`, DeepSeek dùng tên khác. Không có đường
+        truyền tham số thô thì không tắt được, và cái giá là trả tiền cho phần
+        suy luận rồi vứt đi.
+
+        ⚠️ Tham số đi qua đây **không** được kiểm; nó vẫn nằm trên đường eval nên
+        phải ghi vào báo cáo của lần chạy.
+        """
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(model={self.model!r})"

@@ -29,7 +29,7 @@ from rag_core.chunking.contextual import (
 from rag_core.chunking.tokens import TokenCounter
 from rag_core.llm.budget import BudgetExceeded, CostBudget
 from rag_core.llm.tokenizer import HFTokenCounter
-from rag_core.schemas import Chunk, Document, DocumentMetadata
+from rag_core.schemas import Chunk, Document, DocumentMetadata, Language
 
 METADATA = DocumentMetadata(source_url="https://example.org/doc", license="CC BY 4.0")
 
@@ -387,3 +387,64 @@ def test_hf_token_counter_does_not_import_transformers_at_module_import() -> Non
     head = source.split("class HFTokenCounter")[0]
     assert "import transformers" not in head
     assert "from transformers" not in head
+
+
+# --------------------------------------------------------------------------
+# 6. Ngôn ngữ — ràng buộc mà dry-run đo được là bị bỏ qua 83% lần
+# --------------------------------------------------------------------------
+
+
+def document_in(language: Language) -> Document:
+    return Document(
+        doc_id="doc",
+        content=TEXT,
+        metadata=DocumentMetadata(
+            source_url="https://example.org/doc", license="CC BY 4.0", lang=language
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("language", "name"), [(Language.EN, "English"), (Language.VI, "Vietnamese")]
+)
+def test_prompt_names_the_language_instead_of_asking_the_model_to_infer_it(
+    language: Language, name: str
+) -> None:
+    """⭐⭐ Dry-run 30 request trên tài liệu tiếng Anh với prompt "same language as
+    <chunk>": **15 tiếng Pháp, 10 tiếng Trung, 5 tiếng Anh**. Ngôn ngữ có sẵn
+    trong manifest — bắt model suy ra thứ mình đã biết là tự thêm chỗ hỏng.
+    """
+    request = build_requests(
+        document_in(language),
+        [chunk_at(0, 20000)],
+        config=config(),
+        counter=CharCounter(),
+    )[0]
+    assert f"in {name}." in request.user_text
+    assert "same language as" not in request.user_text
+
+
+def test_language_instruction_sits_after_the_chunk() -> None:
+    """Ngoài tiền tố dùng chung (không tốn prefill) và gần cuối nhất (được đọc chót)."""
+    request = build_requests(
+        document_in(Language.EN), [chunk_at(0, 20000)], config=config(), counter=CharCounter()
+    )[0]
+    text = request.user_text
+    assert text.index("in English.") > text.index("</chunk>")
+
+
+def test_unknown_language_falls_back_instead_of_naming_a_wrong_one() -> None:
+    request = build_requests(
+        document_in(Language.UNKNOWN), [chunk_at(0, 20000)], config=config(), counter=CharCounter()
+    )[0]
+    assert "same language as <chunk>" in request.user_text
+
+
+def test_language_is_part_of_the_cache_key() -> None:
+    """Đổi ngôn ngữ là đổi câu trả lời, nên phải sinh lại chứ không dùng lại."""
+    chunks = [chunk_at(0, 20000)]
+    keys = {
+        build_requests(document_in(lang), chunks, config=config(), counter=CharCounter())[0].key
+        for lang in (Language.EN, Language.VI, Language.UNKNOWN)
+    }
+    assert len(keys) == 3

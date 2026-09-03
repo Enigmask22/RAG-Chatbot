@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
+    "BUNDLE_EXCLUDE",
     "FORBIDDEN_NAMES",
     "REQUIRED_MEMBERS",
     "SECRET_PATTERNS",
@@ -207,6 +208,34 @@ là `ModuleNotFoundError` trên một cái pod đang tính tiền theo giờ.
 """
 
 
+BUNDLE_EXCLUDE: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^tests/"),
+    re.compile(r"^plans/"),
+    re.compile(r"^legacy/"),
+    re.compile(r"^apps/"),
+    re.compile(r"^serving/"),
+    re.compile(r"^infra/"),
+    re.compile(r"^\.github/"),
+    re.compile(r"^\.dvc/"),
+    re.compile(r"^data/"),
+)
+"""Thứ pod không chạy tới. Cắt đi vì gói nhỏ hơn, và vì một lý do cụ thể hơn.
+
+⭐ Lần quét đầu tiên trên gói thật báo **6 phát hiện**, cả sáu nằm trong
+`tests/security/test_no_secret_in_job_bundle.py` — chính các bí mật giả mà test
+cắm vào để chứng minh bộ quét hoạt động. Đó là true positive, và nó chứng minh
+đường quét chạy thật trên gói thật chứ không chỉ trên đầu vào tổng hợp.
+
+Cách chữa **không** phải là miễn trừ file đó: một cơ chế miễn trừ là thứ sau này
+sẽ che mất một bí mật thật. Cách chữa là bỏ hẳn `tests/` ra khỏi gói, vì pod
+chạy đúng một job và không chạy test bao giờ.
+
+Danh sách loại trừ này an toàn theo cả hai chiều nhờ đi cặp với
+`REQUIRED_MEMBERS`: loại trừ quá tay thì `BundleIncomplete` chặn ngay ở laptop,
+loại trừ thiếu thì gói chỉ to hơn cần thiết.
+"""
+
+
 class BundleIncomplete(RuntimeError):
     """Gói thiếu file mà pod cần — gần như luôn là "chưa commit"."""
 
@@ -236,7 +265,7 @@ def build_bundle(out: Path, *, requests_path: Path, repo: Path | None = None) ->
         with tarfile.open(out, "w:gz") as bundle:
             with tarfile.open(source, "r:") as archive:
                 for member in archive:
-                    if member.isfile() and not _is_forbidden(member.name):
+                    if member.isfile() and not _skip_from_bundle(member.name):
                         handle = archive.extractfile(member)
                         if handle is not None:
                             bundle.addfile(member, handle)
@@ -263,6 +292,10 @@ def build_bundle(out: Path, *, requests_path: Path, repo: Path | None = None) ->
 
 def _is_forbidden(name: str) -> bool:
     return any(pattern.search(name) for pattern in FORBIDDEN_NAMES)
+
+
+def _skip_from_bundle(name: str) -> bool:
+    return _is_forbidden(name) or any(p.search(name) for p in BUNDLE_EXCLUDE)
 
 
 POD_SCRIPT = """\

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -19,6 +20,7 @@ import pytest
 from pipeline.indexing.job_bundle import (
     FORBIDDEN_NAMES,
     SECRET_PATTERNS,
+    BundleIncomplete,
     build_bundle,
     scan_bundle,
     scan_text,
@@ -187,3 +189,43 @@ def test_pod_script_never_mentions_an_api_key_variable(real_bundle: Path) -> Non
     for forbidden in ("DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "HF_TOKEN", "--backend deepseek"):
         assert forbidden not in script
     assert "--backend vllm" in script
+
+
+def test_bundle_excludes_the_test_suite_that_carries_planted_secrets(real_bundle: Path) -> None:
+    """⭐ Lần quét đầu trên gói thật báo 6 phát hiện — cả sáu là bí mật giả của
+    chính file này. True positive, và bằng chứng bộ quét chạy trên đường thật.
+
+    Cách chữa là bỏ `tests/` khỏi gói, **không** phải miễn trừ file này: một cơ
+    chế miễn trừ là thứ về sau sẽ che mất một bí mật thật.
+    """
+    with tarfile.open(real_bundle) as tar:
+        names = tar.getnames()
+    assert not [n for n in names if n.startswith("tests/")]
+    assert not [n for n in names if n.startswith("plans/")]
+
+
+def test_bundle_refuses_to_build_when_a_required_file_is_missing(tmp_path: Path) -> None:
+    """Bẫy đối xứng của `git archive`: code chưa commit cũng không vào gói.
+
+    Không có phép kiểm này thì triệu chứng là `ModuleNotFoundError` trên một cái
+    pod đang tính tiền theo giờ — đúng chỗ đắt nhất để phát hiện ra.
+    """
+    repo = tmp_path / "empty-repo"
+    repo.mkdir()
+    for args in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@example.org"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(args, cwd=repo, check=True, capture_output=True)
+    (repo / "README.md").write_text("khong co gi\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True)
+
+    requests = tmp_path / "requests.jsonl.gz"
+    requests.write_bytes(gzip.compress(b'{"key":"k"}\n'))
+    out = tmp_path / "job.tar.gz"
+
+    with pytest.raises(BundleIncomplete, match=r"contextualize\.py"):
+        build_bundle(out, requests_path=requests, repo=repo)
+    assert not out.exists(), "gói hỏng không được để lại trên đĩa"

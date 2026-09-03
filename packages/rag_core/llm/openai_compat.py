@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from ..schemas import TokenUsage
@@ -89,6 +89,7 @@ class OpenAICompatProvider(LLMProvider):
         max_tokens: int | None = None,
         json_mode: bool = False,
         seed: int | None = None,
+        extra_body: Mapping[str, Any] | None = None,
     ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -102,6 +103,8 @@ class OpenAICompatProvider(LLMProvider):
             payload["response_format"] = {"type": "json_object"}
         if seed is not None:
             payload["seed"] = seed
+        if extra_body:
+            payload.update(extra_body)
 
         started = time.perf_counter()
         body = self._post_with_retry("/chat/completions", payload)

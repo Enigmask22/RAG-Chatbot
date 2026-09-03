@@ -39,6 +39,7 @@ import time
 from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import IO, Any, cast
 
@@ -59,6 +60,22 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 VLLM_BASE_URL = "http://127.0.0.1:8000/v1"
+
+NO_THINKING: dict[str, dict[str, Any]] = {
+    # Đo ngày 2026-09-03 trên `deepseek-v4-flash`, cùng một prompt, `max_tokens=512`:
+    #   khong tat                -> reasoning 275, completion 328, content 255 ky tu
+    #   thinking={"type":"disabled"} -> reasoning   0, completion 138, content 361
+    #   reasoning_effort="none"      -> reasoning   0, completion  87, content 374
+    #   chat_template_kwargs=...     -> reasoning 159, completion 219, content 288
+    # Hai cai dau tat that. Cai cuoi duoc NHAN roi BO QUA -- day la vi du cua tham
+    # so khong loi, khong tac dung: khong do thi tuong da tat.
+    "deepseek": {"thinking": {"type": "disabled"}},
+    # Voi vLLM day moi la co che dung: Qwen3 la model lai, chat template cua no
+    # doc `enable_thinking`. Khong tat thi phan lon `max_tokens` di vao chuoi suy
+    # luan khong nam trong `content` -- dry-run do duoc 83%, va 6/30 request tra rong.
+    "vllm": {"chat_template_kwargs": {"enable_thinking": False}},
+}
+"""Tham số tắt suy luận, **khác nhau theo nhà cung cấp** và đã đo chứ không đoán."""
 
 
 # ---------------------------------------------------------------- artifact
@@ -269,6 +286,7 @@ def run_requests(
     seed: int = 0,
     gpu_hourly_usd: float = 0.0,
     progress_every: int = 50,
+    extra_body: dict[str, Any] | None = None,
 ) -> RunReport:
     """Gọi LLM cho từng request còn thiếu, ghi nối vào `out_path`.
 
@@ -284,6 +302,7 @@ def run_requests(
     * **Chạm trần chi phí** → dừng **cả job**. Thử lại vẫn chạm; chạy tiếp chỉ
       để đốt thêm tiền cho tới khi hết request.
     """
+    _warn_if_not_grouped_by_document(requests)
     todo = [r for r in requests if r.key not in load_done_keys(out_path)]
     report = RunReport(n_requests=len(requests), n_skipped=len(requests) - len(todo))
     if not todo:
@@ -304,7 +323,11 @@ def run_requests(
         # `max_tokens` chặn cứng và nhỏ hơn input hai bậc.
         budget.reserve(request.est_prompt_tokens / 1_000_000 * 1.0)
         response = provider.complete(
-            request.messages, temperature=0.0, max_tokens=max_tokens, seed=seed
+            request.messages,
+            temperature=0.0,
+            max_tokens=max_tokens,
+            seed=seed,
+            extra_body=extra_body,
         )
         context = response.text.strip()
         cached = int(response.raw.get("cached_tokens", 0) or 0)
@@ -357,6 +380,30 @@ def run_requests(
     report.gpu_cost_usd = gpu_hourly_usd * report.elapsed_s / 3600
     report.models_served = sorted(served)
     return report
+
+
+def _warn_if_not_grouped_by_document(requests: Sequence[ContextRequest]) -> int:
+    """Đếm số lần `doc_id` đổi. Trả về số ấy để test bám vào, không chỉ để log.
+
+    ⭐ Đo được, và đo được **tình cờ**: một mẫu 20 request lấy ngẫu nhiên khắp
+    corpus cho cache trúng **10,5%**, trong khi 40 request liên tiếp cùng một tài
+    liệu cho **49,1%**. Prefix cache — cả của vLLM lẫn của DeepSeek — chỉ trúng
+    khi tiền tố **vừa mới** đi qua; xáo trộn để "chia tải" là vứt đi một nửa
+    trong 31,3 triệu token tiền tố dùng chung.
+
+    `prepare` sinh ra thứ tự đúng sẵn (duyệt theo tài liệu). Cảnh báo này để
+    ai đó lọc/xáo file request về sau không âm thầm trả giá gấp đôi.
+    """
+    switches = sum(1 for a, b in pairwise(requests) if a.doc_id != b.doc_id)
+    distinct = len({r.doc_id for r in requests})
+    if switches > distinct:
+        logger.warning(
+            "Request KHÔNG gom theo tài liệu: %d lần đổi doc_id cho %d tài liệu. "
+            "Prefix cache sẽ trượt phần lớn — sắp xếp theo doc_id trước khi chạy.",
+            switches,
+            distinct,
+        )
+    return switches
 
 
 def _append_context(
@@ -524,6 +571,7 @@ def _run(args: argparse.Namespace) -> int:
         concurrency=args.concurrency,
         seed=args.seed,
         gpu_hourly_usd=args.gpu_hourly_usd,
+        extra_body=None if args.thinking else NO_THINKING.get(args.backend),
     )
     _print_report(report)
 
@@ -583,6 +631,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--limit", type=int, default=None, help="chỉ chạy N request đầu")
     run.add_argument("--cost-cap", type=float, default=5.0, help="USD; 0 = không trần")
     run.add_argument("--gpu-hourly-usd", type=float, default=0.0)
+    run.add_argument(
+        "--thinking",
+        action="store_true",
+        help="BẬT lại suy luận (mặc định tắt — xem NO_THINKING)",
+    )
     run.add_argument("--report", default="")
     run.set_defaults(func=_run)
 

@@ -1,0 +1,22 @@
+{
+  "n_requests": 40,
+  "n_done": 40,
+  "n_skipped": 0,
+  "n_failed": 0,
+  "n_empty": 0,
+  "n_truncated": 0,
+  "prompt_tokens": 168044,
+  "completion_tokens": 3199,
+  "cached_tokens": 82432,
+  "reasoning_tokens": 0,
+  "api_cost_usd": 0.032404379999999997,
+  "gpu_cost_usd": 0.0,
+  "elapsed_s": 9.923074700000143,
+  "models_served": [
+    "deepseek-v4-flash"
+  ],
+  "stopped_early": "",
+  "total_cost_usd": 0.032404,
+  "cost_per_1000_usd": 0.810109,
+  "cache_hit_rate": 0.4905
+}

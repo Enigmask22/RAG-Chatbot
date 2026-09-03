@@ -327,3 +327,27 @@ mlflow-ui:  ## Mở MLflow UI trên store cục bộ (http://127.0.0.1:5000)
 rerank-probe:  ## Trần vùng phủ + truncation + bão hoà sigmoid + độ trễ rerank (W2-05)
 	$(PY) python scripts/rerank_probe.py --config $(INDEX_CONFIG) \
 		--report plans/reports/probes/w2-05-rerank-probe.json
+
+.PHONY: ctx-dry
+ctx-dry:  ## W3-04: in thống kê prefill + prompt mẫu, KHÔNG ghi gì, KHÔNG gọi LLM
+	$(PY) python -m pipeline.indexing.contextualize prepare --dry-run
+
+.PHONY: ctx-prepare
+ctx-prepare:  ## W3-04: corpus → gói request cho GPU thuê (không gọi LLM)
+	$(PY) python -m pipeline.indexing.contextualize prepare
+
+.PHONY: ctx-run-api
+ctx-run-api:  ## W3-04: sinh ngữ cảnh bằng DeepSeek (TỐN TIỀN). LIMIT=40 CAP=1.0
+	$(PY) python -m pipeline.indexing.contextualize run \
+		--backend deepseek --model deepseek-v4-flash \
+		--limit $(or $(LIMIT),40) --cost-cap $(or $(CAP),1.0) \
+		--out data/contexts/contexts.jsonl \
+		--report reports/probes/w3-04-contexts.json
+
+.PHONY: job-bundle
+job-bundle:  ## W0-08: dựng gói job cho RunPod (git archive + gói request)
+	bash scripts/runpod_job.sh bundle
+
+.PHONY: job-verify
+job-verify:  ## W0-08: quét bí mật trong gói job. CHẠY TRƯỚC KHI ĐẨY LÊN POD
+	bash scripts/runpod_job.sh verify

@@ -80,6 +80,19 @@ CONTEXT_KEY = "context"
 CONTEXT_SEPARATOR = "\n\n"
 """Ngăn cách ngữ cảnh với nội dung gốc. Cố định vì `original_content` bóc theo nó."""
 
+LANGUAGE_NAMES: dict[str, str] = {"vi": "Vietnamese", "en": "English"}
+"""Tên ngôn ngữ để **gọi thẳng** trong prompt.
+
+⚠️⚠️ Bản đầu của prompt viết *"Write in the SAME language as `<chunk>`"* và để
+model tự suy. Dry-run 30 request trên một tài liệu tiếng Anh: **15 ngữ cảnh
+tiếng Pháp, 10 tiếng Trung, đúng 5 tiếng Anh — 17%**. Không lỗi nào, không cảnh
+báo nào; index sẽ nhận 15.814 chunk mang một câu tiếng Pháp dán lên đầu và mọi
+metric chỉ đơn giản là tệ hơn mà không ai truy ra vì sao.
+
+Ngôn ngữ nằm sẵn ở `DocumentMetadata.lang`, tới từ manifest. Bắt model suy ra
+thứ mình đã biết là tự thêm một chỗ hỏng. `unknown`/`mixed` mới quay về cách cũ,
+và khi đó nó là lối thoát cuối chứ không phải mặc định."""
+
 
 CONTEXT_SYSTEM_PROMPT = """\
 You situate a passage inside the document it was taken from, so that a search \
@@ -96,7 +109,6 @@ and the section topic whenever the material states them — those are the words 
 question will use and the passage itself usually leaves out.
 
 Rules:
-- Write in the SAME language as <chunk>.
 - Do not repeat sentences from <chunk>.
 - Do not state anything that is not in the material given.
 - Output only the sentences. No preamble, no quotes, no labels, no markdown.\
@@ -220,6 +232,7 @@ def build_requests(
         return []
 
     text = document.content
+    language = document.metadata.lang.value if document.metadata else ""
     density = calibrate_density(text, counter)
     head_chars = int(config.head_tokens * density)
     window_chars = int(config.window_tokens * density)
@@ -239,7 +252,7 @@ def build_requests(
             head_chars=len(head),
             window_chars=window_chars,
         )
-        user = _render_user(head=head, window=window, chunk_text=chunk.content)
+        user = _render_user(head=head, window=window, chunk_text=chunk.content, language=language)
         messages = (
             ChatMessage(role="system", content=CONTEXT_SYSTEM_PROMPT),
             ChatMessage(role="user", content=user),
@@ -256,12 +269,23 @@ def build_requests(
     return requests
 
 
-def _render_user(*, head: str, window: str, chunk_text: str) -> str:
-    """Phần bất biến theo tài liệu đứng TRƯỚC phần đổi theo chunk — xem docstring module."""
+def _render_user(*, head: str, window: str, chunk_text: str, language: str) -> str:
+    """Phần bất biến theo tài liệu đứng TRƯỚC phần đổi theo chunk — xem docstring module.
+
+    Câu lệnh cuối đặt **sau** `<chunk>` có chủ ý kép: nó nằm ngoài tiền tố dùng
+    chung nên không tốn gì cho prefix caching, và nó là thứ model đọc gần nhất
+    trước khi trả lời — đúng chỗ cần cho ràng buộc bị bỏ qua nhiều nhất.
+    """
     parts = [f"<document_head>\n{head}\n</document_head>"] if head else []
     if window:
         parts.append(f"<neighbourhood>\n{window}\n</neighbourhood>")
     parts.append(f"<chunk>\n{chunk_text}\n</chunk>")
+    name = LANGUAGE_NAMES.get(language)
+    parts.append(
+        f"Now write the situating sentences for <chunk>, in {name}."
+        if name
+        else "Now write the situating sentences for <chunk>, in the same language as <chunk>."
+    )
     return "\n\n".join(parts)
 
 
