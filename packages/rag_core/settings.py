@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    glm_api_key: SecretStr | None = None
+    glm_base_url: str = "https://api.z.ai/api/paas/v4"
+    """Endpoint quoc te cua Z.ai. Ban dai luc la `https://open.bigmodel.cn/api/paas/v4`."""
     hf_token: SecretStr | None = None
 
     # ------------------------------------------------------------ Hạ tầng

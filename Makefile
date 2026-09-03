@@ -336,13 +336,13 @@ ctx-dry:  ## W3-04: in thống kê prefill + prompt mẫu, KHÔNG ghi gì, KHÔN
 ctx-prepare:  ## W3-04: corpus → gói request cho GPU thuê (không gọi LLM)
 	$(PY) python -m pipeline.indexing.contextualize prepare
 
-.PHONY: ctx-run-api
-ctx-run-api:  ## W3-04: sinh ngữ cảnh bằng DeepSeek (TỐN TIỀN). LIMIT=40 CAP=1.0
-	$(PY) python -m pipeline.indexing.contextualize run \
-		--backend deepseek --model deepseek-v4-flash \
-		--limit $(or $(LIMIT),40) --cost-cap $(or $(CAP),1.0) \
-		--out data/contexts/contexts.jsonl \
-		--report plans/reports/probes/w3-04-contexts.json
+.PHONY: ctx-run-glm
+ctx-run-glm:  ## W3-04: sinh ngữ cảnh bằng GLM — rẻ nhất, ~$2,9 cả corpus. LIMIT= CAP= CONC=
+	$(PY) python -m pipeline.indexing.contextualize run \n		--backend glm \n		$(if $(LIMIT),--limit $(LIMIT),) --cost-cap $(or $(CAP),6.0) \n		--concurrency $(or $(CONC),16) \n		--out data/contexts/contexts.jsonl \n		--report plans/reports/probes/w3-04-contexts-glm.json
+
+.PHONY: ctx-run-deepseek
+ctx-run-deepseek:  ## W3-04: sinh ngữ cảnh bằng DeepSeek — đắt hơn GLM 2,2×. LIMIT= CAP= CONC=
+	$(PY) python -m pipeline.indexing.contextualize run \n		--backend deepseek \n		$(if $(LIMIT),--limit $(LIMIT),) --cost-cap $(or $(CAP),10.0) \n		--concurrency $(or $(CONC),16) \n		--out data/contexts/contexts.jsonl \n		--report plans/reports/probes/w3-04-contexts-deepseek.json
 
 .PHONY: job-bundle
 job-bundle:  ## W0-08: dựng gói job cho RunPod (git archive + gói request)

@@ -3074,3 +3074,61 @@ Việc tiếp theo: **`W4`** (Serving Plane) ở laptop — nó không phụ thu
 song song với phiên GPU của anh. Kiểm ngay ở 50 request đầu trên pod:
 `reasoning_tokens` phải bằng **0** và `cache_hit_rate` phải trên **30%**; cả hai
 rẻ để phát hiện ở phút thứ ba và đắt ở giờ thứ ba (`TD-30`).
+
+## 2026-09-03 (phiên 2) · Backend GLM, và một phép đo tự phản bội
+
+Ngân sách API là ràng buộc thật, nên thêm GLM-5.3-Flash. Phần nối code mất mười
+lăm phút — GLM nói đúng giao thức OpenAI kể cả phần `usage`. Phần đáng nhớ là
+phép so sánh.
+
+### Con số đầu tiên nói ngược bảng giá, và tôi suýt tin nó
+
+Bảng giá: GLM rẻ hơn DeepSeek 1,8–2,3× ở cả ba trục. Đo được: rẻ **20%**.
+
+Khoảng cách ấy là tín hiệu, không phải nhiễu. Câu trả lời in ngay trong chính
+báo cáo tôi vừa đọc: **cache trúng 4,0% (GLM) vs 49,1% (DeepSeek)**.
+
+Chạy lại đúng 40 request đó lần thứ hai — GLM lên **94,8%**, giá xuống
+**$0,1818/1000**, tức rẻ **3,3×** so với lượt một của chính nó. Kết luận đúng:
+GLM rẻ hơn 2,17×.
+
+Chỗ sai không nằm ở GLM mà ở **mẫu**: 40 request ấy đều lấy từ đầu một tài liệu,
+nên toàn bộ mẫu nằm trong vùng khởi động cache. Corpus thật có ~264 chunk mỗi tài
+liệu, nên vùng khởi động chiếm ~2% chứ không phải 100%.
+
+Đây là lần thứ **tư** trong `W3` cùng một hình dạng lỗi — `W3-01` §2 (fixture PDF
+lặp), `W3-05` §9 (fixture prose lặp một câu), `W3-07` (mỗi "trang" vừa khít một
+chunk), và giờ là đây. Khác biệt: ba lần trước sai lệch đến từ **nội dung** mẫu,
+lần này đến từ **vị trí** mẫu. Cùng một câu hỏi kiểm được: *mẫu này có phủ chế độ
+vận hành thật không, hay chỉ phủ cái nó tình cờ chạm tới?*
+
+### Ba nhà, ba hành vi cho cùng một ý định
+
+Muốn tắt suy luận:
+
+| | vLLM/Qwen3 | DeepSeek | GLM |
+|---|---|---|---|
+| `chat_template_kwargs` | **có tác dụng** | nhận rồi **bỏ qua** | **từ chối** (400) |
+| `thinking={"type":"disabled"}` | — | **có tác dụng** | **từ chối** (400) |
+| `reasoning_effort` | — | `"none"` có tác dụng | chỉ `low`/`high`/`max` |
+
+GLM **không tắt được** suy luận — API nói thẳng điều đó trong thông báo lỗi, và
+đó là thông báo lỗi hữu ích nhất tôi gặp trong dự án này. Nên hằng số đổi tên
+`NO_THINKING` → `MIN_REASONING`. Một cái tên sai ở tầng hằng số sẽ đi vào mọi báo
+cáo chi phí về sau mà không ai đọc lại định nghĩa.
+
+### Hệ quả cho kế hoạch
+
+Cả corpus qua GLM còn **~$2,9**. `W3-04` không còn bị GPU chặn; pod chỉ còn cần
+cho `W5-11`. Đã viết `RUNPOD.md` cho ai vẫn muốn chạy pod, với §0 nói thẳng rằng
+có thể không cần.
+
+### Lệnh để tiếp tục
+
+```bash
+make ctx-run-glm CONC=16     # ~$2,9, có checkpoint, đứt thì chạy lại
+uv run pytest tests/unit/test_contextualize_backends.py
+```
+
+Việc tiếp theo: nối `apply_contexts` vào `build_index` (chưa làm), rồi `W3-09`.
+Song song, `W4` vẫn là đường găng.

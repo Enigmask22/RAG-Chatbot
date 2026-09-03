@@ -4,9 +4,11 @@
 > **Ngày:** 2026-09-03 · **Nhánh:** `main`
 > **Code:** `packages/rag_core/chunking/contextual.py`, `packages/rag_core/llm/{budget,tokenizer}.py`,
 > `pipeline/indexing/{contextualize,job_bundle}.py`, `scripts/runpod_job.sh`
-> **Test:** `tests/unit/test_contextual_chunking.py` (37) · `tests/security/test_no_secret_in_job_bundle.py` (26)
+> **Test:** `tests/unit/test_contextual_chunking.py` (37) · `tests/unit/test_contextualize_backends.py` (16)
+> · `tests/security/test_no_secret_in_job_bundle.py` (26)
 > **Probe:** `plans/reports/probes/w3-04-dryrun-deepseek.json`
-> **Lệnh:** `make ctx-dry` · `make ctx-prepare` · `make ctx-run-api` · `make job-bundle` · `make job-verify`
+> **Lệnh:** `make ctx-dry` · `make ctx-prepare` · `make ctx-run-glm` · `make job-bundle` · `make job-verify`
+> **Runbook:** `RUNPOD.md`
 
 ## 0. Hạng mục này KHÔNG phải là "W3-04 xong"
 
@@ -28,7 +30,7 @@ code nào — nên chúng kiểm được.
 | E1 | Không nhét cả tài liệu vào prompt được; cửa sổ Qwen3-8B là 32K | ✅ đúng về kết luận, ❌ **sai con số**: `config.json` ghi `max_position_embeddings = 40960`. **28/60 tài liệu vượt** (§2) |
 | E2 | Cửa sổ theo section bị `TD-24` chặn | ✅ đúng — 0/60 tài liệu có heading máy đọc được |
 | E3 | Prefix caching bỏ được ~2,3× prefill (63M → 27,7M) | 🟡 **quá lạc quan**: đo được **1,95×** (64,3M → 33,0M), tức 49,0% (§3) |
-| E4 | Chạy hết corpus trên DeepSeek tốn ~$17–18 | 🟡 lệch 50% — đo được **$11,85**. Trớ trêu: con số tôi đoán lại gần đúng với đường **đang hỏng** ($20,9 khi chưa tắt suy luận) |
+| E4 | Chạy hết corpus trên DeepSeek tốn ~$17–18 | ❌ **lệch 2,8×** — đo được **$6,2** (cache ấm). Con số $11,85 tôi công bố ở bản đầu báo cáo này cũng sai, vì nó đo vùng khởi động cache (§6) |
 | E5 | *(không có)* Rủi ro lớn nhất là kích thước cửa sổ | ❌ **sai hoàn toàn.** Hai lỗi thật sự nguy hiểm là **suy luận nuốt output** (§4) và **ngữ cảnh sai ngôn ngữ** (§5). Cả hai vô hình với suy luận thiết kế |
 
 **Bài học của cả hạng mục nằm ở `E5`.** Tôi dành công sức thiết kế cho chiều duy
@@ -159,10 +161,112 @@ Sau khi sửa: **40/40 tiếng Anh · 20/20 tiếng Việt.** Mẫu:
 
 Đó đúng là những từ mà câu hỏi sẽ dùng và chunk gốc không có.
 
-## 6. Chi phí và thời gian dự phóng
+## 6. Ba backend, và cái bẫy đo lường trong chính phép so sánh
 
-**Đường API (đo thật, 60 request):** $0,7492/1000 chunk → **$11,85** cho cả corpus.
-Cache trúng 49,1%.
+Sau khi `W3-04` chạy được, ngân sách API trở thành ràng buộc thật, nên thêm
+**GLM-5.3-Flash (Z.ai)**. Giá niêm yết rẻ hơn DeepSeek 1,8–2,3× ở cả ba trục
+($0,15 / $0,50 / $0,03 so với $0,27 / $1,10 / $0,07).
+
+GLM nói đúng giao thức OpenAI **kể cả phần `usage`** — nó trả
+`prompt_tokens_details.cached_tokens` và `completion_tokens_details.reasoning_tokens`,
+đúng hai field `_parse` đã đọc sẵn từ `W1-10`. Nên không có đường parse riêng;
+chỉ thêm bảng giá và một `base_url`. (DeepSeek thì dùng tên khác —
+`prompt_cache_hit_tokens` — nên đây là may, không phải mặc định.)
+
+### GLM cũng là model suy luận, và nó KHÔNG tắt được
+
+Cùng bẫy §4, nhưng lối thoát khác. API trả thẳng HTTP 400 mã `1210`:
+
+> *This model always engages in thinking and cannot be disabled; please use low,
+> high, or max*
+
+Ba mức hợp lệ, đo trên cùng một prompt:
+
+| `reasoning_effort` | suy luận | completion | content |
+|---|---:|---:|---:|
+| *(không đặt)* | 165 | 243 | 401 ký tự |
+| `low` | **0** | **70** | 383 |
+| `high` | 40 | 118 | 393 |
+| `max` | 180 | 255 | 411 |
+
+`low` cho `reasoning_content` **rỗng thật** (0 ký tự — đã đọc response thô để
+kiểm, không tin mỗi con số `reasoning_tokens`), trong khi độ dài content gần như
+không đổi. 3,5× output tiết kiệm được là tiết kiệm sạch.
+
+⚠️ Và `chat_template_kwargs` — thứ **có** tác dụng với vLLM/Qwen3 — bị GLM từ chối
+thẳng, trong khi DeepSeek nhận nó rồi **bỏ qua**. Ba nhà, ba hành vi khác nhau cho
+cùng một ý định. Nên hằng số được đổi tên từ `NO_THINKING` thành **`MIN_REASONING`**:
+gọi là "tắt" khi có nhà không tắt được là gieo một hiểu nhầm vào mọi báo cáo chi
+phí về sau.
+
+### ⭐⭐ Phép so sánh đầu tiên sai, vì nó đo vùng khởi động cache
+
+Lượt đo đầu: GLM **$0,5954**/1000 vs DeepSeek **$0,7492**/1000 — chỉ rẻ 20%, mâu
+thuẫn với bảng giá. Nguyên nhân nằm ngay trong báo cáo: **cache trúng 4,0% (GLM)
+vs 49,1% (DeepSeek)**.
+
+Chạy **lại đúng 40 request đó** lần thứ hai:
+
+| | lượt 1 (cache nguội) | lượt 2 (cache ấm) |
+|---|---:|---:|
+| GLM · cache trúng | 4,0% | **94,8%** |
+| GLM · cost/1000 | $0,5954 | **$0,1818** |
+| DeepSeek · cache trúng | 49,1% | **98,3%** |
+| DeepSeek · cost/1000 | $0,7492 | **$0,3949** |
+
+Cả hai đều rẻ đi, GLM rẻ đi **3,3×**. Kết luận đúng: **GLM rẻ hơn 2,17×**, không
+phải 20%.
+
+Chỗ sai của phép đo đầu: 40 request ấy đều lấy từ **đầu một tài liệu**, tức toàn
+bộ mẫu nằm trong vùng khởi động cache. Trên corpus thật mỗi tài liệu có ~264
+chunk, nên vùng khởi động chiếm ~2% chứ không phải 100%. **Mẫu 40 request liên
+tiếp đo đúng cái mà nó tình cờ phủ, và cái đó không phải chế độ vận hành.** Cùng
+họ với ba lần fixture đồng nhất của `W3-01`/`W3-05`/`W3-07`, chỉ khác là lần này
+sai lệch đến từ *vị trí* mẫu chứ không từ nội dung mẫu.
+
+### Bảng quyết định
+
+| đường | cost/1000 (ấm) | cả corpus | throughput (conc=6) | cả corpus |
+|---|---:|---:|---:|---:|
+| **GLM-5.3-Flash** | **$0,1818** | **~$2,9** | 1,54 req/s | ~2,9 h |
+| DeepSeek-v4-flash | $0,3949 | ~$6,2 | 4,40 req/s | ~1,0 h |
+| vLLM Qwen3-8B / 4090 | theo giờ | tiền thuê × 2,5–3,5 h *(tính)* | — | 2,5–3,5 h *(tính)* |
+
+GLM rẻ hơn 2,2× nhưng chậm hơn 2,9× mỗi request; nâng `--concurrency` bù được
+phần thời gian mà không đổi chi phí.
+
+⭐ **Hệ quả cho kế hoạch:** ~$2,9 làm nhánh API thành lựa chọn chính chứ không còn
+là fallback. Pod vẫn cần cho `W5-11` (ablation generator bắt buộc có vLLM), nhưng
+`W3-04` **không còn bị GPU chặn**.
+
+Chất lượng ngang nhau: GLM cho **40/40 EN · 20/20 VI** đúng ngôn ngữ, độ dài p50
+447 ký tự (DeepSeek 433), nội dung nêu đúng tên báo cáo, tổ chức, năm, và mục.
+
+### ⚠️ Một mặc định duy nhất cho ba backend là một cái bẫy
+
+`--backend glm` mà quên `--model` gửi slug mặc định `Qwen/Qwen3-8B` sang Z.ai và
+nhận **20/20 `HTTP 400 modelCode: does not exist`**. Ở laptop thì vô hại — xử lý
+lỗi chạy đúng thiết kế: 20 lỗi ghi sang `.failures.jsonl`, artifact chính không
+bẩn, chạy lại là thử lại. Trên pod thì đó là mấy phút tiền thuê đổi lấy một file
+lỗi. Sửa bằng `DEFAULT_MODEL` theo backend + test đòi **mọi** bảng-theo-backend
+phải phủ đủ danh sách backend.
+
+### Đường GPU (tính, chưa đo)
+
+33,0M token prefill. Qwen3-8B bf16 ≈ 16,4 GB trọng số; KV cache = 2 × 36 lớp × 8
+KV head × 128 head_dim × 2 byte = **0,1406 MB/token**. Trên 24 GB còn ~6,6 GB cho
+KV ≈ **47.000 token**, tức ~11 chuỗi 4.100-token cùng lúc. Prefill ≈ 2 × 8,2e9 ×
+33,0e6 = 5,4e17 FLOP; ở ~40% MFU của 165 TFLOP/s bf16 thì ≈ **2,3 giờ**, cộng
+decode ~20 phút → **~2,5–3,5 giờ**.
+
+⚠️ Cả đoạn trên là **phép tính, không phải phép đo**. MFU 40% là giả định. Nếu
+chật VRAM thì lượng hoá FP8 hạ trọng số còn ~8,2 GB — 4090 (sm89) hỗ trợ nguyên
+bản.
+
+### Số cũ (giữ lại để đối chiếu)
+
+**Đường DeepSeek đo lần đầu, cache nguội:** $0,7492/1000 chunk → $11,85 cho cả
+corpus. Cache trúng 49,1%.
 
 **Đường GPU (tính, chưa đo):** 33,0M token prefill. Qwen3-8B bf16 ≈ 16,4 GB trọng
 số; KV cache = 2 × 36 lớp × 8 KV head × 128 head_dim × 2 byte = **0,1406 MB/token**.
@@ -224,23 +328,26 @@ kiểm được, không phải ở dạng lời hứa.
 
 ## 9. Chạy trên pod
 
+Runbook đầy đủ — kể cả cách tạo Network Volume, hai cách chuyển file, và bảng chế
+độ hỏng — nằm ở **`RUNPOD.md`** ở gốc repo.
+
+Tóm tắt:
+
 ```bash
-# --- laptop ---
-make ctx-prepare          # 15.814 request → data/contexts/requests.jsonl.gz (8,5 MB)
-make job-bundle           # → dist/runpod-job.tar.gz (7,6 MB)
-make job-verify           # PHẢI sạch trước khi đẩy
+# laptop
+make ctx-prepare && git status --short   # phải sạch: git archive chỉ đóng gói thứ đã commit
+make job-bundle && make job-verify       # phải in SẠCH
 bash scripts/runpod_job.sh push
 
-# --- pod: Secure Cloud · RTX 4090 24GB · network volume /workspace ---
-#     HF_HOME=/workspace/.hf  · đặt spending limit TRƯỚC khi tạo pod
+# pod: Secure Cloud · 4090 24GB · volume /workspace · HF_HOME=/workspace/.hf
 tar xzf runpod-job.tar.gz
-pip install vllm httpx pydantic pydantic-settings pyyaml
+pip install -q vllm httpx pydantic pydantic-settings
 GPU_HOURLY_USD=<giá thật> bash job/run_on_pod.sh
-
-# --- laptop ---
-runpodctl receive <mã>    # → data/contexts/contexts.jsonl
-# rồi TERMINATE pod, thu hồi token
 ```
+
+⚠️ **Kiểm ở phút thứ ba**: `reasoning_tokens` phải bằng **0**, `cache_hit_rate`
+phải trên **30%**, và ngôn ngữ ngữ cảnh phải khớp tài liệu. Cả ba đều **không làm
+job đỏ** — job vẫn chạy tới cùng và trả ra một file trông hợp lệ.
 
 `run_on_pod.sh` đặt `--max-model-len 8192` (prompt dài nhất 5.248) thay vì 40.960:
 khai thừa là bắt vLLM giữ chỗ KV cache cho độ dài không bao giờ dùng tới, mà trên

@@ -61,21 +61,51 @@ logger = logging.getLogger(__name__)
 
 VLLM_BASE_URL = "http://127.0.0.1:8000/v1"
 
-NO_THINKING: dict[str, dict[str, Any]] = {
-    # Đo ngày 2026-09-03 trên `deepseek-v4-flash`, cùng một prompt, `max_tokens=512`:
-    #   khong tat                -> reasoning 275, completion 328, content 255 ky tu
-    #   thinking={"type":"disabled"} -> reasoning   0, completion 138, content 361
-    #   reasoning_effort="none"      -> reasoning   0, completion  87, content 374
-    #   chat_template_kwargs=...     -> reasoning 159, completion 219, content 288
-    # Hai cai dau tat that. Cai cuoi duoc NHAN roi BO QUA -- day la vi du cua tham
-    # so khong loi, khong tac dung: khong do thi tuong da tat.
+DEFAULT_MODEL: dict[str, str] = {
+    "glm": "glm-5.3-flash",
+    "deepseek": "deepseek-v4-flash",
+    "vllm": "Qwen/Qwen3-8B",
+}
+"""Slug mặc định **theo backend**.
+
+⚠️ Bản đầu để một mặc định duy nhất (`Qwen/Qwen3-8B`) cho mọi backend, và lần
+đầu chạy `--backend glm` mà quên `--model` thì cả 20 request trả `HTTP 400
+modelCode: does not exist`. Ở laptop thì vô hại — xử lý lỗi đúng như thiết kế,
+20 lỗi ghi ra file riêng, artifact chính không bẩn, chạy lại là thử lại. Trên
+pod thì đó là mấy phút tiền thuê đổi lấy một file lỗi."""
+
+MIN_REASONING: dict[str, dict[str, Any]] = {
+    # `deepseek-v4-flash`, đo 2026-09-03, cùng prompt, `max_tokens=512`:
+    #   khong dat                    -> reasoning 275, completion 328
+    #   thinking={"type":"disabled"} -> reasoning   0, completion 138
+    #   reasoning_effort="none"      -> reasoning   0, completion  87
+    #   chat_template_kwargs=...     -> reasoning 159, completion 219  (NHAN roi BO QUA)
     "deepseek": {"thinking": {"type": "disabled"}},
-    # Voi vLLM day moi la co che dung: Qwen3 la model lai, chat template cua no
-    # doc `enable_thinking`. Khong tat thi phan lon `max_tokens` di vao chuoi suy
-    # luan khong nam trong `content` -- dry-run do duoc 83%, va 6/30 request tra rong.
+    # `glm-5.3-flash`, cung prompt, cung ngay. Model nay **khong tat duoc** suy
+    # luan -- API tra HTTP 400 ma`1210`: "This model always engages in thinking
+    # and cannot be disabled; please use low, high, or max". Ba muc hop le, do
+    # tren cung mot prompt:
+    #   khong dat            -> reasoning 165, completion 243, content 401 ky tu
+    #   reasoning_effort=low -> reasoning   0, completion  70, content 383
+    #   reasoning_effort=high-> reasoning  40, completion 118, content 393
+    #   reasoning_effort=max -> reasoning 180, completion 255, content 411
+    # `low` cho `reasoning_content` **rong that** (0 ky tu), khong phai field bi
+    # giau di -- da doc response tho de kiem. Do dai content khong doi dang ke,
+    # nen 3,5x output do la tiet kiem sach.
+    "glm": {"reasoning_effort": "low"},
+    # vLLM/Qwen3: chat template cua Qwen3 doc `enable_thinking`. Day moi la cho
+    # tham so ay CO tac dung -- DeepSeek nhan no roi bo qua.
     "vllm": {"chat_template_kwargs": {"enable_thinking": False}},
 }
-"""Tham số tắt suy luận, **khác nhau theo nhà cung cấp** và đã đo chứ không đoán."""
+"""Tham số **giảm suy luận tới mức thấp nhất provider cho phép**, đã đo từng cái.
+
+Tên là `MIN_REASONING` chứ không phải `NO_THINKING` vì GLM-5.3-Flash **không tắt
+được**: nó chỉ nhận `low`/`high`/`max`. Gọi tên sai ở đây sẽ dẫn tới đọc sai một
+báo cáo chi phí về sau.
+
+⚠️ Hai trong bốn dòng trên là **tham số được nhận, không lỗi, và không có tác
+dụng** nếu đặt nhầm nhà: `chat_template_kwargs` với DeepSeek (vẫn 159 token suy
+luận), và `thinking={"type":...}` với GLM (HTTP 400). Không đo thì tưởng đã tắt."""
 
 
 # ---------------------------------------------------------------- artifact
@@ -208,8 +238,24 @@ def build_provider(
     timeout: float = 300.0,
 ) -> LLMProvider:
     """`deepseek` hoặc `vllm`. Cùng một lớp client, khác `base_url` và bảng giá."""
-    from rag_core.llm import DEEPSEEK_PRICING, ModelPricing, OpenAICompatProvider
+    from rag_core.llm import (
+        DEEPSEEK_PRICING,
+        GLM_BASE_URL,
+        GLM_PRICING,
+        ModelPricing,
+        OpenAICompatProvider,
+    )
 
+    if backend == "glm":
+        if not api_key:
+            raise SystemExit("Backend `glm` cần GLM_API_KEY.")
+        return OpenAICompatProvider(
+            model,
+            api_key=api_key,
+            base_url=base_url or GLM_BASE_URL,
+            pricing=GLM_PRICING.get(model, ModelPricing()),
+            timeout=timeout,
+        )
     if backend == "deepseek":
         if not api_key:
             raise SystemExit("Backend `deepseek` cần DEEPSEEK_API_KEY.")
@@ -230,7 +276,7 @@ def build_provider(
             pricing=ModelPricing(),
             timeout=timeout,
         )
-    raise SystemExit(f"Backend không biết: {backend!r} (chọn `deepseek` hoặc `vllm`)")
+    raise SystemExit(f"Backend không biết: {backend!r} (chọn `glm`, `deepseek` hoặc `vllm`)")
 
 
 # ---------------------------------------------------------------- vòng chạy
@@ -550,16 +596,19 @@ def _run(args: argparse.Namespace) -> int:
         raise SystemExit(f"Không đọc được request nào từ {args.requests}")
 
     api_key = ""
-    if args.backend == "deepseek":
+    base_url = args.base_url
+    if args.backend in ("deepseek", "glm"):
+        field = f"{args.backend}_api_key"
         settings = get_settings()
-        settings.require("deepseek_api_key")
-        if settings.deepseek_api_key is None:  # pragma: no cover - `require` đã chặn
-            raise SystemExit("Thiếu DEEPSEEK_API_KEY")
-        api_key = settings.deepseek_api_key.get_secret_value()
+        settings.require(field)
+        secret = getattr(settings, field)
+        if secret is None:  # pragma: no cover - `require` đã chặn
+            raise SystemExit(f"Thiếu {field.upper()}")
+        api_key = secret.get_secret_value()
+        base_url = base_url or getattr(settings, f"{args.backend}_base_url", "")
 
-    provider = build_provider(
-        args.backend, model=args.model, api_key=api_key, base_url=args.base_url
-    )
+    model = args.model or DEFAULT_MODEL[args.backend]
+    provider = build_provider(args.backend, model=model, api_key=api_key, base_url=base_url)
     budget = CostBudget(args.cost_cap, name=f"W3-04/{args.backend}")
 
     report = run_requests(
@@ -571,7 +620,7 @@ def _run(args: argparse.Namespace) -> int:
         concurrency=args.concurrency,
         seed=args.seed,
         gpu_hourly_usd=args.gpu_hourly_usd,
-        extra_body=None if args.thinking else NO_THINKING.get(args.backend),
+        extra_body=None if args.thinking else MIN_REASONING.get(args.backend),
     )
     _print_report(report)
 
@@ -622,8 +671,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     run = subparsers.add_parser("run", help="requests.jsonl → contexts.jsonl")
     run.add_argument("--requests", default="data/contexts/requests.jsonl.gz")
     run.add_argument("--out", default="data/contexts/contexts.jsonl")
-    run.add_argument("--backend", choices=("deepseek", "vllm"), default="vllm")
-    run.add_argument("--model", default="Qwen/Qwen3-8B")
+    run.add_argument("--backend", choices=("glm", "deepseek", "vllm"), default="vllm")
+    run.add_argument("--model", default="", help="bo trong = mac dinh cua backend")
     run.add_argument("--base-url", default="")
     run.add_argument("--concurrency", type=int, default=6)
     run.add_argument("--max-tokens", type=int, default=256)
@@ -634,7 +683,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument(
         "--thinking",
         action="store_true",
-        help="BẬT lại suy luận (mặc định tắt — xem NO_THINKING)",
+        help="BẬT lại suy luận (mặc định giảm tối đa — xem MIN_REASONING)",
     )
     run.add_argument("--report", default="")
     run.set_defaults(func=_run)

@@ -16,6 +16,9 @@ __all__ = [
     "DEEPSEEK_ALIASES",
     "DEEPSEEK_PRICING",
     "DEFAULT_DEEPSEEK_MODEL",
+    "DEFAULT_GLM_MODEL",
+    "GLM_BASE_URL",
+    "GLM_PRICING",
     "BudgetExceeded",
     "ChatMessage",
     "CostBudget",
@@ -26,6 +29,7 @@ __all__ = [
     "ModelPricing",
     "OpenAICompatProvider",
     "build_deepseek_provider",
+    "build_glm_provider",
 ]
 
 DEEPSEEK_PRICING: dict[str, ModelPricing] = {
@@ -63,6 +67,53 @@ DEEPSEEK_ALIASES: dict[str, str] = {
 }
 
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
+
+GLM_PRICING: dict[str, ModelPricing] = {
+    # Giá công bố của Z.ai cho GLM-5.3-Flash. Rẻ hơn `deepseek-chat` 1,8× ở
+    # input, 2,2× ở output, 2,3× ở phần cache trúng.
+    #
+    # ⚠️ Có một mức khuyến mại $0,075/1M input chạy tới 2026-09-09. **Không** ghi
+    # nó vào đây: bảng này là giá niêm yết, và một báo cáo chi phí tính theo giá
+    # khuyến mại sẽ đọc sai ngay khi khuyến mại hết mà không ai sửa lại con số.
+    "glm-5.3-flash": ModelPricing(
+        input_per_1m_usd=0.15,
+        output_per_1m_usd=0.50,
+        cached_input_per_1m_usd=0.03,
+    ),
+}
+
+DEFAULT_GLM_MODEL = "glm-5.3-flash"
+
+GLM_BASE_URL = "https://api.z.ai/api/paas/v4"
+"""Endpoint quốc tế (Z.ai). Bản đại lục là `https://open.bigmodel.cn/api/paas/v4`.
+
+Đo 2026-09-03: `api.z.ai` trả 200 với slug **`glm-5.3-flash`** (chữ thường).
+"""
+
+
+def build_glm_provider(
+    model: str = DEFAULT_GLM_MODEL,
+    *,
+    api_key: str,
+    base_url: str = GLM_BASE_URL,
+    **kwargs: object,
+) -> OpenAICompatProvider:
+    """GLM (Z.ai) nói giao thức OpenAI, kể cả phần `usage` — nên chỉ cần bảng giá.
+
+    Đo được là nó trả **đúng** hai field mà `_parse` đã đọc sẵn từ `W1-10`:
+    `prompt_tokens_details.cached_tokens` và
+    `completion_tokens_details.reasoning_tokens`. Không phải provider nào cũng
+    vậy (DeepSeek dùng `prompt_cache_hit_tokens`), nên đây là may chứ không phải
+    mặc định — và nó có nghĩa là báo cáo chi phí của GLM chính xác ngay từ lượt
+    chạy đầu, không cần đường parse riêng.
+    """
+    return OpenAICompatProvider(
+        model,
+        api_key=api_key,
+        base_url=base_url,
+        pricing=GLM_PRICING.get(model, ModelPricing()),
+        **kwargs,  # type: ignore[arg-type]
+    )
 
 
 def build_deepseek_provider(

@@ -240,3 +240,5 @@ giới tài liệu**. Hình dạng lỗi cuối cùng ấy còn xuất hiện th
 **Corpus KHÔNG thuộc phạm vi MIT** — tài liệu World Bank theo **CC BY 3.0 IGO**.
 Chi tiết ở [`data/README.md`](data/README.md). Hai thứ này phải tách bạch: gộp
 chúng dưới một dòng "MIT" là cấp cho người khác một quyền mình không có.
+
+- [`RUNPOD.md`](RUNPOD.md) — chạy job sinh ngữ cảnh trên GPU thuê, hoặc trên API thay thế

@@ -257,3 +257,5 @@ boundaries and at parent boundaries.
 **CC BY 3.0 IGO**. Details in [`data/README.md`](data/README.md). The two must be
 kept separate: folding them under a single "MIT" line grants others a right I do
 not hold.
+
+- [`RUNPOD.md`](RUNPOD.md) — running the contextual-retrieval job on a rented GPU, or on an API instead
