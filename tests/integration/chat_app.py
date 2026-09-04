@@ -122,14 +122,21 @@ class ScriptedLLM:
             pieces = [messages[-1].content]
         elif mode == "citations":
             # `W4-09`: một quote THẬT + một quote BỊA. Quote thật lấy từ chính
-            # prompt — dòng "[1] …" trong khối NGỮ CẢNH — nên test không phải
+            # prompt — dòng ngay sau mốc mở của nguồn 1 — nên test không phải
             # đoán lại chuỗi mà `SlowRetriever` đã sinh. Marker cố ý cắt đôi
             # giữa hai delta: đường giữ-lại phải chạy qua tiến trình thật.
+            #
+            # ⚠️ `W4-12` đổi hình dạng khối từ `[1] nội dung` sang
+            # `<<<NGUON 1 {nonce}>>>\nnội dung`, và hai test này đỏ ngay — đúng
+            # điều mong muốn: app giả bám vào **hợp đồng prompt thật**, nên đổi
+            # hợp đồng thì nó phải đỏ chứ không được lặng lẽ trích nhầm.
             prompt = messages[-1].content
-            line = next(ln for ln in prompt.splitlines() if ln.startswith("[1] "))
+            lines = prompt.splitlines()
+            opener = next(i for i, ln in enumerate(lines) if ln.startswith("<<<NGUON 1 "))
+            line = lines[opener + 1]
             block = json.dumps(
                 [
-                    {"n": 1, "quote": line[4:].strip()},
+                    {"n": 1, "quote": line.strip()},
                     {"n": 2, "quote": "một câu bịa hoàn toàn"},
                 ],
                 ensure_ascii=False,

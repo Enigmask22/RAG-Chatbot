@@ -186,6 +186,10 @@ markers = [
     "integration: cần service ngoài hoặc trọng số model — chạy bằng `make test-integration`",
     "gpu: cần GPU cục bộ",
     "slow: chạy lâu, loại khỏi vòng lặp phát triển",
+    # `W4-12`: nhãn để chạy riêng `-m security` khi red-team. KHÔNG bị loại
+    # khỏi vòng chạy mặc định — chúng là Python thuần, nhanh, và là lưới hồi
+    # quy cho bộ luật tiêm; một lưới chỉ chạy khi có người nhớ gọi là không lưới.
+    "security: kiểm hàng rào bảo mật (tiêm prompt, PII) — vẫn chạy trong suite mặc định",
 ]
 
 [tool.coverage.run]

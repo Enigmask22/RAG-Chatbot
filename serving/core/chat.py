@@ -63,9 +63,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from rag_core.generation import (
     CitationHoldback,
+    context_nonce,
     default_registry,
+    scan_injection,
     split_citation_block,
     verify_citations,
+    wrap_context,
 )
 from rag_core.llm import BudgetExceeded, ChatMessage, LLMError, StreamingLLM
 from rag_core.retrieval.filters import MetadataFilter
@@ -208,6 +211,10 @@ class ChatTurn:
     cache_vector: Any | None = None
     """Vector câu hỏi đã embed cho lần tra cache TRƯỢT — giữ lại để ghi cache
     sau khi stream thành công, khỏi embed lần thứ ba."""
+    nonce: str = field(default_factory=context_nonce)
+    """`W4-12`: mã phiên bọc mỗi khối ngữ cảnh. MỖI LƯỢT một mã mới — một mã cố
+    định là một mã cuối cùng sẽ nằm trong một tài liệu nào đó, và từ giây ấy nó
+    thôi là bí mật. Sinh bằng `secrets`, không phải `random`."""
     max_tokens: int = 1024
     started: float = field(default_factory=time.perf_counter)
 
@@ -231,13 +238,25 @@ class ChatTurn:
         return CHAT_SYSTEM.spec if self.plan.retrieves else CHAT_NO_RETRIEVAL.spec
 
     def sources(self) -> list[dict[str, Any]]:
-        """Cái đã **đưa cho model**, đánh số khớp với `[n]` trong prompt."""
+        """Cái đã **đưa cho model**, đánh số khớp với `[n]` trong prompt.
+
+        `W4-12`: mỗi nguồn mang thêm `flags` — tên các luật tiêm đã khớp trong
+        nội dung chunk. Cờ đi ra tới **client** chứ không chỉ vào log: người đọc
+        câu trả lời là người duy nhất biết nó có bất thường hay không, và giấu
+        cờ ở log server là bắt họ tin mà không đưa dữ liệu.
+
+        ⚠️ Cờ **không** loại chunk khỏi ngữ cảnh. Bộ luật có dương tính giả
+        (đo được: 2/20.424 chunk corpus thật), và một dương tính giả ở đường
+        loại bỏ sẽ xoá lặng lẽ một tài liệu thật khỏi câu trả lời — đổi một
+        kiểu hỏng ồn ào lấy một kiểu hỏng câm.
+        """
         out: list[dict[str, Any]] = []
         for n, hit in enumerate(self.contexts, start=1):
             meta = hit.chunk.metadata
             out.append(
                 {
                     "n": n,
+                    "flags": list(scan_injection(hit.chunk.content)),
                     "chunk_id": hit.chunk.chunk_id,
                     "doc_id": hit.chunk.doc_id,
                     "title": meta.title if meta else None,
@@ -258,7 +277,16 @@ class ChatTurn:
                 *self.history,
                 ChatMessage(role="user", content=f"{self.plan.original}{directive}"),
             ]
-        blocks = [f"[{n}] {hit.chunk.content}" for n, hit in enumerate(self.contexts, start=1)]
+        # ⭐⭐ `W4-12`: khối ngữ cảnh bọc trong mốc mang nonce, thay cho `[n] …`
+        # trần. Đây là chỗ DUY NHẤT của hàng rào là một cơ chế thật: nội dung
+        # tài liệu viết được mọi thứ, trừ 16 ký tự hex sinh ra SAU khi nó đã
+        # nằm trong index — nên nó không đóng được khối dữ liệu để mở một
+        # khối chỉ thị giả. Số `[n]` giữ trong mốc vì luật 2 và `W4-09` đánh
+        # số nguồn theo nó.
+        blocks = [
+            wrap_context(n, hit.chunk.content, self.nonce)
+            for n, hit in enumerate(self.contexts, start=1)
+        ]
         context = "\n\n".join(blocks) if blocks else "(không tìm thấy tài liệu liên quan)"
         # ⭐⭐ **Cả hai** chuỗi, và thứ tự này là kết quả của một lần chạy thật.
         #
@@ -278,7 +306,9 @@ class ChatTurn:
         if self.plan.rewritten:
             question += f'\n(Hiểu đầy đủ theo hội thoại: "{self.plan.question}")'
         return [
-            ChatMessage(role="system", content=SYSTEM_PROMPT),
+            # `.replace` chứ không `.format`: template chứa `{"n": 1, …}` của
+            # mẫu CITATIONS, và `.format` sẽ nổ trên đúng những dấu ngoặc ấy.
+            ChatMessage(role="system", content=SYSTEM_PROMPT.replace("{{nonce}}", self.nonce)),
             *self.history,
             ChatMessage(role="user", content=f"NGỮ CẢNH:\n{context}\n\n{question}{directive}"),
         ]
@@ -491,7 +521,19 @@ class ChatService:
                 **turn.plan.as_meta(),
             },
         )
-        yield ChatEvent("sources", {"sources": turn.sources()})
+        # `W4-12`: cờ tiêm tính MỘT lần rồi dùng lại cho cả khung và log —
+        # gọi `sources()` hai lần là quét regex hai lần cho cùng một dữ liệu.
+        sources = turn.sources()
+        flagged = {s["n"]: s["flags"] for s in sources if s["flags"]}
+        if flagged:
+            # WARNING chứ không ERROR: một chunk bị gắn cờ là một điều đáng
+            # nhìn, không phải một lỗi — và dương tính giả tồn tại.
+            logger.warning(
+                "nội dung nghi tiêm trong ngữ cảnh: %s (conversation %s)",
+                flagged,
+                turn.conversation_id,
+            )
+        yield ChatEvent("sources", {"sources": sources})
 
         if turn.plan.route == "clarify":
             # ⭐ Nhánh duy nhất **không** gọi model. Text lấy từ bảng trong mã,

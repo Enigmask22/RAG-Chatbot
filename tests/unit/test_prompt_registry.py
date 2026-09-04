@@ -247,4 +247,5 @@ class TestShippedPrompts:
         Khi bump version có chủ đích: cập nhật literal này cùng lúc — đó chính
         là hành vi muốn có, người sửa phải nhìn thấy chỗ con số eval gãy."""
         prompt = default_registry().get("chat-system")
-        assert prompt.sha256 == "aa26543c1c5eff64304fc7ecc851f8d40fe2ad74dc557fe5e090b30676de81cf"
+        assert prompt.sha256 == "ae5ea143004e8e6f56d5acfa899e80ff6a80a9df3b570f61c211b02ce51c7769"
+        assert prompt.version == 2  # v1 -> v2 ở `W4-12` (ranh giới dữ liệu)

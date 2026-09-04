@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (6) (cuối file)** — `W4-11` xong, `W4` **11/13**. Prompt registry: loader từ chối nội dung chưa stamp (cơ chế, không phải quy ước); 3 prompt serving migrate giữ nguyên byte; namespace cache thêm version prompt; meta khai `prompt`. Tiêm 6: M2 xanh (test tự chiếu qua hàm băm) → ghim hợp đồng byte → 6/6. Đính chính 10 lỗi ruff/mypy sót từ phiên trước. **2084 test xanh.**
+> **Phiên mới nhất: 2026-09-04 (7) (cuối file)** — `W4-12` xong, `W4` **12/13**. Guardrails: 165 lượt chạy thật, nhánh có hàng rào rò 0/55. ⭐⭐ Hai phát hiện lớn: **k=1 trước model không tất định không phải phép đo** (1/11 → 8/11 khi lặp), và **chữ trong prompt làm gần hết việc — nonce giá trị đo được = 0**. Dương tính giả 2/20.424. Tiêm 9: 8 đỏ + 1 tương đương có bằng chứng. **2130 test xanh.**
+>
+> Phiên trước: **2026-09-04 (6)** — `W4-11` xong, `W4` **11/13**. Prompt registry: loader từ chối nội dung chưa stamp (cơ chế, không phải quy ước); 3 prompt serving migrate giữ nguyên byte; namespace cache thêm version prompt; meta khai `prompt`. Tiêm 6: M2 xanh (test tự chiếu qua hàm băm) → ghim hợp đồng byte → 6/6. Đính chính 10 lỗi ruff/mypy sót từ phiên trước. **2084 test xanh.**
 >
 > Phiên trước: **2026-09-04 (5)** — `W4-10` xong, `W4` **10/13**. Semantic cache: phép đo giết ngưỡng 0,95 của plan — hai phân bố paraphrase/bẫy chồng nhau, không ngưỡng nào tách được → 0,96 + hàng rào chữ số + namespace theo bundle. 100 query Zipf: hit 77/100, bẫy 0/10. Tiêm 6 lỗi: S6 xanh chỉ ra ca `finish_reason="length"` → bịt → 6/6 đỏ. **2059 test xanh.**
 >
@@ -3363,3 +3365,48 @@ hash được trích trong sổ sách:
 Các hash khác nhắc trong văn bản tường thuật (nếu gặp) tra bằng bundle backup.
 GitHub có thể còn giữ các commit cũ truy cập được bằng SHA trực tiếp cho tới
 lần GC — nếu cần xoá tuyệt đối, gửi yêu cầu GitHub Support.
+
+
+---
+
+## Phiên 2026-09-04 (7) — `W4-12` Guardrails
+
+**Đã làm**: `rag_core/generation/guardrails.py` — ba lớp: (1) nonce bọc khối
+ngữ cảnh (`secrets.token_hex(8)`, mỗi lượt một mã, prompt v2 giải thích mốc);
+(2) 10 luật phát hiện tiêm đòi TỔ HỢP ba vế cùng một dòng; (3) `RedactingFilter`
+gắn trên **handler** của `configure_logging` nên che cả log thư viện bên thứ ba.
+Cờ tiêm đi vào khung `sources` tới client, **không** loại chunk. Prompt
+`chat-system` lên **v2** qua `scripts/prompt_stamp.py`.
+
+**Phép đo** (6 probe JSON, tổng ~$0,13 API):
+- Dương tính giả trên **20.424 chunk corpus thật**: luật tổ hợp **2 (0,0098%)**
+  vs luật một-từ-khoá **2.515 (12,4%)**. Quét 97 µs/chunk.
+- Bảng chính **11 payload × 3 nhánh × k=5** (165 lượt): phát hiện 11/11, nhánh
+  cũ rò 3/55, hai nhánh có hàng rào **0/55**.
+
+**Hai bài học ⭐⭐**:
+1. **k=1 trước một model không tất định không phải một phép đo.** Lần chạy đầu
+   cho nhánh cũ 1/11; chạy lại cùng payload/seed/`temp=0` → 0. `TD-41` chạm
+   đường bảo mật. k=6 mới ra sự thật: **8/11 (~73%)** trên bằng chứng còn lưu.
+   ⚠️ Một lượt k=6 nữa (2/6) mất file vì probe ghi đè chính output của mình sau
+   một `replace` không `assert` — không tính vào con số trên.
+2. **Nhánh tách biến giết dự đoán của tôi.** prompt v2 + khối TRẦN chặn đúng
+   bằng prompt v2 + nonce → chữ làm gần hết việc, **nonce giá trị đo được = 0**.
+   Docstring bản đầu khẳng định ngược lại và đã phải viết lại. Ngược với
+   `W4-07` (luật ngôn ngữ bị bỏ 8/8): cùng cơ chế, hai loại việc khác nhau.
+
+**Bug thật do phép đo tìm ra**: `normalise_for_scan` gộp `\s+` nuốt hết xuống
+dòng → 2/10 luật neo `^` im lặng ngừng chạy; không test nào thấy vì test nào
+cũng đi qua chính bộ chuẩn hoá ấy (khuôn M2 của `W4-11`).
+
+**Tiêm 9 lỗi**: 8 đỏ. G3 xanh và **đúng** — ràng buộc "cùng một câu" của `_GAP`
+không mua gì (FP y hệt khi nới) mà tặng đường né giá một dấu chấm → nới `_GAP`,
+thêm payload né + ca BENIGN hai đoạn. G3b tương đương **có bằng chứng** (`.`
+không khớp `\n` khi thiếu `DOTALL`).
+
+**Nợ mới**: `TD-52` (bảng confusables chưa đầy đủ), `TD-53` (số đo của một
+model — `W5-09` phải chạy bảng này trên mọi nhánh router), `TD-54` (quét lúc
+phục vụ, chưa quét lúc index).
+
+**Việc tiếp theo**: `W4-13` (Dockerfile + compose + smoke e2e; dọn key store) →
+gate `G4`.

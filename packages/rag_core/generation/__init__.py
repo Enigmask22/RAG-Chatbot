@@ -9,6 +9,15 @@ from .citations import (
     split_citation_block,
     verify_citations,
 )
+from .guardrails import (
+    INJECTION_RULES,
+    RedactingFilter,
+    context_nonce,
+    normalise_for_scan,
+    redact_pii,
+    scan_injection,
+    wrap_context,
+)
 from .prompts import (
     Prompt,
     PromptIntegrityError,
@@ -20,6 +29,7 @@ from .prompts import (
 )
 
 __all__ = [
+    "INJECTION_RULES",
     "MARKER",
     "CitationClaim",
     "CitationHoldback",
@@ -29,9 +39,15 @@ __all__ = [
     "PromptIntegrityError",
     "PromptNotFoundError",
     "PromptRegistry",
+    "RedactingFilter",
+    "context_nonce",
     "default_registry",
+    "normalise_for_scan",
+    "redact_pii",
+    "scan_injection",
     "sha256_of",
     "split_citation_block",
     "stamp",
     "verify_citations",
+    "wrap_context",
 ]

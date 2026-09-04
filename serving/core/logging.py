@@ -34,8 +34,11 @@ from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from typing import IO, Any
 
+from rag_core.generation import RedactingFilter
+
 __all__ = [
     "JsonFormatter",
+    "RedactingFilter",
     "bind_request_id",
     "configure_logging",
     "current_request_id",
@@ -128,6 +131,14 @@ def configure_logging(level: str = "INFO", *, stream: IO[str] | None = None) -> 
 
     handler = logging.StreamHandler(target)
     handler.setFormatter(JsonFormatter())
+    # ⭐ `W4-12`: che PII gắn lên **handler**, không lên logger.
+    #
+    # Gắn lên logger thì chỉ bản ghi đi qua logger ấy được che, và phần lớn dòng
+    # log của một tiến trình serving không do mã của ta sinh ra (cùng lý lẽ ở
+    # §đầu module): `httpx` ghi URL kèm query string, một `logger.exception` in
+    # nguyên payload provider. Gắn lên handler thì **mọi** bản ghi tới được chỗ
+    # ghi ra đều đã đi qua nó — kể cả của thư viện chưa ai nghĩ tới.
+    handler.addFilter(RedactingFilter())
 
     root = logging.getLogger()
     for existing in list(root.handlers):

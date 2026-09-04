@@ -1,0 +1,30 @@
+{
+  "corpus": {
+    "documents": 60,
+    "chunks": 20424,
+    "chunk_size": 1000
+  },
+  "combination_rules": {
+    "rules": 10,
+    "flagged_chunks": 2,
+    "false_positive_rate": 9.8e-05,
+    "by_rule": {
+      "exfiltration": 2
+    },
+    "samples": {
+      "exfiltration": [
+        "vibrant-vietnam-forging-the-foundation-of-a-high-income-econ-258661590431229598: Innovations in disruptive technologies and IoT can extend beyond how products are\nmade. By changing production methods, technologies such as 3-D print",
+        "vibrant-vietnam-forging-the-foundation-of-a-high-income-econ-745271590429811414: 96\t Extended Producer Responsibility is a policy approach under which producers are given significant financial and physical\n    responsibility for th"
+      ]
+    }
+  },
+  "naive_keyword_rules": {
+    "flagged_chunks": 2515,
+    "false_positive_rate": 0.123139
+  },
+  "scan_cost": {
+    "total_ms": 2050.8,
+    "us_per_chunk": 100.4,
+    "ms_per_turn_5_chunks": 0.502
+  }
+}
