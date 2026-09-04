@@ -197,7 +197,7 @@ class TestVanTayPhaiDayDu:
     """
 
     def test_vantay_pdf_ghim_ca_goi_phu(self) -> None:
-        names = {p.split("=")[0].split("@")[0] for p in component_versions(".pdf", ocr=False)}
+        names = {p.split("=")[0].split("@")[0] for p in component_versions(".pdf", ocr_engine=None)}
         assert "docling-core" in names, "gói serialise markdown phải được ghim"
         assert {"docling-parse", "pypdfium2", "docling-ibm-models"} <= names
 
@@ -206,19 +206,27 @@ class TestVanTayPhaiDayDu:
 
         Ghim chuỗi `"main"` là không ghim gì; phải ghim commit SHA đã phân giải.
         """
-        parts = component_versions(".pdf", ocr=False)
+        parts = component_versions(".pdf", ocr_engine=None)
         assert any(p.startswith("docling-layout-heron@") for p in parts)
         assert any(p.startswith("docling-models@") for p in parts)
 
     def test_duong_khong_pdf_khong_ghim_thua(self) -> None:
         """Ghi thừa cũng có giá: một cảnh báo kêu suốt là một cảnh báo bị tắt."""
-        parts = component_versions(".docx", ocr=False)
+        parts = component_versions(".docx", ocr_engine=None)
         assert all(p.startswith("docling-core=") for p in parts)
         assert not any("rapidocr" in p or "pypdfium2" in p for p in parts)
 
-    def test_ocr_them_rapidocr(self) -> None:
-        assert any("rapidocr=" in p for p in component_versions(".pdf", ocr=True))
-        assert not any("rapidocr=" in p for p in component_versions(".pdf", ocr=False))
+    def test_ocr_them_dung_goi_cua_tung_may(self) -> None:
+        """Hai máy OCR cho hai văn bản khác nhau trên cùng ảnh (đo 2026-09-04) —
+        nên máy nào chạy phải đọc được từ vân tay, không phải chỉ "có OCR"."""
+        rapid = component_versions(".pdf", ocr_engine="rapidocr")
+        easy = component_versions(".pdf", ocr_engine="easyocr")
+        off = component_versions(".pdf", ocr_engine=None)
+        assert any("rapidocr=" in p for p in rapid)
+        assert any("easyocr=" in p for p in easy)
+        assert not any("rapidocr=" in p or "easyocr=" in p for p in off)
+        assert not any("easyocr=" in p for p in rapid)
+        assert not any("rapidocr=" in p for p in easy)
 
     def test_components_di_vao_digest(self) -> None:
         """Thêm `components` mà quên đưa vào `canonical` thì cả thay đổi này vô nghĩa."""

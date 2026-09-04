@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (2) (cuối file)** — `W4-08` xong, `W4` **8/13**. Bộ định tuyến LLM, chạy thật DeepSeek → GLM. ⭐⭐ Chuyển nhà cung cấp **giữa stream** nối hai câu trả lời khác nhau; ⚠️ tiêm lỗi 12 phép, 2 sống sót và cả hai là lỗ thật.
+> **Phiên mới nhất: 2026-09-04 (3) (cuối file)** — ba quyết định của bạn chốt sổ (`W0-02` merge vào main · `W3-04` đóng theo đường GLM · `W0-05` hoãn RunPod) + **`TD-23` mở một nửa**: phép đo OCR gốc KHÔNG hợp lệ (fixture render dấu thành ô ☒ — font Aileron không có glyph tiếng Việt); đo lại trên ảnh hợp lệ thì RapidOCR vẫn hỏng `vi` còn **EasyOCR giữ dấu 8/8** → `vi` mở qua EasyOCR, tiêm 3 lỗi / 3 đỏ.
+>
+> Phiên trước: **2026-09-04 (2)** — `W4-08` xong, `W4` **8/13**. Bộ định tuyến LLM, chạy thật DeepSeek → GLM. ⭐⭐ Chuyển nhà cung cấp **giữa stream** nối hai câu trả lời khác nhau; ⚠️ tiêm lỗi 12 phép, 2 sống sót và cả hai là lỗ thật.
 >
 > Phiên trước: **2026-09-04** — `W4-07` xong, `W4` **7/13**. Hiểu câu hỏi trước khi truy hồi. ⭐⭐ Chỉ thị ngôn ngữ **8/8 → 0/8**; ⭐⭐ tiêm lỗi phơi ra `"thầy cô"` bị xếp là chào hỏi ⇒ không truy hồi; ⭐⭐ lần chạy thật đảo ngược một quyết định thiết kế. ⚠️ File này có lỗ hổng 03/09 → 04/09 — xem changelog `CHECKLIST.md`.
 >
@@ -3225,3 +3227,34 @@ Việc tiếp theo: **`W4-09`** (structured output + citation verification — b
 `text.split("Trả lời:")`). Nó nằm ở **nửa dưới** của đường phân giới `W4-06`:
 xác minh citation cần toàn bộ câu trả lời, nên một citation bịa chỉ báo được
 bằng một khung SSE, không bằng HTTP status.
+
+
+---
+
+## Phiên 2026-09-04 (3) — ba quyết định + `TD-23` mở một nửa (EasyOCR)
+
+**Chỉ đạo của bạn**: merge vào main; thử EasyOCR; xác nhận RunPod đã bỏ qua cho
+GLM API; rồi "tự xử triệt để mọi thứ còn lại".
+
+**Đã làm:**
+
+1. **Chốt sổ ba quyết định** — `W0-02` ✅ (nâng cấp in-place, nhánh
+   `feat/w1-foundation` đã merge từ trước, xoá local + remote); `W3-04` ✅
+   (header "lượt chạy GPU còn lại" là text lỗi thời — ngữ cảnh sinh xong 03/09
+   bằng GLM API ~$5,47); `W0-05` `[-]` hoãn vô thời hạn. Đếm mới:
+   **43 `[x]` · 3 `[~]` · 25 `[ ]` · 1 `[?]` · 1 `[-]`**, `W3` 8/9.
+2. **`TD-23`** — lần chạy EasyOCR đầu trả rác y hệt RapidOCR → nghi phạm chung
+   → render fixture ra nhìn: **dấu tiếng Việt là ô ☒ ngay trong ảnh** (Pillow
+   `load_default()` = Aileron, không có glyph tiếng Việt). Sửa fixture sang
+   DejaVu Sans (commit + LICENSE, `tests/fixtures/fonts/`), đo lại cả hai máy:
+   RapidOCR vẫn vứt 3/5 dòng `vi`; EasyOCR dấu 8/8, char-acc 0,91–0,97.
+   Chính sách mới trong `rag_core.loaders`: `engine_for(language)` — `vi` →
+   EasyOCR, `en` → RapidOCR (vân tay cũ), chưa đo → từ chối; vân tay parse ghi
+   tên máy (`ocr=easyocr`). Tiêm 3 lỗi / 3 đỏ. Unit 1677 xanh + integration OCR
+   12/12.
+3. ⚠️ Lỗi quy trình tự gây giữa phiên: khôi phục phép tiêm bằng
+   `git checkout --` xoá sạch policy chưa commit; cứu bằng script trong
+   scratchpad. Backup phép tiêm từ nay = copy file.
+
+**Việc tiếp theo**: `W4-09` (structured output + citation verification), rồi
+`W4-10`…`W4-13`, `G4`.

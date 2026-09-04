@@ -33,6 +33,7 @@ pipeline = [
 # đường `.txt`/`.md` chạy được khi thiếu nó hoàn toàn.
 ingestion = [
     "docling>=2.121,<3",
+    "easyocr>=1.7",
 ]
 # Client cho API tương thích OpenAI (DeepSeek, OpenRouter). Cố ý không dùng SDK
 # `openai`: chỉ cần đúng một endpoint, và cần kiểm soát chính xác phần retry +

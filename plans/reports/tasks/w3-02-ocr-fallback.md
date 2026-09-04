@@ -231,3 +231,55 @@ Giống `W2-05` ghi thẳng *"DoD 400 ms KHÔNG đạt"*: nói ra thì nó là m
   đường đó — nó tái lập đúng lỗi `W3-01` §2.
 * ⚠️ Loader vẫn **chưa** nối vào `pipeline/indexing/corpus_loader.py`; `TD-22`
   đứng trước, không đổi.
+
+
+---
+
+## 10. ⚠️⚠️ PHỤ LỤC 2026-09-04 — phép đo §3 KHÔNG HỢP LỆ, và kết luận đảo một nửa
+
+Bạn chỉ đạo thử EasyOCR cho `TD-23`. Lần chạy đầu (fixture cũ) EasyOCR cũng trả
+rác y hệt RapidOCR — `Tkng trkng MMt 7,09` — và **hai máy độc lập hỏng cùng một
+kiểu** là mùi của một nghi phạm chung. Render fixture ra nhìn tận mắt: dấu tiếng
+Việt là **ô ☒ ngay trong ảnh**. `ImageFont.load_default()` của Pillow (Aileron)
+không có glyph tiếng Việt. Bảng §3 vì thế chấm hai máy OCR trên một đề bài hỏng:
+"không OCR nào đọc được tiếng Việt" thật ra là "không OCR nào đọc được ký tự ☒".
+
+Hai chi tiết lẽ ra phải gây nghi từ đầu, ghi lại để lần sau nhìn thấy sớm hơn:
+
+1. Dòng tiêu đề VI của fixture được viết **không dấu** (`"Cap nhat kinh te..."`)
+   — nhiều khả năng chính người viết fixture (tôi) đã gặp vấn đề font và lách
+   qua nó một cách vô thức thay vì hỏi vì sao.
+2. §3 tự khen điều kiện đo ("cùng ảnh, cùng lần chạy") — kiểm soát biến rất kỹ
+   giữa hai *máy*, nhưng chưa bao giờ kiểm **đề bài**: không ai mở ảnh ra xem
+   chữ trong đó có phải tiếng Việt không.
+
+### Đo lại trên fixture hợp lệ (DejaVu Sans, commit trong repo)
+
+| máy | tiếng Anh | tiếng Việt |
+|---|---|---|
+| `rapidocr` PP-OCRv6 | ✅ đủ từ, 1 dòng xáo trật tự | ❌ **vứt 3/5 dòng**, còn lại sai dấu (`mức`→`múc`) |
+| `easyocr` latin-g2 `[vi,en]` | ✅ đủ từ | ✅ **dấu 8/8**, char-acc 0,91–0,97 (tệ nhất: `phần`→`phẩn`) |
+
+Số đo: `probes/td-23-easyocr.json`. Ba hệ quả:
+
+* **Kết luận về RapidOCR đứng vững** — nhưng giờ nó được đo đúng. `en` giữ máy
+  cũ (đường cũ, vân tay cũ).
+* **`vi` mở qua EasyOCR**: `engine_for("vi") == "easyocr"`, `OCR_VERIFIED_LANGUAGES`
+  thành bảng theo máy, vân tay parse mang tên máy (`ocr=easyocr`) thay vì
+  `ocr=true` — hai máy cho hai văn bản khác nhau trên cùng ảnh nên "true" là một
+  vân tay nói dối. Ngôn ngữ chưa đo (fr, zh…) vẫn bị từ chối, lý do cũ giữ nguyên.
+* **Giới hạn ghi thành test**: tầng reading-order của docling xáo một phần trật
+  tự từ (cả hai máy, cả hai ngôn ngữ). `test_word_order_is_not_guaranteed…` ghim
+  đúng giới hạn ấy để nó không âm thầm đổi.
+
+Test `test_vietnamese_diacritics_do_not_survive` lật chiều đúng như docstring
+của nó dặn ("nếu một ngày nó đỏ vì tiếng Việt đọc được thì đó là tin tốt").
+Tiêm 3 lỗi: nuốt từ chối ngôn ngữ lạ, mất nhánh routing `vi`, và **mất
+`lang=[vi,en]` tường minh** (rơi về mặc định docling `[fr,de,es,en]` — đúng bộ
+không có tiếng Việt) — 3/3 đỏ, phép cuối chỉ integration test bắt được.
+
+⚠️ Trong lúc làm phần này tôi còn mắc thêm một lỗi quy trình đáng ghi: dùng
+`git checkout --` để khôi phục file sau phép tiêm — nhưng bản policy mới **chưa
+commit**, nên lệnh đó xoá sạch chính phần sửa. May scratchpad còn script. Bài
+học trùng với `mutate_router.py`: backup phép tiêm bằng **copy file**, không
+bằng git, chính vì lý do này.

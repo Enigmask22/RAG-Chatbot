@@ -67,7 +67,11 @@ _ALWAYS = ("docling-core",)
 _PDF_ONLY = ("docling-parse", "pypdfium2", "docling-ibm-models")
 """Đọc text layer + model layout/table. Chỉ PDF chạm tới."""
 
-_OCR_ONLY = ("rapidocr",)
+_OCR_PACKAGES: dict[str, tuple[str, ...]] = {
+    "rapidocr": ("rapidocr",),
+    "easyocr": ("easyocr",),
+}
+"""Gói mà từng máy OCR kéo theo. Đổi máy là đổi văn bản xuất ra → phải vào vân tay."""
 
 
 def _dist_version(name: str) -> str:
@@ -137,7 +141,7 @@ def model_revisions() -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=8)
-def component_versions(suffix: str, ocr: bool) -> tuple[str, ...]:
+def component_versions(suffix: str, ocr_engine: str | None) -> tuple[str, ...]:
     """`("tên=version", ...)` của các gói mà **đúng đường parse này** đi qua.
 
     Chia theo đường đi thay vì ghi tất: xem `ParseFingerprint` về vì sao ghi
@@ -149,8 +153,8 @@ def component_versions(suffix: str, ocr: bool) -> tuple[str, ...]:
     if suffix == ".pdf":
         names += list(_PDF_ONLY)
         pins = model_revisions()
-    if ocr:
-        names += list(_OCR_ONLY)
+    if ocr_engine is not None:
+        names += list(_OCR_PACKAGES[ocr_engine])
     return tuple(f"{name}={_dist_version(name)}" for name in sorted(names)) + pins
 
 
@@ -169,22 +173,26 @@ def docling_version() -> str:
         return "absent"
 
 
-@lru_cache(maxsize=2)
-def _converter(ocr: bool) -> Any:
-    """`DocumentConverter` dùng lại giữa các lần gọi.
+@lru_cache(maxsize=3)
+def _converter(ocr_engine: str | None) -> Any:
+    """`DocumentConverter` dùng lại giữa các lần gọi. `None` = không OCR.
 
-    ⚠️ `maxsize=2` cố ý nhỏ. Pipeline PDF nạp model bố cục lên GPU, nên mỗi
+    ⚠️ `maxsize=3` cố ý nhỏ. Pipeline PDF nạp model bố cục lên GPU, nên mỗi
     converter sống thêm là thêm VRAM — cùng loại ngân sách mà `W0-06` đang đếm
-    cho ba `lru_cache` bên `rag_core`. Hai chỗ ở đây là `ocr=False` (mặc định)
-    và `ocr=True` (`W3-02`), không cần hơn.
+    cho ba `lru_cache` bên `rag_core`. Ba chỗ ở đây là không-OCR (mặc định),
+    RapidOCR (`W3-02`) và EasyOCR cho tiếng Việt (`TD-23`), không cần hơn.
     """
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     options = PdfPipelineOptions()
-    options.do_ocr = ocr
+    options.do_ocr = ocr_engine is not None
     options.do_table_structure = True
+    if ocr_engine == "easyocr":
+        # `lang` ghim tường minh: mặc định của docling là [fr, de, es, en] —
+        # đúng bộ ngôn ngữ KHÔNG có tiếng Việt, tức đúng cách hỏng của TD-23.
+        options.ocr_options = EasyOcrOptions(lang=["vi", "en"])
     return DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
     )
@@ -239,7 +247,7 @@ def load_with_docling(
     path: str | Path,
     *,
     source_sha256: str,
-    ocr: bool = False,
+    ocr_engine: str | None = None,
 ) -> LoadedDocument:
     """Parse một file bằng docling và trả `LoadedDocument`.
 
@@ -248,7 +256,7 @@ def load_with_docling(
     docling mở ra là thêm một chỗ hỏng mà không mua được gì.
     """
     try:
-        converter = _converter(ocr)
+        converter = _converter(ocr_engine)
     except ImportError as exc:  # pragma: no cover - phụ thuộc môi trường
         raise LoaderError(
             "Thiếu docling. Cài extra `ingestion`: `uv sync --extra ingestion`."
@@ -272,8 +280,12 @@ def load_with_docling(
             loader="docling",
             library="docling",
             library_version=docling_version(),
-            options=(f"ocr={str(ocr).lower()}", "table_structure=true"),
-            components=component_versions(Path(path).suffix.lower(), ocr),
+            # Không OCR giữ nguyên chuỗi "ocr=false" cũ để vân tay của toàn bộ
+            # corpus born-digital không đổi; có OCR thì ghi TÊN MÁY thay vì
+            # "true" — hai máy cho hai văn bản khác nhau trên cùng một ảnh
+            # (đo 2026-09-04), nên "ocr=true" là một vân tay nói dối.
+            options=(f"ocr={ocr_engine or 'false'}", "table_structure=true"),
+            components=component_versions(Path(path).suffix.lower(), ocr_engine),
         ),
         headings=headings,
         table_count=tables,

@@ -183,12 +183,20 @@ _SCAN_EN_LINES = (
     "consumer price index settled at 3.63.",
 )
 _SCAN_VI_LINES = (
-    "Cap nhat kinh te vi mo Viet Nam",
+    "Cập nhật kinh tế vĩ mô Việt Nam",
     "Tăng trưởng đạt 7,09 phần trăm năm 2024,",
     "cao hơn mức 5,05 phần trăm của năm trước.",
     "Xuất khẩu tăng lên 405,5 tỷ đô la trong khi",
     "chỉ số giá tiêu dùng dừng ở mức 3,63.",
 )
+# ⚠️⚠️ Font là MỘT PHẦN CỦA PHÉP ĐO, và bản đầu tiên của fixture này đã đo nhầm
+# vì bỏ qua điều đó (phát hiện 2026-09-04). `ImageFont.load_default()` (Aileron)
+# KHÔNG có glyph tiếng Việt: dấu bị render thành ô ☒ ngay trong ảnh, nên câu
+# "OCR không đọc được tiếng Việt" của `W3-02`/`TD-23` thật ra là "OCR không đọc
+# được ký tự ☒" — cả hai máy OCR bị chấm trên một đề bài hỏng. DejaVu Sans phủ
+# đủ tiếng Việt, license cho phép redistribute (LICENSE_DEJAVU cạnh file font),
+# và nằm TRONG repo nên fixture vẫn sinh ra cùng chuỗi byte trên máy khác.
+_SCAN_FONT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "fonts" / "DejaVuSans.ttf"
 _SCAN_DPI = 150
 _SCAN_PAGE_PX = (int(8.5 * _SCAN_DPI), int(11 * _SCAN_DPI))
 # ⚠️ **Cả hai** trường, không chỉ `/CreationDate`. Vá một cái rồi tưởng xong là
@@ -201,16 +209,17 @@ def build_scanned_pdf() -> bytes:
     """Một trang giấy trắng có chữ, lưu thành PDF **ảnh** — không text layer.
 
     Pillow ghi `/CreationDate` bằng giờ hiện tại nên phải ép lại, cùng lý do với
-    `docProps` của OOXML ở `_freeze_zip`. Font dùng `ImageFont.load_default(size=)`
-    (Aileron, đóng gói sẵn trong Pillow) chứ không dùng font hệ điều hành: fixture
-    sinh trên máy khác phải ra cùng chuỗi byte.
+    `docProps` của OOXML ở `_freeze_zip`. Font dùng `_SCAN_FONT` (DejaVu Sans,
+    commit trong repo) chứ không dùng font hệ điều hành: fixture sinh trên máy
+    khác phải ra cùng chuỗi byte. Xem chú thích tại `_SCAN_FONT` — bản đầu dùng
+    font mặc định của Pillow và điều đó làm hỏng phép đo OCR tiếng Việt.
     """
     from PIL import Image, ImageDraw, ImageFont
 
     page = Image.new("L", _SCAN_PAGE_PX, color=255)
     draw = ImageDraw.Draw(page)
-    title_font = ImageFont.load_default(size=34)
-    body_font = ImageFont.load_default(size=26)
+    title_font = ImageFont.truetype(str(_SCAN_FONT), size=34)
+    body_font = ImageFont.truetype(str(_SCAN_FONT), size=26)
 
     y = 120
     for block in (_SCAN_EN_LINES, _SCAN_VI_LINES):

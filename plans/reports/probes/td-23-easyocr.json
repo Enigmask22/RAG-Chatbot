@@ -1,0 +1,174 @@
+{
+  "engine": "easyocr 1.7.2",
+  "languages": [
+    "vi",
+    "en"
+  ],
+  "gpu": true,
+  "model_load_seconds": 1.96,
+  "fixture": "tests/fixtures/loaders/scanned-page.pdf (font DejaVu Sans — bản sửa 2026-09-04)",
+  "rapidocr_baseline_vi": {
+    "ch PP-OCRv6": "Tāng trng t 7,09 phān trām nām 2024",
+    "latin PP-OCRv3": "Tng trXXng XXt 7,09 phn trm nm 2024"
+  },
+  "results": {
+    "dpi150": {
+      "ocr_seconds": 1.0,
+      "n_lines_read": 13,
+      "en": [
+        {
+          "truth": "Vietnam Macroeconomic Update",
+          "ocr": "Vietnam Macroeconomic Update",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "Growth reached 7.09 percent in 2024, up",
+          "ocr": "Growth reached 7.09 percent in 2024, up",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "from 5.05 percent a year earlier. Exports",
+          "ocr": "from 5.05 percent a year earlier. Exports",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "rose to 405.5 billion dollars while the",
+          "ocr": "rose to 405.5 billion dollars while the",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "consumer price index settled at 3.63.",
+          "ocr": "price index settled at 3.63.",
+          "char_acc": 0.7568,
+          "exact": false
+        }
+      ],
+      "vi": [
+        {
+          "truth": "Cập nhật kinh tế vĩ mô Việt Nam",
+          "ocr": "cập nhật kinh tế vĩ mô Việt Nam",
+          "char_acc": 0.9677,
+          "exact": false
+        },
+        {
+          "truth": "Tăng trưởng đạt 7,09 phần trăm năm 2024,",
+          "ocr": "Tăng trưởng đạt 7,09 phẩn trăm năm 2024,",
+          "char_acc": 0.975,
+          "exact": false
+        },
+        {
+          "truth": "cao hơn mức 5,05 phần trăm của năm trước.",
+          "ocr": "cao hơn mức 5,05 phẩn trăm của năm trước .",
+          "char_acc": 0.9512,
+          "exact": false
+        },
+        {
+          "truth": "Xuất khẩu tăng lên 405,5 tỷ đô la trong khi",
+          "ocr": "Xuất khẩu tăng Iên 405,5 tỷ đô la trong khi",
+          "char_acc": 0.9767,
+          "exact": false
+        },
+        {
+          "truth": "chỉ số giá tiêu dùng dừng ở mức 3,63.",
+          "ocr": "tiêu dùng dừng ở mức 3,63.",
+          "char_acc": 0.7027,
+          "exact": false
+        }
+      ],
+      "en_exact": 4,
+      "vi_exact": 0,
+      "en_mean_char_acc": 0.9514,
+      "vi_mean_char_acc": 0.9147,
+      "key_sentence": {
+        "truth": "Tăng trưởng đạt 7,09 phần trăm năm 2024,",
+        "ocr": "Tăng trưởng đạt 7,09 phẩn trăm năm 2024,",
+        "char_acc": 0.975,
+        "diacritics_truth": 8,
+        "diacritics_ocr": 8
+      }
+    },
+    "dpi300": {
+      "ocr_seconds": 1.48,
+      "n_lines_read": 14,
+      "en": [
+        {
+          "truth": "Vietnam Macroeconomic Update",
+          "ocr": "Vietnam Macroeconomic Update",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "Growth reached 7.09 percent in 2024, up",
+          "ocr": "Growth reached 7.09 percent in 2024",
+          "char_acc": 0.8974,
+          "exact": false
+        },
+        {
+          "truth": "from 5.05 percent a year earlier. Exports",
+          "ocr": "from 5.05 percent a year earlier. Exports",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "rose to 405.5 billion dollars while the",
+          "ocr": "rose to 405.5 billion dollars while the",
+          "char_acc": 1.0,
+          "exact": true
+        },
+        {
+          "truth": "consumer price index settled at 3.63.",
+          "ocr": "price index settled at 3.63.",
+          "char_acc": 0.7568,
+          "exact": false
+        }
+      ],
+      "vi": [
+        {
+          "truth": "Cập nhật kinh tế vĩ mô Việt Nam",
+          "ocr": "cập nhật kinh tế vĩ mô Việt Nam",
+          "char_acc": 0.9677,
+          "exact": false
+        },
+        {
+          "truth": "Tăng trưởng đạt 7,09 phần trăm năm 2024,",
+          "ocr": "Tăng trưởng đạt 7,09",
+          "char_acc": 0.5,
+          "exact": false
+        },
+        {
+          "truth": "cao hơn mức 5,05 phần trăm của năm trước.",
+          "ocr": "cao hơn mức 5,05 phẩn trăm của năm trước .",
+          "char_acc": 0.9512,
+          "exact": false
+        },
+        {
+          "truth": "Xuất khẩu tăng lên 405,5 tỷ đô la trong khi",
+          "ocr": "Xuất khẩu tăng Iên 405,5 tỷ đô la trong khi",
+          "char_acc": 0.9767,
+          "exact": false
+        },
+        {
+          "truth": "chỉ số giá tiêu dùng dừng ở mức 3,63.",
+          "ocr": "chỉ số giá tiêu dùng dừng ở mức 3,63.",
+          "char_acc": 1.0,
+          "exact": true
+        }
+      ],
+      "en_exact": 3,
+      "vi_exact": 1,
+      "en_mean_char_acc": 0.9308,
+      "vi_mean_char_acc": 0.8791,
+      "key_sentence": {
+        "truth": "Tăng trưởng đạt 7,09 phần trăm năm 2024,",
+        "ocr": "Tăng trưởng đạt 7,09",
+        "char_acc": 0.5,
+        "diacritics_truth": 8,
+        "diacritics_ocr": 5
+      }
+    }
+  }
+}

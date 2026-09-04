@@ -1,34 +1,34 @@
-"""Chính sách OCR: máy nào, cho ngôn ngữ nào, và bao nhiêu job một lúc. `W3-02`.
+"""Chính sách OCR: máy nào, cho ngôn ngữ nào, và bao nhiêu job một lúc. `W3-02` + `TD-23`.
 
-**Kết quả quyết định mọi thứ trong module này: máy OCR đi kèm docling đọc được
-tiếng Anh và KHÔNG đọc được tiếng Việt.** Đo trên fixture một trang có sẵn cả hai
-đoạn, cùng ảnh, cùng độ phân giải, cùng một lần chạy:
+⚠️⚠️ **Phép đo đầu tiên của module này (2026-08-28) KHÔNG HỢP LỆ, và bảng kết
+luận cũ đã bị thay (2026-09-04).** Fixture sinh bằng font mặc định của Pillow
+(Aileron) — font **không có glyph tiếng Việt**, dấu bị render thành ô ☒ ngay
+trong ảnh. "Không OCR nào đọc được tiếng Việt" thật ra là "không OCR nào đọc
+được ký tự ☒": cả hai máy bị chấm trên một đề bài hỏng. Sau khi sửa fixture
+sang DejaVu Sans (commit trong repo) và đo lại **cùng ảnh, cùng lần chạy**:
 
-| model rec | tiếng Anh | tiếng Việt |
+| máy | tiếng Anh | tiếng Việt |
 |---|---|---|
-| `ch` PP-OCRv6 (mặc định của docling) | ✅ nguyên văn | `Tāng trng t 7,09 phān trām nām 2024` |
-| `latin` PP-OCRv3 | ✅ nguyên văn | `Tng trXXng XXt 7,09 phn trm nm 2024` |
+| `rapidocr` PP-OCRv6 (mặc định docling) | ✅ đủ chữ | ❌ **vứt 3/5 dòng**, sai dấu (`mức`→`múc`) |
+| `easyocr` latin-g2, lang `[vi,en]` | ✅ đủ chữ | ✅ **dấu sống 8/8**, char-acc 0,91–0,97 |
 
-Bản gốc: `Tăng trưởng đạt 7,09 phần trăm năm 2024`. Model `ch` bịa ra dấu sai,
-model `latin` **bỏ hẳn dấu** và chèn `XX` cho ký tự ngoài bộ chữ. Con số thì cả
-hai đều đọc đúng (7,09 · 5,05 · 405,5 · 3,63) — hỏng nằm ở dấu và ở hình dạng
-chữ cái tiếng Việt, không ở chữ số.
+Lỗi nặng nhất của EasyOCR là `phần`→`phẩn`; RapidOCR trên ảnh mới còn xáo trật
+tự một dòng tiếng Anh (tầng layout của docling, không phải máy OCR).
 
-⚠️ **Nên với corpus tiếng Việt, OCR bật lên còn tệ hơn OCR tắt.** Tắt thì tài
-liệu rỗng và có người nhận ra; bật thì nó sinh ra văn bản *trông như nội dung*,
-đi thẳng vào embedding, vào index, vào citation — và không phép kiểm nào ở tầng
-sau phân biệt được. Module này vì thế **từ chối** thay vì trả về rác.
+Đo: `plans/reports/probes/td-23-easyocr.json`. Nên chính sách là **chọn máy theo
+ngôn ngữ**: `vi` đi EasyOCR, `en` giữ RapidOCR (đường cũ, vân tay cũ). Ngôn ngữ
+chưa đo (fr, zh, …) vẫn bị **từ chối** — lý do giữ nguyên: OCR sai sinh ra văn
+bản *trông như nội dung*, đi thẳng vào embedding → index → citation, và không
+phép kiểm nào ở tầng sau phân biệt được. Rác nguy hiểm hơn rỗng.
 
-**Vì sao không dùng VLM như plan viết.** Dòng `W3-02` trong plan ghi *"Qwen2.5-VL
-/ Gemini Vision"*, và phép đo trên đúng là lý do nên làm thế. Nhưng môi trường
-hiện tại **không chạy được đường đó**: không có `OPENROUTER_API_KEY`, còn
-DeepSeek — key duy nhất đang có — không có model thị giác. Viết một đường gọi API
-trả phí mà không chạy thử được lần nào là đúng chế độ hỏng `W2-07` đã ghi lại
-("chạy xong, đúng số ô, không có dữ liệu"). Để lại `TD-23` kèm điều kiện mở khoá.
+⚠️ Giới hạn đã biết của đường `vi`: tầng xếp thứ tự đọc của **docling** (không
+phải của máy OCR) xáo một phần trật tự từ trên trang nhiều khối — nội dung và
+dấu vào đủ, trật tự trong một dòng có thể lệch. Ảnh hưởng citation nguyên văn,
+ít ảnh hưởng truy hồi (embedding/BM25 nhìn túi từ nhiều hơn nhìn thứ tự).
 
-Tesseract (`vie` traineddata đọc tiếng Việt tốt) cũng là một lối ra, nhưng nó là
-**binary hệ điều hành** chứ không phải wheel — thuộc Dockerfile, không thuộc
-commit này. Đã kiểm: máy hiện tại không có `tesseract`, không có `onnxruntime`.
+VLM qua OpenRouter (khi có key) và Tesseract + `vie` trong Dockerfile (`W4-13`)
+vẫn là hai lối nâng cấp tiếp theo của `TD-23` nếu chất lượng EasyOCR không đủ
+cho corpus scan thật — quyết định đó cần tài liệu scan thật, chưa có trong corpus.
 """
 
 from __future__ import annotations
@@ -43,23 +43,40 @@ from .base import LoaderError
 
 __all__ = [
     "DEFAULT_GATE",
+    "DEFAULT_OCR_ENGINE",
     "OCR_ENGINE",
+    "OCR_ENGINES",
     "OCR_VERIFIED_LANGUAGES",
     "SECONDS_PER_PAGE",
     "OcrBudgetError",
     "OcrGate",
     "OcrLanguageError",
+    "engine_for",
     "ocr_supports",
     "require_ocr_support",
 ]
 
 logger = logging.getLogger(__name__)
 
-OCR_ENGINE = "rapidocr:PP-OCRv6-ch"
-"""Máy OCR docling dùng mặc định. Ghi cả tên model vì đó là thứ quyết định ngôn ngữ."""
+OCR_ENGINES: dict[str, str] = {
+    "rapidocr": "rapidocr:PP-OCRv6-ch",
+    "easyocr": "easyocr:latin-g2",
+}
+"""Máy OCR khả dụng → nhãn đầy đủ (kèm tên model, vì model quyết định ngôn ngữ)."""
 
-OCR_VERIFIED_LANGUAGES = frozenset({"en"})
-"""Ngôn ngữ đã **đo** là đọc được. Không phải ngôn ngữ nhà sản xuất tuyên bố."""
+DEFAULT_OCR_ENGINE = "rapidocr"
+"""Máy khi không biết ngôn ngữ: đường cũ, vân tay cũ, hành vi `W3-02` giữ nguyên."""
+
+OCR_ENGINE = OCR_ENGINES[DEFAULT_OCR_ENGINE]
+"""Nhãn máy mặc định. Tên cũ giữ lại vì `W3-02` export nó ra ngoài."""
+
+OCR_VERIFIED_LANGUAGES: dict[str, frozenset[str]] = {
+    "rapidocr": frozenset({"en"}),
+    "easyocr": frozenset({"en", "vi"}),
+}
+"""Ngôn ngữ đã **đo** là đọc được, theo từng máy. Không phải danh sách nhà sản
+xuất tuyên bố — EasyOCR tuyên bố 80+ ngôn ngữ, ở đây chỉ ghi hai thứ đã chấm
+trên fixture (xem bảng ở docstring module)."""
 
 SECONDS_PER_PAGE = 0.35
 """Chi phí OCR **cận biên**, đo trên 4 lần chạy lại trong cùng tiến trình.
@@ -89,35 +106,55 @@ class OcrBudgetError(LoaderError):
     """Tài liệu vượt trần số trang cho một lần OCR."""
 
 
+def engine_for(language: str | None) -> str:
+    """Chọn máy OCR theo ngôn ngữ. Trả khoá trong `OCR_ENGINES`.
+
+    `None` = chưa biết ngôn ngữ → máy mặc định (chỗ gọi phải cảnh báo). Ngôn ngữ
+    chưa đo → `OcrLanguageError`. Duyệt máy mặc định trước để `en` không âm thầm
+    đổi máy — đổi máy là đổi văn bản xuất ra, tức đổi vân tay parse.
+    """
+    if language is None:
+        return DEFAULT_OCR_ENGINE
+    lang = language.strip().lower()
+    for engine in (DEFAULT_OCR_ENGINE, *sorted(OCR_VERIFIED_LANGUAGES)):
+        if lang in OCR_VERIFIED_LANGUAGES[engine]:
+            return engine
+    verified = {key: sorted(value) for key, value in sorted(OCR_VERIFIED_LANGUAGES.items())}
+    raise OcrLanguageError(
+        f"chưa máy OCR nào ở đây được ĐO với ngôn ngữ {language!r}. Đã đo: {verified}. "
+        "OCR sai không trả lỗi — nó trả văn bản trông như nội dung (phép đo 2026-09-04: "
+        "RapidOCR vứt 3/5 dòng tiếng Việt trên ảnh hợp lệ và không báo gì). "
+        "Rác đi vào index thì không tầng nào phía sau nhận ra. Xem TD-23."
+    )
+
+
 def ocr_supports(language: str | None) -> bool:
     """`None` = chưa biết ngôn ngữ → cho qua, nhưng chỗ gọi phải cảnh báo."""
     if language is None:
         return True
-    return language.strip().lower() in OCR_VERIFIED_LANGUAGES
+    lang = language.strip().lower()
+    return any(lang in verified for verified in OCR_VERIFIED_LANGUAGES.values())
 
 
-def require_ocr_support(language: str | None, *, name: str = "tài liệu") -> None:
-    """Ném lỗi có kèm số đo nếu ngôn ngữ nằm ngoài tập đã kiểm.
+def require_ocr_support(language: str | None, *, name: str = "tài liệu") -> str:
+    """Chọn máy cho ngôn ngữ này, hoặc ném lỗi có kèm số đo. Trả khoá máy.
 
-    Thông điệp lỗi cố ý mang theo **một ví dụ output hỏng**: người đọc log cần
-    thấy ngay vì sao đây không phải chuyện "thử bật cờ xem sao".
+    Thông điệp lỗi cố ý mang theo **một số đo thật**: người đọc log cần thấy
+    ngay vì sao đây không phải chuyện "thử bật cờ xem sao".
     """
-    if ocr_supports(language):
-        if language is None:
-            logger.warning(
-                "%s: OCR chạy khi chưa biết ngôn ngữ. Máy %s mới chỉ kiểm với %s — "
-                "văn bản tiếng Việt sẽ ra rác mà không có gì báo.",
-                name,
-                OCR_ENGINE,
-                sorted(OCR_VERIFIED_LANGUAGES),
-            )
-        return
-    raise OcrLanguageError(
-        f"{name}: OCR bị từ chối cho ngôn ngữ {language!r}. Máy hiện có ({OCR_ENGINE}) "
-        f"mới chỉ kiểm được {sorted(OCR_VERIFIED_LANGUAGES)}; với tiếng Việt nó trả về "
-        "'Tāng trng t 7,09 phān trām nām 2024' cho 'Tăng trưởng đạt 7,09 phần trăm "
-        "năm 2024'. Rác đi vào index thì không tầng nào phía sau nhận ra. Xem TD-23."
-    )
+    if language is None:
+        logger.warning(
+            "%s: OCR chạy khi chưa biết ngôn ngữ. Máy mặc định %s mới chỉ kiểm với %s — "
+            "văn bản tiếng Việt phải khai `language='vi'` mới được đưa sang EasyOCR.",
+            name,
+            OCR_ENGINE,
+            sorted(OCR_VERIFIED_LANGUAGES[DEFAULT_OCR_ENGINE]),
+        )
+        return DEFAULT_OCR_ENGINE
+    try:
+        return engine_for(language)
+    except OcrLanguageError as exc:
+        raise OcrLanguageError(f"{name}: {exc}") from None
 
 
 @dataclass

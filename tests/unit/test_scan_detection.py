@@ -25,6 +25,7 @@ from rag_core.loaders import (
     PageText,
     ScanReport,
     detect_scan,
+    engine_for,
     ocr_supports,
     page_texts,
     require_ocr_support,
@@ -103,33 +104,47 @@ class TestOneEmptyPageIsNotAScannedDocument:
         assert ScanReport(()).empty_ratio == 0.0
 
 
-class TestOcrIsRefusedForLanguagesItCannotRead:
-    """⭐⭐ Máy OCR hiện có đọc tiếng Anh, và trả **rác** cho tiếng Việt.
+class TestEachLanguageGetsTheEngineThatWasMeasuredForIt:
+    """⭐⭐ Chọn máy theo ngôn ngữ, và chỉ ngôn ngữ ĐÃ ĐO mới được chạy.
 
-    Rác nguy hiểm hơn rỗng: rỗng thì có người nhận ra, còn rác trông như nội dung
-    và đi thẳng vào embedding → index → citation.
+    Bản đầu của class này khẳng định "tiếng Việt bị từ chối" — dựa trên một phép
+    đo mà 2026-09-04 lộ ra là chấm trên fixture hỏng font (dấu là ô ☒ ngay trong
+    ảnh). Đo lại trên ảnh hợp lệ: RapidOCR vẫn vứt 3/5 dòng tiếng Việt, còn
+    EasyOCR giữ dấu 8/8 — nên `vi` giờ đi EasyOCR thay vì bị chặn. Lý do từ chối
+    ngôn ngữ CHƯA đo thì giữ nguyên: rác trông như nội dung, nguy hiểm hơn rỗng.
     """
 
-    def test_english_passes(self) -> None:
+    def test_english_stays_on_the_default_engine(self) -> None:
+        """Đổi máy là đổi văn bản xuất ra, tức đổi vân tay parse — `en` không
+        được âm thầm dời đi chỉ vì có máy mới."""
         assert ocr_supports("en")
-        require_ocr_support("en")
+        assert require_ocr_support("en") == "rapidocr"
+        assert engine_for("en") == "rapidocr"
 
-    def test_vietnamese_is_refused(self) -> None:
-        assert not ocr_supports("vi")
-        with pytest.raises(OcrLanguageError):
-            require_ocr_support("vi")
+    def test_vietnamese_goes_to_easyocr(self) -> None:
+        assert ocr_supports("vi")
+        assert require_ocr_support("vi", name="bao-cao.pdf") == "easyocr"
+
+    def test_an_unmeasured_language_is_refused(self) -> None:
+        """EasyOCR *tuyên bố* đọc được tiếng Pháp — nhưng tuyên bố không phải
+        phép đo, và bài học của chính TD-23 là hai thứ đó khác nhau."""
+        assert not ocr_supports("fr")
+        with pytest.raises(OcrLanguageError, match="TD-23"):
+            require_ocr_support("fr", name="rapport.pdf")
 
     def test_the_refusal_message_carries_the_measurement(self) -> None:
-        with pytest.raises(OcrLanguageError, match="Tăng trưởng đạt"):
-            require_ocr_support("vi", name="bao-cao.pdf")
+        with pytest.raises(OcrLanguageError, match="3/5 dòng"):
+            require_ocr_support("zh", name="bao-cao.pdf")
 
-    def test_case_and_whitespace_do_not_smuggle_a_language_through(self) -> None:
-        assert not ocr_supports(" VI ")
-        assert ocr_supports(" EN ")
+    def test_case_and_whitespace_do_not_change_the_routing(self) -> None:
+        assert engine_for(" VI ") == "easyocr"
+        assert engine_for(" EN ") == "rapidocr"
+        assert not ocr_supports(" FR ")
 
     def test_unknown_language_is_allowed_but_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level("WARNING", logger="rag_core.loaders.ocr"):
-            require_ocr_support(None, name="khong-ro.pdf")
+            engine = require_ocr_support(None, name="khong-ro.pdf")
+        assert engine == "rapidocr"
         assert "chưa biết ngôn ngữ" in caplog.text
 
 

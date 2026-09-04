@@ -56,10 +56,12 @@ from .docling_backend import DOCLING_FORMATS, docling_version, load_with_docling
 from .ocr import (
     DEFAULT_GATE,
     OCR_ENGINE,
+    OCR_ENGINES,
     OCR_VERIFIED_LANGUAGES,
     OcrBudgetError,
     OcrGate,
     OcrLanguageError,
+    engine_for,
     ocr_supports,
     require_ocr_support,
 )
@@ -71,6 +73,7 @@ __all__ = [
     "DOCLING_FORMATS",
     "MIN_CHARS_PER_IN2",
     "OCR_ENGINE",
+    "OCR_ENGINES",
     "OCR_VERIFIED_LANGUAGES",
     "PLAIN_FORMATS",
     "SCAN_PAGE_RATIO",
@@ -89,6 +92,7 @@ __all__ = [
     "detect_format",
     "detect_scan",
     "docling_version",
+    "engine_for",
     "load_document",
     "loader_for",
     "ocr_supports",
@@ -136,10 +140,11 @@ def load_document(
       không dựng ảnh); chỉ bật OCR khi tài liệu thật sự thiếu text.
     * `"force"` — OCR bất kể phát hiện nói gì.
 
-    ⚠️ `language` **không** phải gợi ý mà là một cái chốt: máy OCR hiện có mới
-    đo được với tiếng Anh, và với tiếng Việt nó trả về rác *trông như nội dung*.
-    Khai báo `language="vi"` thì hàm này **từ chối** thay vì trả rác. Bỏ trống
-    thì vẫn chạy nhưng có cảnh báo — xem `ocr.require_ocr_support`.
+    ⚠️ `language` **không** phải gợi ý mà là một cái chốt chọn máy: `"en"` đi
+    RapidOCR (mặc định docling), `"vi"` đi EasyOCR — máy duy nhất đã ĐO là giữ
+    được dấu tiếng Việt (2026-09-04, sau khi phát hiện phép đo cũ chấm trên
+    fixture hỏng font). Ngôn ngữ chưa đo thì hàm này **từ chối** thay vì trả
+    rác. Bỏ trống thì chạy máy mặc định kèm cảnh báo — xem `ocr.require_ocr_support`.
     """
     target = Path(path)
     if not target.is_file():
@@ -163,18 +168,18 @@ def load_document(
 
     use_ocr = mode == "force" or (report is not None and report.needs_ocr)
     if not use_ocr:
-        return load_with_docling(target, source_sha256=source_sha256, ocr=False)
+        return load_with_docling(target, source_sha256=source_sha256, ocr_engine=None)
 
-    require_ocr_support(language, name=target.name)
+    engine = require_ocr_support(language, name=target.name)
     pages = len(report.pages) if report is not None else len(page_texts(target))
     with (gate or DEFAULT_GATE).reserve(pages, name=target.name):
-        document = load_with_docling(target, source_sha256=source_sha256, ocr=True)
+        document = load_with_docling(target, source_sha256=source_sha256, ocr_engine=engine)
 
     extra = dict(document.extra)
     extra.update(
         {
             "ocr": "true",
-            "ocr_engine": OCR_ENGINE,
+            "ocr_engine": OCR_ENGINES[engine],
             "ocr_language": language or "unknown",
             "ocr_pages": str(pages),
         }
