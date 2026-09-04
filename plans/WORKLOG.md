@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (4) (cuối file)** — `W4-09` xong, `W4` **9/13**. Structured output + citation verification: khung SSE `citations` với `verified` từng quote; lần chạy thật thứ ba cho ngay một **citation lai ghép** (lời văn chunk này, gán chunk kia) bị bắt đúng. Tiêm 8 lỗi / 8 đỏ. **2026 test xanh.**
+> **Phiên mới nhất: 2026-09-04 (5) (cuối file)** — `W4-10` xong, `W4` **10/13**. Semantic cache: phép đo giết ngưỡng 0,95 của plan — hai phân bố paraphrase/bẫy chồng nhau, không ngưỡng nào tách được → 0,96 + hàng rào chữ số + namespace theo bundle. 100 query Zipf: hit 77/100, bẫy 0/10. Tiêm 6 lỗi: S6 xanh chỉ ra ca `finish_reason="length"` → bịt → 6/6 đỏ. **2059 test xanh.**
+>
+> Phiên trước: **2026-09-04 (4)** — `W4-09` xong, `W4` **9/13**. Structured output + citation verification: khung SSE `citations` với `verified` từng quote; lần chạy thật thứ ba cho ngay một **citation lai ghép** (lời văn chunk này, gán chunk kia) bị bắt đúng. Tiêm 8 lỗi / 8 đỏ. **2026 test xanh.**
 >
 > Phiên trước: **2026-09-04 (3)** — ba quyết định của bạn chốt sổ (`W0-02` merge vào main · `W3-04` đóng theo đường GLM · `W0-05` hoãn RunPod) + **`TD-23` mở một nửa**: phép đo OCR gốc KHÔNG hợp lệ (fixture render dấu thành ô ☒ — font Aileron không có glyph tiếng Việt); đo lại trên ảnh hợp lệ thì RapidOCR vẫn hỏng `vi` còn **EasyOCR giữ dấu 8/8** → `vi` mở qua EasyOCR, tiêm 3 lỗi / 3 đỏ.
 >
@@ -3276,3 +3278,23 @@ lỗi / 8 đỏ. Chạy thật 3 lượt (~$0,0026): 1 quote nguyên văn tuyệ
 **Việc tiếp theo**: `W4-10` (Redis semantic cache, cosine ~0.95, invalidate khi
 đổi bundle) → `W4-11` (prompt registry — giờ có HAI prompt hằng số chờ nó) →
 `W4-12` (guardrails) → `W4-13` (Dockerfile + compose) → gate `G4`.
+
+
+---
+
+## Phiên 2026-09-04 (5) — `W4-10` Redis semantic cache
+
+**Đã làm**: đo 30 cặp câu trên BGE-M3 TRƯỚC khi viết code
+(`probes/w4-10-cosine-threshold.json`) — kết quả giết ngưỡng 0,95 của plan:
+paraphrase và bẫy-đổi-đáp-án chồng phân bố (p50 0,8717 vs 0,8659), bẫy cao nhất
+0,9410 không khác một chữ số nào ("Thu" vs "Chi ngân sách"). Thiết kế theo số
+đo: ngưỡng 0,96 + multiset token chữ số + `semcache:{tenant}:{bundle_version}`
+(invalidate = thuộc tính khoá). `serving/core/semantic_cache.py` + wiring
+`prepare()`/`stream_turn()` (tra trước truy hồi, ghi nền sau `done`, mọi lỗi
+suy giảm thành miss, `meta.cache` minh bạch khi hit). Unit +30, service +10,
+integration +3 (Redis thật). DoD: 100 query Zipf hit **77/100**, lookup p95
+18,8 ms, bẫy 0/10. Tiêm 6: S6 xanh → ca `finish_reason="length"` (câu cụt bị
+cache vĩnh viễn) → thêm test → 6/6.
+
+**Việc tiếp theo**: `W4-11` (prompt registry — giờ có HAI prompt hằng số +
+một mẫu block CITATIONS chờ nó) → `W4-12` (guardrails) → `W4-13` → `G4`.

@@ -67,6 +67,7 @@ from rag_core.retrieval.filters import MetadataFilter
 from rag_core.schemas import RetrievedChunk
 from serving.core.auth import Principal, tenant_filter
 from serving.core.registry import ActiveBundle, BundleRegistry, NoBundleLoadedError
+from serving.core.semantic_cache import CachedAnswer, SemanticCache, embedder_of
 from serving.core.understanding import QueryPlan, QueryUnderstanding, detect_language
 from serving.db.engine import atenant_session
 from serving.db.models import Conversation, Message
@@ -145,6 +146,18 @@ lại. Luật đúng, ngữ cảnh đúng, kết quả vô lý — và không c�
 trước khi `W4-11` có registry. Cả hai đều là hằng số trong mã, và cả hai đều
 phải chuyển sang registry cùng lúc."""
 
+
+def cache_eligible(plan: QueryPlan, history: Sequence[ChatMessage]) -> bool:
+    """Lượt nào được phép chạm cache. `W4-10`.
+
+    Chỉ lượt ĐẦU hội thoại, tự đủ nghĩa, có truy hồi: câu hỏi giữa hội thoại
+    mang nghĩa từ lịch sử, và hai người dùng có cùng một câu chữ giữa hai hội
+    thoại khác nhau thì KHÔNG có cùng một câu hỏi. Bản viết lại cũng loại —
+    nó phụ thuộc lịch sử theo định nghĩa.
+    """
+    return plan.retrieves and not history and not plan.rewritten
+
+
 _PENDING: set[asyncio.Task[None]] = set()
 """Tham chiếu mạnh tới các task ghi đang chạy — xem §"Ngắt kết nối" ở docstring.
 
@@ -187,6 +200,11 @@ class ChatTurn:
     history: list[ChatMessage]
     contexts: list[RetrievedChunk]
     bundle_version: str
+    cached: CachedAnswer | None = None
+    """`W4-10`: lượt này được trả từ cache — `stream_turn` phát lại thay vì gọi model."""
+    cache_vector: Any | None = None
+    """Vector câu hỏi đã embed cho lần tra cache TRƯỢT — giữ lại để ghi cache
+    sau khi stream thành công, khỏi embed lần thứ ba."""
     max_tokens: int = 1024
     started: float = field(default_factory=time.perf_counter)
 
@@ -268,6 +286,10 @@ class ChatService:
     top_k: int = 5
     max_tokens: int = 1024
 
+    cache: SemanticCache | None = None
+    """`W4-10`. `None` = tắt. Mọi lỗi cache đều suy giảm thành miss — cache
+    không bao giờ được phép là lý do `/chat` trả lỗi."""
+
     understanding: QueryUnderstanding = field(default_factory=QueryUnderstanding)
     """`W4-07`. Mặc định là bản **không có LLM**: luật vẫn chạy đủ (định tuyến +
     ngôn ngữ), chỉ viết lại đa lượt là không có. Đó là mức suy giảm đúng — ba
@@ -342,8 +364,24 @@ class ChatService:
         scoped = tenant_filter(principal, filters)
 
         plan = await self.understanding.plan(question, history)
+
+        # ⭐ `W4-10`: tra cache TRƯỚC khi truy hồi — hit thì tiết kiệm cả lượt
+        # embed+rerank (~800 ms) lẫn lượt model. Vector tra trượt được giữ lại
+        # trên turn để ghi cache sau khi stream thành công. Mọi lỗi ở đây suy
+        # giảm thành miss; đường đầy đủ không phụ thuộc cache sống hay chết.
+        cached: CachedAnswer | None = None
+        cache_vector: Any | None = None
+        if self.cache is not None and cache_eligible(plan, history):
+            embedder = embedder_of(snapshot.retriever)
+            if embedder is not None:
+                cache_vector = await asyncio.to_thread(embedder.embed_query, plan.question)
+                assert cache_vector is not None
+                cached = await self.cache.lookup(
+                    principal.tenant_id, snapshot.version, plan.question, cache_vector
+                )
+
         contexts: list[RetrievedChunk] = []
-        if plan.retrieves:
+        if plan.retrieves and cached is None:
             contexts = list(
                 await asyncio.to_thread(
                     # ⚠️ `retrieve()` là **đồng bộ** và tốn hàng trăm mili giây
@@ -371,6 +409,8 @@ class ChatService:
             contexts=contexts,
             bundle_version=snapshot.version,
             max_tokens=self.max_tokens,
+            cached=cached,
+            cache_vector=cache_vector if cached is None else None,
         )
 
     # ---------------------------------------------------------- nửa dưới
@@ -384,6 +424,46 @@ class ChatService:
         chính là hai cách generator này kết thúc trong thực tế.
         """
         assert self.llm is not None  # `prepare()` đã kiểm; giữ mypy yên tâm
+        if turn.cached is not None:
+            # ⭐ `W4-10`: phát lại nguyên bộ khung từ cache. `meta.cache` nói RÕ
+            # đây là câu trả lời của câu hỏi NÀO và giống bao nhiêu — một cache
+            # hit sai (hai câu gần nhau nhưng khác đáp án) phải truy được từ
+            # client, không phải chỉ từ log server.
+            cached = turn.cached
+            yield ChatEvent(
+                "meta",
+                {
+                    "conversation_id": turn.conversation_id,
+                    "message_id": turn.user_message_id,
+                    "bundle_version": turn.bundle_version,
+                    "model": cached.model,
+                    **turn.plan.as_meta(),
+                    "cache": {
+                        "hit": True,
+                        "similarity": cached.similarity,
+                        "matched_question": cached.question,
+                    },
+                },
+            )
+            yield ChatEvent("sources", {"sources": cached.sources})
+            yield ChatEvent("delta", {"text": cached.text})
+            if cached.citations_frame is not None:
+                yield ChatEvent("citations", cached.citations_frame)
+            elapsed = round((time.perf_counter() - turn.started) * 1000.0, 2)
+            yield ChatEvent(
+                "done",
+                {
+                    "finish_reason": "cache",
+                    "model": cached.model,
+                    "usage": {},
+                    "ttfb_ms": elapsed,
+                    "total_ms": elapsed,
+                    "language_mismatch": False,
+                },
+            )
+            self._schedule_save(turn, cached.text, f"cache:{cached.model}", "cache")
+            return
+
         yield ChatEvent(
             "meta",
             {
@@ -521,6 +601,28 @@ class ChatService:
                         turn.conversation_id,
                     )
                 yield ChatEvent("citations", report.as_frame())
+            if (
+                self.cache is not None
+                and turn.cache_vector is not None
+                and finish_reason == "stop"
+                and emitted
+            ):
+                # Ghi cache là việc phụ — chạy nền như đường ghi Postgres, và
+                # cùng lý do phải giữ tham chiếu mạnh (xem `_PENDING`).
+                store_task = asyncio.get_running_loop().create_task(
+                    self.cache.store(
+                        turn.principal.tenant_id,
+                        turn.bundle_version,
+                        turn.plan.question,
+                        turn.cache_vector,
+                        text="".join(emitted),
+                        sources=turn.sources(),
+                        citations_frame=report.as_frame() if turn.plan.retrieves else None,
+                        model=served_model,
+                    )
+                )
+                _PENDING.add(store_task)
+                store_task.add_done_callback(_PENDING.discard)
             answer_language = detect_language(parsed.text)
             # ⭐⭐ Chỗ chỉ dẫn ngôn ngữ trở thành một **con số**.
             #

@@ -83,9 +83,15 @@ class FakeLLM:
     name = "fake"
     model = "fake-model"
 
-    def __init__(self, deltas: Sequence[str] = ("Xin ", "chào"), fail_after: int | None = None):
+    def __init__(
+        self,
+        deltas: Sequence[str] = ("Xin ", "chào"),
+        fail_after: int | None = None,
+        finish_reason: str = "stop",
+    ):
         self.deltas = list(deltas)
         self.fail_after = fail_after
+        self.finish_reason = finish_reason
         self.seen: list[ChatMessage] = []
 
     async def astream(
@@ -107,7 +113,7 @@ class FakeLLM:
                 model="fake-model-served",
                 model_requested="fake-model",
                 usage=TokenUsage(prompt_tokens=10, completion_tokens=2, cost_usd=0.0001),
-                finish_reason="stop",
+                finish_reason=self.finish_reason,
             )
         )
 
@@ -595,3 +601,151 @@ async def test_language_mismatch_is_measured_on_the_visible_text_only() -> None:
     events = await _drain(_service(llm), _turn())
 
     assert _done_of(events)["language_mismatch"] is False
+
+
+# ---------------------------------------------------------------------------
+# 9. `W4-10` — semantic cache ở tầng service
+# ---------------------------------------------------------------------------
+
+import numpy as np  # noqa: E402
+
+from serving.core.chat import cache_eligible  # noqa: E402
+from serving.core.semantic_cache import CachedAnswer  # noqa: E402
+
+
+class RecordingCache:
+    """Ghi lại lời gọi `store` — hành vi so khớp đã có test riêng ở
+    `test_semantic_cache.py`, ở đây chỉ kiểm ChatService gọi đúng lúc, đúng dữ liệu."""
+
+    def __init__(self) -> None:
+        self.stored: list[dict[str, Any]] = []
+
+    async def store(
+        self, tenant: str, bundle_version: str, question: str, vector: Any, **kwargs: Any
+    ) -> None:
+        self.stored.append(
+            {"tenant": tenant, "bundle": bundle_version, "question": question, **kwargs}
+        )
+
+
+def _cached_turn(**kwargs: Any) -> ChatTurn:
+    return _turn(
+        cached=CachedAnswer(
+            question="RRF là gì vậy?",
+            text="RRF là reciprocal rank fusion [1].",
+            sources=[{"n": 1, "chunk_id": "c1", "doc_id": "d1"}],
+            citations_frame={"block": "ok", "citations": [], "verified": 0, "total": 0},
+            model="fake-model-served",
+            similarity=0.9812,
+        ),
+        contexts=[],
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_cache_hit_replays_the_full_frame_set_without_the_llm() -> None:
+    llm = FakeLLM()
+    events = await _drain(_service(llm), _cached_turn())
+
+    assert [name for name, _ in events] == ["meta", "sources", "delta", "citations", "done"]
+    assert llm.seen == []  # model không được gọi — đó là toàn bộ lý do cache tồn tại
+    assert _done_of(events)["finish_reason"] == "cache"
+    assert _done_of(events)["usage"] == {}
+
+
+@pytest.mark.asyncio
+async def test_the_meta_frame_names_what_the_hit_matched() -> None:
+    """Một hit sai (hai câu gần nhau nhưng khác đáp án) phải truy được từ
+    CLIENT: khung meta mang câu đã khớp và độ giống, không giấu trong log."""
+    events = await _drain(_service(FakeLLM()), _cached_turn())
+
+    meta = events[0][1]
+    assert meta["cache"] == {
+        "hit": True,
+        "similarity": 0.9812,
+        "matched_question": "RRF là gì vậy?",
+    }
+    assert events[1][1]["sources"] == [{"n": 1, "chunk_id": "c1", "doc_id": "d1"}]
+
+
+@pytest.mark.asyncio
+async def test_a_cache_hit_is_saved_to_history_as_a_cache_turn() -> None:
+    service = _service(FakeLLM())
+    await _drain(service, _cached_turn())
+
+    assert service.saved == [
+        {
+            "text": "RRF là reciprocal rank fusion [1].",
+            "model": "cache:fake-model-served",
+            "finish_reason": "cache",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_successful_answer_is_stored_with_the_visible_text() -> None:
+    """Ghi cache = bản ĐÃ PHÁT (block cắt rồi) + khung citations + sources —
+    đủ để lần hit sau phát lại nguyên bộ mà không cần model."""
+    service = _service(_citing_llm("reciprocal rank fusion"))
+    cache = RecordingCache()
+    service.cache = cache  # type: ignore[assignment]
+    turn = _turn(cache_vector=np.ones(4, dtype=np.float32))
+
+    await _drain(service, turn)
+    for task in list(asyncio.all_tasks()):
+        pass  # store chạy nền — drain xong là loop còn task
+    await asyncio.sleep(0)
+
+    assert len(cache.stored) == 1
+    entry = cache.stored[0]
+    assert entry["text"] == "Theo [1], đúng vậy."
+    assert entry["citations_frame"]["verified"] == 1
+    assert entry["model"] == "fake-model-served"
+    assert entry["tenant"] == "acme"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_stream_is_never_cached() -> None:
+    service = _service(FakeLLM(fail_after=1))
+    cache = RecordingCache()
+    service.cache = cache  # type: ignore[assignment]
+
+    await _drain(service, _turn(cache_vector=np.ones(4, dtype=np.float32)))
+    await asyncio.sleep(0)
+
+    assert cache.stored == []
+
+
+class TestCacheEligibility:
+    """Luật thuần: lượt nào được chạm cache."""
+
+    def test_a_first_turn_retrieval_question_is_eligible(self) -> None:
+        assert cache_eligible(_plan(), [])
+
+    def test_history_disqualifies(self) -> None:
+        """Cùng câu chữ giữa hai hội thoại khác nhau KHÔNG phải cùng câu hỏi."""
+        assert not cache_eligible(_plan(), [ChatMessage(role="user", content="trước đó")])
+
+    def test_a_rewritten_question_disqualifies(self) -> None:
+        assert not cache_eligible(_plan(rewritten=True), [])
+
+    def test_non_retrieval_routes_disqualify(self) -> None:
+        assert not cache_eligible(_plan("chào", route="no_retrieval"), [])
+        assert not cache_eligible(_plan("?", route="clarify"), [])
+
+
+@pytest.mark.asyncio
+async def test_a_truncated_answer_is_never_cached() -> None:
+    """`finish_reason="length"` = câu trả lời CỤT vì trần token. Nó đi qua nhánh
+    thành công (else) chứ không qua except — và cache nó là phát lại một câu cụt
+    vĩnh viễn. Phép tiêm S6 sống sót vì test fail-stream chỉ canh nhánh except;
+    test này canh đúng nhánh mà điều kiện `finish_reason == "stop"` đang gác."""
+    service = _service(FakeLLM(["Trả lời bị cắt giữa ch"], finish_reason="length"))
+    cache = RecordingCache()
+    service.cache = cache  # type: ignore[assignment]
+
+    await _drain(service, _turn(cache_vector=np.ones(4, dtype=np.float32)))
+    await asyncio.sleep(0)
+
+    assert cache.stored == []

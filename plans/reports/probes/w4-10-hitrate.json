@@ -1,0 +1,16 @@
+{
+  "threshold": 0.96,
+  "model": "BAAI/bge-m3",
+  "traffic_zipf": {
+    "queries": 100,
+    "distinct": 23,
+    "repeated_queries": 77,
+    "hits": 77,
+    "hit_rate": 0.77,
+    "hit_rate_on_repeats": 1.0,
+    "lookup_ms_p50": 15.9,
+    "lookup_ms_p95": 18.8
+  },
+  "paraphrase_hits": "1/10",
+  "trap_hits": "0/10"
+}

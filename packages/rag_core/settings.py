@@ -135,6 +135,13 @@ class Settings(BaseSettings):
 
     chat_top_k: int = Field(default=5, ge=1, le=50)
     chat_max_tokens: int = Field(default=1024, ge=1)
+    # `W4-10` — semantic cache. Ngưỡng 0,96 đo từ `probes/w4-10-cosine-threshold.json`:
+    # bẫy "gần giống nhưng đổi đáp án" cao nhất là 0,9410, paraphrase thật vượt
+    # 0,96 chỉ ~2/10 — cache này bảo thủ có chủ đích.
+    chat_cache: bool = True
+    chat_cache_threshold: float = Field(default=0.96, ge=0.0, le=1.0)
+    chat_cache_ttl_s: int = Field(default=86_400, ge=1)
+    chat_cache_max_entries: int = Field(default=128, ge=1)
 
     # ------------------------------------------------------- LLM Router (W4-08)
     chat_fallback_provider: Literal["openrouter", "glm", "none"] = "none"

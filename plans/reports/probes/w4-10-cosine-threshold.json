@@ -1,0 +1,160 @@
+{
+  "model": "BAAI/bge-m3",
+  "normalize": true,
+  "paraphrase": [
+    {
+      "a": "Tăng trưởng GDP của Việt Nam nửa đầu năm 2025 là bao nhiêu?",
+      "b": "GDP Việt Nam tăng bao nhiêu phần trăm trong 6 tháng đầu năm 2025?",
+      "cosine": 0.9278
+    },
+    {
+      "a": "Xuất khẩu của Việt Nam sang Hoa Kỳ thay đổi thế nào?",
+      "b": "Kim ngạch xuất khẩu Việt Nam sang Mỹ tăng hay giảm?",
+      "cosine": 0.8499
+    },
+    {
+      "a": "Lạm phát năm 2024 ở mức nào?",
+      "b": "Chỉ số giá tiêu dùng năm 2024 tăng bao nhiêu?",
+      "cosine": 0.8516
+    },
+    {
+      "a": "Ngân hàng Thế giới dự báo gì về kinh tế Việt Nam?",
+      "b": "World Bank nhận định thế nào về triển vọng kinh tế Việt Nam?",
+      "cosine": 0.8792
+    },
+    {
+      "a": "Đầu tư công giải ngân chậm vì lý do gì?",
+      "b": "Nguyên nhân nào khiến giải ngân vốn đầu tư công bị chậm?",
+      "cosine": 0.9757
+    },
+    {
+      "a": "Tỷ lệ nghèo ở Việt Nam đã giảm như thế nào?",
+      "b": "Việt Nam giảm nghèo ra sao trong những năm qua?",
+      "cosine": 0.9145
+    },
+    {
+      "a": "Chính sách tiền tệ hiện nay nới lỏng hay thắt chặt?",
+      "b": "NHNN đang điều hành chính sách tiền tệ theo hướng nào, nới hay siết?",
+      "cosine": 0.8106
+    },
+    {
+      "a": "Rủi ro lớn nhất với kinh tế Việt Nam là gì?",
+      "b": "Kinh tế Việt Nam đối mặt nguy cơ nào lớn nhất?",
+      "cosine": 0.9506
+    },
+    {
+      "a": "Ngành nào đóng góp nhiều nhất vào tăng trưởng?",
+      "b": "Tăng trưởng chủ yếu đến từ khu vực nào?",
+      "cosine": 0.7827
+    },
+    {
+      "a": "Nợ công của Việt Nam có an toàn không?",
+      "b": "Mức nợ công hiện tại của Việt Nam có nằm trong ngưỡng an toàn?",
+      "cosine": 0.8642
+    }
+  ],
+  "trap": [
+    {
+      "a": "Tăng trưởng GDP của Việt Nam nửa đầu năm 2025 là bao nhiêu?",
+      "b": "Tăng trưởng GDP của Việt Nam nửa đầu năm 2024 là bao nhiêu?",
+      "cosine": 0.8746
+    },
+    {
+      "a": "Xuất khẩu sang Hoa Kỳ tăng bao nhiêu phần trăm?",
+      "b": "Xuất khẩu sang Trung Quốc tăng bao nhiêu phần trăm?",
+      "cosine": 0.8982
+    },
+    {
+      "a": "Lạm phát năm 2024 ở mức nào?",
+      "b": "Lạm phát năm 2023 ở mức nào?",
+      "cosine": 0.8267
+    },
+    {
+      "a": "Chỉ số giá tiêu dùng tháng 6 là bao nhiêu?",
+      "b": "Chỉ số giá tiêu dùng tháng 9 là bao nhiêu?",
+      "cosine": 0.7449
+    },
+    {
+      "a": "GDP quý 1 tăng bao nhiêu?",
+      "b": "GDP quý 3 tăng bao nhiêu?",
+      "cosine": 0.7992
+    },
+    {
+      "a": "Dự báo tăng trưởng năm 2025 là bao nhiêu?",
+      "b": "Dự báo tăng trưởng năm 2026 là bao nhiêu?",
+      "cosine": 0.7976
+    },
+    {
+      "a": "Tỷ giá USD/VND cuối năm 2024?",
+      "b": "Tỷ giá USD/VND cuối năm 2022?",
+      "cosine": 0.8571
+    },
+    {
+      "a": "Vốn FDI đăng ký 6 tháng đầu năm đạt bao nhiêu?",
+      "b": "Vốn FDI giải ngân 6 tháng đầu năm đạt bao nhiêu?",
+      "cosine": 0.9279
+    },
+    {
+      "a": "Thu ngân sách năm 2024 vượt dự toán bao nhiêu?",
+      "b": "Chi ngân sách năm 2024 vượt dự toán bao nhiêu?",
+      "cosine": 0.941
+    },
+    {
+      "a": "Tăng trưởng tín dụng đạt 7,5% đúng không?",
+      "b": "Tăng trưởng tín dụng đạt 5,7% đúng không?",
+      "cosine": 0.9112
+    }
+  ],
+  "unrelated": [
+    {
+      "a": "Tăng trưởng GDP nửa đầu 2025 là bao nhiêu?",
+      "b": "Cách nấu phở bò truyền thống?",
+      "cosine": 0.304
+    },
+    {
+      "a": "Xuất khẩu sang Hoa Kỳ thế nào?",
+      "b": "Đội tuyển bóng đá quốc gia đá lúc mấy giờ?",
+      "cosine": 0.3822
+    },
+    {
+      "a": "Lạm phát năm 2024 ở mức nào?",
+      "b": "Thủ đô của Pháp là thành phố nào?",
+      "cosine": 0.3956
+    },
+    {
+      "a": "Đầu tư công giải ngân chậm vì sao?",
+      "b": "Con mèo nhà tôi bỏ ăn phải làm gì?",
+      "cosine": 0.3761
+    },
+    {
+      "a": "Nợ công có an toàn không?",
+      "b": "Bài hát nào đang đứng đầu bảng xếp hạng?",
+      "cosine": 0.3418
+    },
+    {
+      "a": "Chính sách tiền tệ hiện nay ra sao?",
+      "b": "Cây xương rồng tưới nước mấy lần một tuần?",
+      "cosine": 0.3662
+    },
+    {
+      "a": "Rủi ro kinh tế lớn nhất là gì?",
+      "b": "Định lý Pythagore phát biểu thế nào?",
+      "cosine": 0.369
+    },
+    {
+      "a": "Ngành nào đóng góp nhiều nhất vào tăng trưởng?",
+      "b": "Phim nào chiếu rạp tuần này?",
+      "cosine": 0.3712
+    },
+    {
+      "a": "Tỷ lệ nghèo giảm thế nào?",
+      "b": "Cách đổi mật khẩu wifi?",
+      "cosine": 0.4033
+    },
+    {
+      "a": "World Bank nhận định gì?",
+      "b": "Núi cao nhất Việt Nam là núi nào?",
+      "cosine": 0.3333
+    }
+  ]
+}

@@ -221,8 +221,42 @@ class BrokenLLM:
         raise LLMError("nhánh chính trả HTTP 503")
 
 
+ENV_CACHE = "CHAT_TEST_CACHE"
+
+
+class _TopicEmbedder:
+    """Embedder giả cho test cache: vector chỉ phụ thuộc TỪ CUỐI của câu.
+
+    Hai câu cùng từ cuối → cosine 1,0 (mô phỏng paraphrase vượt ngưỡng), khác
+    từ cuối → hai vector ngẫu nhiên độc lập 32 chiều (cosine lè tè dưới 0,5).
+    Dùng sha256 chứ không `hash()`: server chạy ở TIẾN TRÌNH KHÁC với test, mà
+    `hash()` của Python đổi theo tiến trình (PYTHONHASHSEED).
+    """
+
+    def embed_query(self, text: str) -> Any:
+        import hashlib
+        import re as _re
+
+        import numpy as np
+
+        words = _re.findall(r"\w+", text.lower())
+        topic = words[-1] if words else ""
+        seed = int.from_bytes(hashlib.sha256(topic.encode()).digest()[:4], "big")
+        vector = np.random.default_rng(seed).normal(size=32)
+        return (vector / np.linalg.norm(vector)).astype(np.float32)
+
+
+class _TopicStore:
+    embeddings = _TopicEmbedder()
+
+
 def _build(bundle: RagBundle) -> tuple[Any, None]:
-    return SlowRetriever(), None
+    retriever = SlowRetriever()
+    if os.environ.get(ENV_CACHE) == "1":
+        # `embedder_of` đào `retriever.store.embeddings` — gắn store giả là đủ
+        # để đường cache thật chạy, không cần BGE-M3 trong test.
+        retriever.store = _TopicStore()  # type: ignore[attr-defined]
+    return retriever, None
 
 
 def _probes(registry: BundleRegistry) -> ReadinessProbes:
@@ -237,6 +271,10 @@ def make() -> FastAPI:
         # `none` để `build_llm` không đọc `DEEPSEEK_API_KEY` thật: một test
         # không bao giờ được đi ra Internet, kể cả khi máy có key trong `.env`.
         chat_provider="none",
+        # `W4-10`: cache chỉ bật khi test yêu cầu — Redis là trạng thái CHUNG
+        # giữa các test, và một câu trả lời cache từ test này trả cho test kia
+        # là loại đỏ giả khó truy nhất.
+        chat_cache=os.environ.get(ENV_CACHE) == "1",
     )
     app = create_app(settings=settings, build_runtime=_build, probe_factory=_probes)
     app.state.chat.llm = ScriptedLLM()

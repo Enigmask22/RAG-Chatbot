@@ -278,6 +278,30 @@ def build_understanding(settings: Settings, llm: LLMRouter | None) -> QueryUnder
     )
 
 
+def build_cache(settings: Settings) -> Any | None:
+    """`W4-10` — semantic cache trên Redis. `None` = tắt.
+
+    Client Redis async không kết nối lúc dựng (lazy), và mọi lỗi lúc chạy đều
+    suy giảm thành cache miss bên trong `SemanticCache` — nên ở đây không có
+    fail-fast: Redis chết không được phép chặn server phục vụ đường đầy đủ.
+    """
+    if not settings.chat_cache:
+        return None
+    try:
+        import redis.asyncio as aioredis
+    except ImportError:  # pragma: no cover - redis đi kèm arq trong extra serving
+        logger.warning("chat_cache bật nhưng thiếu gói redis — cache tắt")
+        return None
+    from serving.core.semantic_cache import SemanticCache
+
+    return SemanticCache(
+        aioredis.from_url(settings.redis_url),  # type: ignore[no-untyped-call]
+        threshold=settings.chat_cache_threshold,
+        ttl_s=settings.chat_cache_ttl_s,
+        max_entries=settings.chat_cache_max_entries,
+    )
+
+
 def build_sessions() -> async_sessionmaker[AsyncSession] | None:
     """Factory phiên async cho đường request (`W4-06`).
 
@@ -371,6 +395,7 @@ def create_app(
         # ⭐ `extra_body` để trống: từ `W4-08` mỗi `Route` mang bảng của nhà
         # cung cấp mình, và một giá trị ở đây sẽ ghi đè bảng ấy cho MỌI nhánh.
         understanding=build_understanding(resolved, llm),
+        cache=build_cache(resolved),
     )
     # ⚠️ **Thứ tự quan trọng và nó ngược trực giác.** `add_middleware` *chèn lên
     # đầu*, nên cái thêm **sau** nằm **ngoài**. Auth phải thêm trước để
