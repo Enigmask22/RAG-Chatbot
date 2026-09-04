@@ -190,6 +190,10 @@ markers = [
     # khỏi vòng chạy mặc định — chúng là Python thuần, nhanh, và là lưới hồi
     # quy cho bộ luật tiêm; một lưới chỉ chạy khi có người nhớ gọi là không lưới.
     "security: kiểm hàng rào bảo mật (tiêm prompt, PII) — vẫn chạy trong suite mặc định",
+    # `W4-13`: khác `integration` ở chỗ nó cần **image đã build + compose đang
+    # chạy**, không chỉ vài service lẻ. Loại khỏi cả `make test` lẫn
+    # `make test-integration` vì một lượt của nó tốn hàng phút.
+    "e2e: cần `make up-api` (image serving + toàn bộ compose) — chạy bằng `make smoke`",
 ]
 
 [tool.coverage.run]

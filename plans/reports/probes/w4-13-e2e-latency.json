@@ -1,0 +1,109 @@
+{
+  "note": "container GPU, bundle 0.2.0, deepseek-v4-flash, cache semantic BẬT",
+  "warm_calls": 7,
+  "wall_ms": {
+    "p50": 4117.8,
+    "p95": 5311.8,
+    "max": 5311.8
+  },
+  "prepare_ms": {
+    "p50": 724.5,
+    "max": 769.4
+  },
+  "budget_ms": 3500,
+  "verdict": "KHÔNG ĐẠT",
+  "cost_usd": 0.010495,
+  "rows": [
+    {
+      "n": 0,
+      "question": "Tăng trưởng GDP của Việt Nam gần đây ra sao?",
+      "wall_ms": 28.6,
+      "reported_ttfb_ms": 0.33,
+      "reported_total_ms": 0.33,
+      "prepare_ms": 28.3,
+      "deltas": 1,
+      "verified_citations": 4,
+      "finish_reason": "cache",
+      "note": "cache hit (W4-10) — không tính vào thống kê"
+    },
+    {
+      "n": 1,
+      "question": "Lạm phát năm 2024 ở mức nào?",
+      "wall_ms": 2380.2,
+      "reported_ttfb_ms": 577.09,
+      "reported_total_ms": 1675.53,
+      "prepare_ms": 704.6,
+      "deltas": 162,
+      "verified_citations": 0,
+      "finish_reason": "stop"
+    },
+    {
+      "n": 2,
+      "question": "Thu ngân sách nhà nước biến động thế nào?",
+      "wall_ms": 4935.2,
+      "reported_ttfb_ms": 851.89,
+      "reported_total_ms": 4290.56,
+      "prepare_ms": 644.6,
+      "deltas": 423,
+      "verified_citations": 2,
+      "finish_reason": "stop"
+    },
+    {
+      "n": 3,
+      "question": "Đầu tư nước ngoài FDI đăng ký bao nhiêu?",
+      "wall_ms": 4527.2,
+      "reported_ttfb_ms": 959.75,
+      "reported_total_ms": 3757.79,
+      "prepare_ms": 769.4,
+      "deltas": 384,
+      "verified_citations": 1,
+      "finish_reason": "stop"
+    },
+    {
+      "n": 4,
+      "question": "Tỉ lệ nghèo ở Việt Nam thay đổi ra sao?",
+      "wall_ms": 4117.8,
+      "reported_ttfb_ms": 403.46,
+      "reported_total_ms": 3477.5,
+      "prepare_ms": 640.3,
+      "deltas": 348,
+      "verified_citations": 0,
+      "finish_reason": "stop"
+    },
+    {
+      "n": 5,
+      "question": "Xuất khẩu hàng hoá tăng trưởng bao nhiêu?",
+      "wall_ms": 3986.3,
+      "reported_ttfb_ms": 476.89,
+      "reported_total_ms": 3250.59,
+      "prepare_ms": 735.7,
+      "deltas": 272,
+      "verified_citations": 3,
+      "finish_reason": "stop"
+    },
+    {
+      "n": 6,
+      "question": "Nợ công của Việt Nam ở mức nào?",
+      "wall_ms": 3649.0,
+      "reported_ttfb_ms": 510.76,
+      "reported_total_ms": 2918.76,
+      "prepare_ms": 730.3,
+      "deltas": 156,
+      "verified_citations": 3,
+      "finish_reason": "stop"
+    },
+    {
+      "n": 7,
+      "question": "Ngành sản xuất công nghiệp diễn biến ra sao?",
+      "wall_ms": 5311.8,
+      "reported_ttfb_ms": 562.21,
+      "reported_total_ms": 4587.27,
+      "prepare_ms": 724.5,
+      "deltas": 535,
+      "verified_citations": 4,
+      "finish_reason": "stop"
+    }
+  ],
+  "cache_hit_wall_ms": 28.6,
+  "_label_correction": "Dòng 0 KHÔNG phải lượt lạnh như nhãn đầu của probe: câu hỏi ấy đã được hỏi ở lượt curl thủ công ngay trước đó, nên nó là một CACHE HIT của W4-10 — 28,6 ms so với p50 4.118 ms của lượt trượt, tức nhanh 144x. Thống kê bên dưới tính trên 7 lượt trượt (dòng 1-7) và không bị ảnh hưởng."
+}

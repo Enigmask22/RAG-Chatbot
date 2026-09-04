@@ -32,7 +32,7 @@ fmt:  ## Tự sửa format + import order
 
 .PHONY: test
 test:  ## Unit test (không cần Docker)
-	$(PY) pytest -m "not integration and not gpu"
+	$(PY) pytest -m "not integration and not gpu and not e2e"
 
 .PHONY: test-integration
 test-integration:  ## Integration test (cần `make up` trước)
@@ -43,12 +43,12 @@ test-gpu:  ## Test cần GPU + trọng số model thật (BGE-M3 ~2,2GB)
 	$(PY) pytest -m gpu
 
 .PHONY: test-all
-test-all:  ## Toàn bộ test
-	$(PY) pytest
+test-all:  ## Toàn bộ test trừ e2e (e2e cần image: `make up-api && make smoke`)
+	$(PY) pytest -m "not e2e"
 
 .PHONY: cov
 cov:  ## Unit test + báo cáo coverage của rag_core
-	$(PY) pytest -m "not integration and not gpu" \
+	$(PY) pytest -m "not integration and not gpu and not e2e" \
 		--cov --cov-report=term-missing --cov-report=html:.coverage_html
 
 # ---------------------------------------------------------------- hạ tầng
@@ -64,17 +64,25 @@ COMPOSE := docker compose -f infra/docker-compose.yml --env-file .env
 up: .env  ## Bật Qdrant + Postgres + Redis, đợi tới khi healthy
 	$(COMPOSE) up -d --wait
 
+.PHONY: up-api
+up-api: up  ## `W4-13`: bật thêm API (build image nếu cần), đợi /ready xanh
+	$(COMPOSE) --profile api up -d --build --wait
+
+.PHONY: smoke
+smoke:  ## `W4-13`: e2e qua compose thật — cần `make up-api` trước
+	$(PY) pytest tests/e2e -m e2e
+
 .PHONY: down
 down:  ## Tắt hạ tầng (giữ nguyên volume dữ liệu)
-	$(COMPOSE) down
+	$(COMPOSE) --profile api down
 
 .PHONY: down-clean
 down-clean:  ## Tắt hạ tầng và XÓA volume dữ liệu
-	$(COMPOSE) down -v
+	$(COMPOSE) --profile api down -v
 
 .PHONY: ps
 ps:  ## Trạng thái các service
-	$(COMPOSE) ps
+	$(COMPOSE) --profile api ps
 
 .PHONY: logs
 logs:  ## Xem log hạ tầng

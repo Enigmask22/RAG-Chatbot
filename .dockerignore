@@ -1,0 +1,35 @@
+# `W4-13`. Build context của `serving/Dockerfile`.
+#
+# ⚠️ Không có file này thì `docker build .` gửi cả `data/` (15 MB corpus +
+# 63 MB contexts), `.venv/` (nhiều GB), và — nghiêm trọng hơn — `secrets/` cùng
+# `.env` lên daemon. Chúng không vào image vì không có `COPY` nào chạm tới,
+# nhưng chúng **đi qua** daemon và nằm trong cache lớp build.
+
+.git/
+.venv/
+.dvc/cache/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Bí mật — không bao giờ được rời khỏi máy này.
+.env
+.env.*
+!.env.example
+secrets/
+
+# Dữ liệu: corpus và ngữ cảnh đi qua DVC/volume, không qua image.
+data/
+.cache/
+models/
+
+# Sổ sách và báo cáo: không có gì trong image cần chúng.
+plans/
+legacy/
+notebooks/
+tests/
+scripts/
+htmlcov/
+.coverage*

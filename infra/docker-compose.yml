@@ -66,7 +66,101 @@ services:
       timeout: 3s
       retries: 12
 
+  # ------------------------------------------------------------------ API --
+  # `W4-13`. Chỉ lên khi gọi tường minh (`--profile api`) — xem docstring của
+  # profile ở cuối file.
+  api:
+    profiles: ["api"]
+    build:
+      context: ..
+      dockerfile: serving/Dockerfile
+    image: rag-serving:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      qdrant: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    # ⭐⭐ Thứ tự ưu tiên ở đây là cả thiết kế, và đảo nó thì hỏng câm.
+    #
+    # `env_file` nạp toàn bộ `.env` của repo — đó là chỗ khoá LLM thật sự
+    # nằm. Dạng list `- DEEPSEEK_API_KEY` (không dấu `=`) KHÔNG đọc từ file ấy:
+    # nó chỉ lấy từ shell đang chạy compose, còn file chỉ phục vụ phép nội suy
+    # `${...}`. Triệu chứng khi nhầm: mọi thứ xanh, `/chat` trả "chưa cấu hình
+    # LLM" — đã gặp thật ở lần chạy container đầu.
+    #
+    # `environment` bên dưới **thắng** `env_file`, và đó là điều bắt buộc: `.env`
+    # viết cho đường chạy trên host nên nó khai `QDRANT_URL=http://127.0.0.1:6333`
+    # và `POSTGRES_HOST=127.0.0.1`. Bên trong mạng compose, `127.0.0.1` là chính
+    # container này. Nếu thứ tự ngược lại thì container tự gọi chính nó.
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      # Tên service của compose, KHÔNG phải 127.0.0.1: bên trong mạng compose,
+      # `127.0.0.1` là chính container này. Đây là lỗi cấu hình phổ biến nhất
+      # khi mang một app từ host vào compose, và nó biểu hiện thành
+      # "connection refused" ở `/ready` chứ không thành một lỗi cấu hình.
+      #
+      # ⚠️ Cả khối dùng DẠNG LIST, không phải mapping — trộn hai dạng trong một
+      # khối là YAML không hợp lệ, và compose báo lỗi ở dòng khác chỗ sai.
+      - QDRANT_URL=http://qdrant:6333
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-rag}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rag_local_dev_only}
+      - POSTGRES_DB=${POSTGRES_DB:-rag}
+      - REDIS_URL=redis://redis:6379/0
+      - BUNDLE_ROOT=/app/bundles
+      - BUNDLE_VERSION=${BUNDLE_VERSION:-0.2.0}
+      - API_KEYS_FILE=/run/secrets/api-keys.json
+      - EMBEDDING_DEVICE=${EMBEDDING_DEVICE:-auto}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # ⚠️⚠️ Khoá LLM **không** liệt kê ở đây, và đó là kết quả của một lần
+      # chạy hỏng. Dạng không dấu `=` (`- DEEPSEEK_API_KEY`) chỉ lấy từ shell;
+      # tệ hơn, khi shell không có nó thì mục ấy vẫn **che mất** giá trị mà
+      # `env_file` cung cấp — `environment` thắng `env_file` kể cả khi nó rỗng.
+      # Triệu chứng: mọi thứ xanh, `/chat` trả "chưa cấu hình LLM", và
+      # `docker exec … echo $DEEPSEEK_API_KEY` in ra một dòng trống.
+      #
+      # Nên khoá đi qua `env_file` là đường DUY NHẤT. Muốn ghi đè bằng shell
+      # (CI chẳng hạn) thì đặt biến rồi thêm lại dòng tương ứng — có ý thức.
+      # ⚠️ Mặc định TẮT. Bật nghĩa là chấp nhận phục vụ một hệ thống khác hệ
+      # thống đã eval — với image CUDA thì không cần, và nếu ai đó phải bật nó
+      # thì `GET /admin/bundle` sẽ khai `runtime_drift` cho người vận hành thấy.
+      - BUNDLE_ALLOW_RUNTIME_DRIFT=${BUNDLE_ALLOW_RUNTIME_DRIFT:-0}
+    volumes:
+      # Trọng số model: 4,4 GB dùng chung với đường chạy trên host, không nướng
+      # vào image. `${HF_HOME}` để máy nào đã có cache thì khỏi tải lại.
+      - ${HF_HOME:-hf_cache}:/models
+      # Khoá API đọc-only: file thật nằm ngoài image và ngoài build context.
+      - ../secrets:/run/secrets:ro
+    # GPU. Đã đo được `nvidia-smi` nhìn thấy RTX 4060 từ trong container, và đó
+    # là điều kiện để image giữ `@cuda:float16` — tức không cần bật drift.
+    # Máy không có GPU: bỏ khối này và bật `BUNDLE_ALLOW_RUNTIME_DRIFT=1`.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      # `/ready` chứ không `/health`: `/health` xanh ngay khi tiến trình lên,
+      # còn thứ `depends_on` của test e2e cần biết là **bundle đã nạp xong** —
+      # hai câu hỏi khác nhau, và `W4-03` dựng hai endpoint đúng vì lý do này.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ready"]
+      interval: 10s
+      timeout: 5s
+      # Nạp BGE-M3 + reranker mất hàng chục giây; `start_period` phải rộng hơn
+      # thời gian ấy, nếu không container bị giết và khởi động lại vô tận trong
+      # khi nó đang làm đúng việc của mình.
+      retries: 10
+      start_period: 180s
+
 volumes:
   qdrant_data:
   postgres_data:
   redis_data:
+  hf_cache:

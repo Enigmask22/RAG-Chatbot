@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (7) (cuối file)** — `W4-12` xong, `W4` **12/13**. Guardrails: 165 lượt chạy thật, nhánh có hàng rào rò 0/55. ⭐⭐ Hai phát hiện lớn: **k=1 trước model không tất định không phải phép đo** (1/11 → 8/11 khi lặp), và **chữ trong prompt làm gần hết việc — nonce giá trị đo được = 0**. Dương tính giả 2/20.424. Tiêm 9: 8 đỏ + 1 tương đương có bằng chứng. **2130 test xanh.**
+> **Phiên mới nhất: 2026-09-04 (8) (cuối file)** — `W4-13` xong, **`W4` 13/13**, `G4` **2,5/3**. Image CUDA 7,35 GB giữ `runtime_drift: null`; e2e 7/7 qua container thật. ⭐⭐ **p95 end-to-end 5.312 ms vs ngân sách 3.500 — KHÔNG ĐẠT**, phần vượt là bộ sinh (truy hồi chỉ 18%). Ba lỗi chỉ lộ khi chạy container. Tiêm 4 vào hạ tầng: 4/4 đỏ (vòng đầu là kết quả giả). **2137 test xanh.**
+>
+> Phiên trước: **2026-09-04 (7)** — `W4-12` xong, `W4` **12/13**. Guardrails: 165 lượt chạy thật, nhánh có hàng rào rò 0/55. ⭐⭐ Hai phát hiện lớn: **k=1 trước model không tất định không phải phép đo** (1/11 → 8/11 khi lặp), và **chữ trong prompt làm gần hết việc — nonce giá trị đo được = 0**. Dương tính giả 2/20.424. Tiêm 9: 8 đỏ + 1 tương đương có bằng chứng. **2130 test xanh.**
 >
 > Phiên trước: **2026-09-04 (6)** — `W4-11` xong, `W4` **11/13**. Prompt registry: loader từ chối nội dung chưa stamp (cơ chế, không phải quy ước); 3 prompt serving migrate giữ nguyên byte; namespace cache thêm version prompt; meta khai `prompt`. Tiêm 6: M2 xanh (test tự chiếu qua hàm băm) → ghim hợp đồng byte → 6/6. Đính chính 10 lỗi ruff/mypy sót từ phiên trước. **2084 test xanh.**
 >
@@ -3410,3 +3412,45 @@ phục vụ, chưa quét lúc index).
 
 **Việc tiếp theo**: `W4-13` (Dockerfile + compose + smoke e2e; dọn key store) →
 gate `G4`.
+
+
+---
+
+## Phiên 2026-09-04 (8) — `W4-13` Docker + compose + smoke e2e
+
+**Đã làm**: `serving/Dockerfile` (multi-stage, `uv`, non-root uid 10001, 1
+worker), service `api` trong compose sau `--profile api`, `.dockerignore`,
+`make up-api` + `make smoke`, marker `e2e`, `tests/e2e/test_smoke.py` (7 test).
+
+**Quyết định lớn nhất, ra TRƯỚC khi viết dòng nào**: bundle `v0.2.0` khai
+`@cuda:L512:float16:n50`, nên container CPU bị phép kiểm danh tính `TD-38` từ
+chối nạp. Image nhỏ (torch CPU, ~2 GB) đổi lấy việc demo phục vụ một hệ thống
+KHÁC hệ đã đo — giá sai. Đo `--gpus all` trên Docker Desktop: **chạy được**
+(RTX 4060 + `torch 2.14.0+cu126` thấy CUDA trong container) → image CUDA
+**7,35 GB**, `runtime_drift: null`.
+
+**Số đo mới**:
+- p95 end-to-end **5.312 ms** (p50 4.118) vs ngân sách **3.500** → **KHÔNG ĐẠT**.
+  Phần vượt là **bộ sinh**; `prepare()` chỉ 725 ms (18%), khớp 604 ms của `W2-05`.
+- Cache hit `W4-10` ở đường đầy đủ: **28,6 ms** — nhanh **144×**.
+- Image 7,35 GB; khởi động (cache ấm) → `/ready` xanh **~40 giây**.
+
+**Ba lỗi chỉ lộ khi chạy container** (12 hạng mục trước đều dựng app trong
+tiến trình pytest nên không thể bắt): thiếu `COPY alembic/`; khoá LLM không vào
+được vì dạng list `- VAR` chỉ đọc từ shell **và che mất** `env_file`; thứ tự
+`environment` phải thắng `env_file`.
+
+**Tiêm 4 lỗi vào chính hạ tầng**: 4/4 đỏ đúng chỗ. ⚠️ Vòng đầu là **kết quả
+giả** — harness gọi `up -d` rồi chạy pytest ngay, cả 4 đỏ vì đua. D4 (bỏ GPU)
+đỏ ở `test_ready` chứ không ở test drift: không GPU thì hệ thống **không phục
+vụ**, chứ không âm thầm phục vụ hệ khác.
+
+**`G4` 2,5/3**: hai câu sau đạt có test; mệnh đề "clone sạch ≤ 5 phút" của câu 1
+không đạt như viết (cache ấm ~40 s, sạch thật ~10+ phút) → `TD-56` đề xuất sửa
+câu chữ gate thay vì sửa số đo.
+
+**Nợ mới**: `TD-55` (khung `done` khai thiếu 18% thời gian), `TD-56`, `TD-57`
+(image quá lớn cho HF Spaces), `TD-58` (dọn key store).
+
+**Việc tiếp theo**: `W5` — bắt đầu `W5-01`/`W5-02` (generation eval + citation
+accuracy, đóng luôn `TD-50`).
