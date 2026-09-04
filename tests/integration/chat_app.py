@@ -120,6 +120,21 @@ class ScriptedLLM:
             # truy hồi (nằm trong khối NGỮ CẢNH mà `SlowRetriever` chép lại),
             # model được cho xem câu hỏi **gốc**, và chỉ thị ngôn ngữ có ở cuối.
             pieces = [messages[-1].content]
+        elif mode == "citations":
+            # `W4-09`: một quote THẬT + một quote BỊA. Quote thật lấy từ chính
+            # prompt — dòng "[1] …" trong khối NGỮ CẢNH — nên test không phải
+            # đoán lại chuỗi mà `SlowRetriever` đã sinh. Marker cố ý cắt đôi
+            # giữa hai delta: đường giữ-lại phải chạy qua tiến trình thật.
+            prompt = messages[-1].content
+            line = next(ln for ln in prompt.splitlines() if ln.startswith("[1] "))
+            block = json.dumps(
+                [
+                    {"n": 1, "quote": line[4:].strip()},
+                    {"n": 2, "quote": "một câu bịa hoàn toàn"},
+                ],
+                ensure_ascii=False,
+            )
+            pieces = ["Trả lời ", "[1] và [2].", "\nCITA", "TIONS: " + block]
         elif mode == "echo_history":
             # Đọc ngược lại đúng phần lịch sử mà `ChatService` đã đưa vào prompt.
             # Không có đường nào khác: LLM sống trong tiến trình con, nên thứ duy

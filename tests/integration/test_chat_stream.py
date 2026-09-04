@@ -879,3 +879,64 @@ def test_the_llm_status_endpoint_needs_the_admin_scope(database: Engine, workspa
         proc.terminate()
         proc.wait(timeout=20)
     assert denied.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 8. `W4-09` — khung citations qua HTTP thật
+# ---------------------------------------------------------------------------
+
+
+def test_citations_are_verified_and_the_block_never_reaches_the_client(
+    database: Engine, workspace: Path
+) -> None:
+    """Một quote thật + một quote bịa, marker cắt đôi giữa hai delta.
+
+    Ba điều phải đúng cùng lúc qua một stream HTTP thật: khung `citations` đứng
+    trước `done` và phân biệt thật/bịa; không ký tự nào của block lọt vào bất kỳ
+    khung `delta` nào; và bản ghi Postgres đúng bằng những gì client đã thấy.
+    """
+    proc, base = _serve(workspace, CHAT_TEST_MODE="citations", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response, frames = _chat(client, base, "nguồn nào nói vậy?")
+            conv = frames[0][2]["conversation_id"]
+            messages = _wait_for_assistant(client, base, conv)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    assert response.status_code == 200
+    names = [name for _, name, _ in frames]
+    assert names.index("citations") == len(names) - 2
+    assert names[-1] == "done"
+
+    citations = next(data for _, name, data in frames if name == "citations")
+    assert citations["block"] == "ok"
+    assert [c["verified"] for c in citations["citations"]] == [True, False]
+    assert citations["citations"][0]["chunk_id"] == "chunk-1"
+    assert citations["verified"] == 1
+
+    deltas = "".join(data["text"] for _, name, data in frames if name == "delta")
+    assert "CITAT" not in deltas
+    assert deltas == "Trả lời [1] và [2]."
+    assistant = next(m for m in messages if m["role"] == "assistant")
+    assert assistant["content"] == deltas
+
+
+def test_an_answer_without_a_block_reports_absent_instead_of_pretending(
+    database: Engine, workspace: Path
+) -> None:
+    """Mode "ok" là model đời `W4-06` — chưa từng nghe về block. Khung
+    `citations` phải nói `absent` thay vì im lặng biến mất: model bỏ qua chỉ
+    dẫn là một tín hiệu vận hành, không phải một ngày bình thường."""
+    proc, base = _serve(workspace, CHAT_TEST_MODE="ok", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            _, frames = _chat(client, base, "không có block")
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    citations = next(data for _, name, data in frames if name == "citations")
+    assert citations["block"] == "absent"
+    assert citations["citations"] == []

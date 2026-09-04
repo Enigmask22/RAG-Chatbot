@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (3) (cuối file)** — ba quyết định của bạn chốt sổ (`W0-02` merge vào main · `W3-04` đóng theo đường GLM · `W0-05` hoãn RunPod) + **`TD-23` mở một nửa**: phép đo OCR gốc KHÔNG hợp lệ (fixture render dấu thành ô ☒ — font Aileron không có glyph tiếng Việt); đo lại trên ảnh hợp lệ thì RapidOCR vẫn hỏng `vi` còn **EasyOCR giữ dấu 8/8** → `vi` mở qua EasyOCR, tiêm 3 lỗi / 3 đỏ.
+> **Phiên mới nhất: 2026-09-04 (4) (cuối file)** — `W4-09` xong, `W4` **9/13**. Structured output + citation verification: khung SSE `citations` với `verified` từng quote; lần chạy thật thứ ba cho ngay một **citation lai ghép** (lời văn chunk này, gán chunk kia) bị bắt đúng. Tiêm 8 lỗi / 8 đỏ. **2026 test xanh.**
+>
+> Phiên trước: **2026-09-04 (3)** — ba quyết định của bạn chốt sổ (`W0-02` merge vào main · `W3-04` đóng theo đường GLM · `W0-05` hoãn RunPod) + **`TD-23` mở một nửa**: phép đo OCR gốc KHÔNG hợp lệ (fixture render dấu thành ô ☒ — font Aileron không có glyph tiếng Việt); đo lại trên ảnh hợp lệ thì RapidOCR vẫn hỏng `vi` còn **EasyOCR giữ dấu 8/8** → `vi` mở qua EasyOCR, tiêm 3 lỗi / 3 đỏ.
 >
 > Phiên trước: **2026-09-04 (2)** — `W4-08` xong, `W4` **8/13**. Bộ định tuyến LLM, chạy thật DeepSeek → GLM. ⭐⭐ Chuyển nhà cung cấp **giữa stream** nối hai câu trả lời khác nhau; ⚠️ tiêm lỗi 12 phép, 2 sống sót và cả hai là lỗ thật.
 >
@@ -3258,3 +3260,19 @@ GLM API; rồi "tự xử triệt để mọi thứ còn lại".
 
 **Việc tiếp theo**: `W4-09` (structured output + citation verification), rồi
 `W4-10`…`W4-13`, `G4`.
+
+
+---
+
+## Phiên 2026-09-04 (4) — `W4-09` structured output + citation verification
+
+**Đã làm**: `rag_core/generation/citations.py` (block `CITATIONS:`, parse +
+verify + `CitationHoldback`), khung SSE `citations`, prompt luật 5, lưu bản đã
+phát thay vì bản thô. Unit +34, integration +2 → **2026 xanh, 3 skip**. Tiêm 8
+lỗi / 8 đỏ. Chạy thật 3 lượt (~$0,0026): 1 quote nguyên văn tuyệt đối
+(`verified: true`) + 1 quote lai ghép (`verified: false`) + 2 lượt từ chối in
+`CITATIONS: []` đúng chỉ dẫn. Dự đoán 4/5 (P3 sai theo hướng có lợi). `TD-50`.
+
+**Việc tiếp theo**: `W4-10` (Redis semantic cache, cosine ~0.95, invalidate khi
+đổi bundle) → `W4-11` (prompt registry — giờ có HAI prompt hằng số chờ nó) →
+`W4-12` (guardrails) → `W4-13` (Dockerfile + compose) → gate `G4`.

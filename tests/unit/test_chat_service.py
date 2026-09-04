@@ -137,10 +137,20 @@ async def _drain(service: ChatService, turn: ChatTurn) -> list[tuple[str, dict[s
 
 
 @pytest.mark.asyncio
-async def test_the_frame_order_is_meta_sources_deltas_done() -> None:
+async def test_the_frame_order_is_meta_sources_deltas_citations_done() -> None:
+    """`W4-09` thêm khung `citations` vào giữa delta cuối và `done` — nó cần
+    toàn bộ câu trả lời nên không thể đứng sớm hơn, và phải đứng trước `done`
+    để client biết lúc đóng stream là đã có kết quả xác minh."""
     events = await _drain(_service(FakeLLM()), _turn())
 
-    assert [name for name, _ in events] == ["meta", "sources", "delta", "delta", "done"]
+    assert [name for name, _ in events] == [
+        "meta",
+        "sources",
+        "delta",
+        "delta",
+        "citations",
+        "done",
+    ]
 
 
 @pytest.mark.asyncio
@@ -494,3 +504,94 @@ async def test_a_budget_that_runs_out_mid_turn_is_an_error_frame_with_its_own_na
     # Lượt vẫn đi qua đường ghi với nhãn riêng; `_save` thật mới là chỗ từ chối
     # ghi một hàng rỗng (`test_an_empty_answer_is_not_written_as_an_empty_row`).
     assert service.saved == [{"text": "", "model": "fake-model", "finish_reason": "budget"}]
+
+
+# ---------------------------------------------------------------------------
+# 8. `W4-09` — khung citations ở tầng service
+# ---------------------------------------------------------------------------
+
+
+def _citing_llm(quote: str, *, n: int = 1) -> FakeLLM:
+    """Model trả lời rồi kết bằng block — marker cố ý cắt đôi giữa hai delta."""
+    return FakeLLM(
+        deltas=[
+            "Theo [1], ",
+            "đúng vậy.",
+            "\nCITA",
+            f'TIONS: [{{"n": {n}, "quote": "{quote}"}}]',
+        ]
+    )
+
+
+def _frame_of(events: list[tuple[str, dict[str, Any]]], name: str) -> dict[str, Any]:
+    return next(data for event, data in events if event == name)
+
+
+@pytest.mark.asyncio
+async def test_a_real_quote_arrives_verified_and_resolved_to_the_chunk() -> None:
+    events = await _drain(_service(_citing_llm("reciprocal rank fusion")), _turn())
+
+    frame = _frame_of(events, "citations")
+    assert frame["block"] == "ok"
+    assert frame["verified"] == 1
+    (citation,) = frame["citations"]
+    assert citation["verified"] is True
+    assert citation["chunk_id"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_a_fabricated_quote_is_flagged_in_the_frame() -> None:
+    events = await _drain(_service(_citing_llm("một câu không có trong chunk")), _turn())
+
+    frame = _frame_of(events, "citations")
+    assert frame["verified"] == 0
+    assert frame["citations"][0]["verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_block_never_leaks_into_a_delta_and_is_not_saved() -> None:
+    """Block là giao thức giữa model và mã. Hai nơi nó không được xuất hiện:
+    màn hình (khung `delta`) và lịch sử (bản ghi Postgres) — và hai nơi ấy phải
+    là CÙNG một chuỗi."""
+    service = _service(_citing_llm("reciprocal rank fusion"))
+    events = await _drain(service, _turn())
+
+    deltas = "".join(data["text"] for event, data in events if event == "delta")
+    assert "CITAT" not in deltas
+    assert deltas == "Theo [1], đúng vậy."
+    assert service.saved[0]["text"] == deltas
+
+
+@pytest.mark.asyncio
+async def test_a_missing_block_on_a_retrieval_answer_is_reported_absent() -> None:
+    """Model bỏ qua chỉ dẫn không phải lỗi hệ thống — nhưng phải ĐO được."""
+    events = await _drain(_service(FakeLLM(["Trả lời ", "không block."])), _turn())
+
+    frame = _frame_of(events, "citations")
+    assert frame["block"] == "absent"
+    assert frame["citations"] == []
+
+
+@pytest.mark.asyncio
+async def test_no_citations_frame_when_nothing_was_retrieved() -> None:
+    """`NO_RETRIEVAL` không đưa gì cho model cite — một khung `citations` rỗng
+    ở đó chỉ dạy client rằng khung này lúc có lúc không mà không vì sao."""
+    turn = _turn(plan=_plan("chào bạn", route="no_retrieval"), contexts=[])
+    events = await _drain(_service(FakeLLM(["Chào ", "bạn!"])), turn)
+
+    assert all(event != "citations" for event, _ in events)
+
+
+@pytest.mark.asyncio
+async def test_language_mismatch_is_measured_on_the_visible_text_only() -> None:
+    """Block JSON toàn chữ Latin — đo ngôn ngữ trên bản thô sẽ kéo một câu
+    tiếng Việt về phía `en`. Phép đo phải chạy trên phần người dùng thấy."""
+    llm = FakeLLM(
+        deltas=[
+            "Tăng trưởng đạt mức cao hơn năm trước đó.",
+            '\nCITATIONS: [{"n": 1, "quote": "the quick brown fox jumps over the lazy dog"}]',
+        ]
+    )
+    events = await _drain(_service(llm), _turn())
+
+    assert _done_of(events)["language_mismatch"] is False
