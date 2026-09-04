@@ -1,0 +1,70 @@
+{
+  "note": "12 mẫu tự gán nhãn, judge-faithfulness@v1, deepseek-v4-flash, suy luận tắt",
+  "identical_labels_across_runs": true,
+  "runs": [
+    {
+      "run": 1,
+      "frozen_cache": false,
+      "wall_s": 2.9,
+      "cost_usd": 0.00126,
+      "agreement_with_human": 1.0,
+      "hits": 0,
+      "misses": 12,
+      "hit_rate": 0.0,
+      "repairs": 0,
+      "unparseable": 0,
+      "budget_stopped": 0,
+      "served_models": {
+        "deepseek-v4-flash": 12
+      },
+      "spent_usd": 0.00126,
+      "cache_digest": "7a33b5c4d23afd95"
+    },
+    {
+      "run": 2,
+      "frozen_cache": false,
+      "wall_s": 0.01,
+      "cost_usd": 0.0,
+      "agreement_with_human": 1.0,
+      "hits": 12,
+      "misses": 0,
+      "hit_rate": 1.0,
+      "repairs": 0,
+      "unparseable": 0,
+      "budget_stopped": 0,
+      "served_models": {},
+      "spent_usd": 0.0,
+      "cache_digest": "7a33b5c4d23afd95"
+    },
+    {
+      "run": 3,
+      "frozen_cache": true,
+      "wall_s": 0.02,
+      "cost_usd": 0.0,
+      "agreement_with_human": 1.0,
+      "hits": 12,
+      "misses": 0,
+      "hit_rate": 1.0,
+      "repairs": 0,
+      "unparseable": 0,
+      "budget_stopped": 0,
+      "served_models": {},
+      "spent_usd": 0.0,
+      "cache_digest": "7a33b5c4d23afd95"
+    }
+  ],
+  "labels_run1": [
+    "SUPPORTED",
+    "SUPPORTED",
+    "SUPPORTED",
+    "CONTRADICTED",
+    "CONTRADICTED",
+    "CONTRADICTED",
+    "NOT_FOUND",
+    "CONTRADICTED",
+    "NOT_FOUND",
+    "NOT_FOUND",
+    "NOT_FOUND",
+    "NOT_FOUND"
+  ]
+}

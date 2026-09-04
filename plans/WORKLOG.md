@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (8) (cuối file)** — `W4-13` xong, **`W4` 13/13**, `G4` **2,5/3**. Image CUDA 7,35 GB giữ `runtime_drift: null`; e2e 7/7 qua container thật. ⭐⭐ **p95 end-to-end 5.312 ms vs ngân sách 3.500 — KHÔNG ĐẠT**, phần vượt là bộ sinh (truy hồi chỉ 18%). Ba lỗi chỉ lộ khi chạy container. Tiêm 4 vào hạ tầng: 4/4 đỏ (vòng đầu là kết quả giả). **2137 test xanh.**
+> **Phiên mới nhất: 2026-09-04 (9) (cuối file)** — `W5-03` xong, **`W5` 1/11**. Judge chấm **nhãn** (không bao giờ trả điểm), cache địa chỉ theo nội dung, trần chi phí kiểm trước. ⭐⭐ Đo được **`deepseek-reasoner` được phục vụ bởi `deepseek-v4-flash`** — plan bảo ghim nó, nhưng nó là con trỏ phía server, đúng thứ quy tắc cứng #1 cấm. ⭐⭐ **Suy luận bật không mua thêm một phán quyết đúng nào**: 12/12 ở cả ba nhánh, nhưng nhánh tắt có 0/36 phán quyết hỏng, rẻ 5,4×, nhanh 2,5× — và 5/5 lời gọi hỏng đều cụt đúng ở `max_tokens`. ⭐⭐ **Cache là thứ duy nhất làm eval tái lập được** (`TD-41`: `temp=0` không tất định); lần 2 **$0 / 0,01 s**. Tiêm 13/14 đỏ, J2 sống sót vì là mã chết → gỡ. ⭐ `NEW-07`: dashboard tự kiểm sau **bốn** lần cùng một lỗi sổ sách. **2185 test xanh.**
+>
+> Phiên trước: **2026-09-04 (8)** — `W4-13` xong, **`W4` 13/13**, `G4` **2,5/3**. Image CUDA 7,35 GB giữ `runtime_drift: null`; e2e 7/7 qua container thật. ⭐⭐ **p95 end-to-end 5.312 ms vs ngân sách 3.500 — KHÔNG ĐẠT**, phần vượt là bộ sinh (truy hồi chỉ 18%). Ba lỗi chỉ lộ khi chạy container. Tiêm 4 vào hạ tầng: 4/4 đỏ (vòng đầu là kết quả giả). **2137 test xanh.**
 >
 > Phiên trước: **2026-09-04 (7)** — `W4-12` xong, `W4` **12/13**. Guardrails: 165 lượt chạy thật, nhánh có hàng rào rò 0/55. ⭐⭐ Hai phát hiện lớn: **k=1 trước model không tất định không phải phép đo** (1/11 → 8/11 khi lặp), và **chữ trong prompt làm gần hết việc — nonce giá trị đo được = 0**. Dương tính giả 2/20.424. Tiêm 9: 8 đỏ + 1 tương đương có bằng chứng. **2130 test xanh.**
 >
@@ -3454,3 +3456,77 @@ câu chữ gate thay vì sửa số đo.
 
 **Việc tiếp theo**: `W5` — bắt đầu `W5-01`/`W5-02` (generation eval + citation
 accuracy, đóng luôn `TD-50`).
+
+---
+
+## 2026-09-04 (9) — `W5-03` judge, và `NEW-07` dashboard tự kiểm
+
+**Trạng thái**: `W5` **1/11** · 48 `[x]` backlog gốc + 7 `NEW` · **2185 test xanh**,
+3 skip · `make lint` sạch (cả ba lệnh).
+
+**Đổi thứ tự có chủ đích**: checklist xếp `W5-01` trước, nhưng DoD của `W5-01` gọi
+tên **faithfulness** — một metric do judge chấm. Làm ngược lại là ship một module
+có con số chính là chỗ trống. Nên `W5-03` đi trước.
+
+**Ba phép đo lật lại ba giả định**:
+
+1. ⭐⭐ **`deepseek-reasoner` ghim được gì?** Plan viết "judge = `deepseek-reasoner`
+   **pinned**". Đo: nó **được phục vụ bởi `deepseek-v4-flash`**, y hệt
+   `deepseek-chat`. Khác biệt duy nhất là ngân sách suy luận — cùng một câu trả
+   lời JSON, 163 vs 78 token completion, đắt **3,6×**. Đây đúng là thứ quy tắc
+   cứng #1 cấm ở OpenRouter preset, chỉ kín đáo hơn. `JudgeConfig` giờ từ chối cả
+   hai, và `allow_alias=True` phải khai tường minh.
+
+2. ⭐⭐ **Judge có cần suy luận không?** Trực giác nói có. 12 mẫu tự gán nhãn,
+   k=3, ba nhánh: cả ba khớp **12/12** nhãn tay. Nhưng nhánh tắt suy luận có
+   **0/36** phán quyết hỏng (vs 2/36 và 3/36), rẻ **5,4×**, nhanh **2,5×**.
+   Và **5/5** lời gọi hỏng đều có `completion_tokens == max_tokens` — không sót
+   cái nào. Đúng bẫy `W4-06` đã trả tiền một lần để học.
+   ⚠️ Giới hạn nói thẳng: 12 mẫu ấy do tôi soạn và đều có đáp án dứt khoát. Nó
+   chứng minh suy luận thừa **trên ca dễ**, không nói gì về ca khó → `W5-04`.
+
+3. ⭐ **Hệ quả vào mã**: `finish_reason == "length"` cho mã lỗi riêng `truncated`,
+   và **không** tiêu thêm một lời gọi sửa. Prompt sửa nói "hãy trả JSON" nhưng
+   model đang trả JSON — nó chỉ hết chỗ trước khi tới đó.
+
+**⭐⭐ Cache không phải để tiết kiệm tiền.** `TD-41` đã đo `temp=0` không tất
+định, nên nếu judge gọi model mỗi lần eval thì chạy lại đúng một bundle vẫn ra hai
+con số khác nhau. Cache biến nó thành: lần đầu là phép đo, mọi lần sau là phát lại.
+
+| lần | chế độ | thời gian | chi phí | trúng cache | digest |
+|---|---|---|---|---|---|
+| 1 | thường | 2,90 s | $0,00126 | 0/12 | `7a33b5c4d23afd95` |
+| 2 | thường | 0,01 s | **$0** | 12/12 | `7a33b5c4d23afd95` |
+| 3 | `frozen_cache` | 0,02 s | **$0** | 12/12 | `7a33b5c4d23afd95` |
+
+Nhãn giống hệt cả ba lần. `frozen_cache=True` biến mọi lượt trượt thành **lỗi** —
+trả lời "tái lập lại con số của bạn đi" bằng một lệnh chứ không bằng một lời hứa.
+
+**Rubric đi qua registry của `W4-11`** (`pipeline/eval/prompts/`), nên
+`prompt_sha256` nằm trong khoá cache ⇒ **sửa rubric là mất cache**. Lần đầu cơ chế
+"đổi prompt = tăng version" được dùng lại ngoài đường serving.
+
+**Tiêm lỗi 13/14 đỏ.** J2 (bỏ phép sắp xếp biến trong khoá cache) sống sót vì nó
+là **mã chết**: `json.dumps(sort_keys=True)` đã chuẩn hoá thứ tự khoá đệ quy. Gỡ
+chứ không giữ — một lớp bảo vệ không có tác dụng còn tệ hơn không có.
+
+**⭐ `NEW-07`** — §1 của CHECKLIST đã **ba lần** ghi nhận cùng lỗi "quên cập nhật
+dashboard" và ba lần thêm một dòng cảnh báo. Lần thứ tư (W0, W3 **và** W4 cùng
+lệch; W4 ghi `1/13` trong khi đã tick đủ 13) cho thấy vấn đề không phải trí nhớ mà
+là **đếm bằng tay**. `tests/unit/test_checklist_dashboard.py` đọc §2–§9, đếm, đỏ
+khi bảng lệch — bắt ngay 8 sai lệch lúc vừa viết xong. Thêm cột `[-]` Hoãn: trước
+đó `W0-05` mang ký hiệu ấy nhưng không rơi vào cột nào, nên hàng ngang **không bao
+giờ** cộng lại bằng cột Tổng.
+
+⚠️ Cũng phát hiện `make lint` đã đỏ ở `ruff format --check` từ `W4-12` — hai lần
+trước tôi báo "ruff/mypy sạch" sau khi chỉ chạy hai trong ba lệnh.
+
+**Chi phí**: $0,041 (108 lời gọi 3 nhánh + 3 lần chạy cache + 2 lời gọi thử slug).
+
+**Nợ mới**: `TD-59` (ma trận tiêm `W4-12` chưa chạy lên judge), `TD-60` (không
+tách được tiền trả cho suy luận), `TD-61` (cache judge không version cùng report).
+
+**Việc tiếp theo**: `W5-01` — generation eval. Harness sinh câu trả lời chạy **qua
+HTTP** với stack đang lên (đo đúng đường production: router, rewrite, hàng rào,
+xác minh citation), ghi ra artifact "answer run" bất biến; metric tất định chấm
+trên artifact ấy, judge chỉ chạm phần nó phải chạm.
