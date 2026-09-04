@@ -77,6 +77,7 @@ from rag_core.generation import PromptRegistry
 from rag_core.llm import (
     DEEPSEEK_ALIASES,
     DEEPSEEK_PRICING,
+    GLM_PRICING,
     MIN_REASONING,
     BudgetExceeded,
     ChatMessage,
@@ -102,6 +103,7 @@ logger = logging.getLogger(__name__)
 
 JUDGE_PROMPT_DIR = Path(__file__).parent / "prompts"
 DEFAULT_JUDGE_MODEL = "deepseek-v4-flash"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 JUDGE_TEMPERATURE = 0.0
 """Hằng số, không phải mặc định. Xem điểm 4 ở docstring module."""
 
@@ -130,7 +132,7 @@ def judge_registry(root: Path | str = JUDGE_PROMPT_DIR) -> PromptRegistry:
 @dataclass(frozen=True)
 class JudgeConfig:
     model: str = DEFAULT_JUDGE_MODEL
-    base_url: str = "https://api.deepseek.com"
+    base_url: str = DEEPSEEK_BASE_URL
     max_tokens: int = 512
     cap_usd: float = 1.0
     """Trần cho **một lần chạy**. `<= 0` là không trần, và phải khai tường minh."""
@@ -183,10 +185,55 @@ class JudgeConfig:
             raise JudgeConfigError("max_tokens phải ≥ 1")
         if self.concurrency < 1:
             raise JudgeConfigError("concurrency phải ≥ 1")
+        if self.family != "deepseek" and self.base_url == DEEPSEEK_BASE_URL:
+            raise JudgeConfigError(
+                f"{self.model!r} thuộc họ {self.family!r} nhưng base_url vẫn là endpoint "
+                f"DeepSeek. Không chặn ở đây thì lỗi rơi xuống thành HTTP 404 giữa một "
+                "lần chấm dở, sau khi đã tiêu tiền cho những câu trước nó."
+            )
+
+    @property
+    def family(self) -> str:
+        """Họ model, **suy ra từ slug** chứ không phải một field khai riêng.
+
+        `W5-04` cần một judge khác họ để cross-check, và ba thứ đổi theo họ:
+        bảng giá, tham số giảm suy luận (`MIN_REASONING`), và endpoint. Cám dỗ
+        là thêm `family: str` vào config — nhưng thế là mở đường cho một cấu
+        hình khai `family="glm"` với `model="deepseek-v4-flash"`, và khi đó
+        `extra_body` gửi đi sai họ **mà không có lỗi nào**: DeepSeek nhận
+        `reasoning_effort` rồi bỏ qua (đo ở `W3-04`). Phán quyết vẫn về, vẫn
+        vào cache, chỉ là được sinh dưới một điều kiện khác lời khai.
+
+        Suy ra từ slug thì trường hợp ấy không tồn tại được. Nó cũng là lý do
+        `family` **không** cần vào khoá cache: `model` đã ở trong đó, và họ là
+        hàm của model.
+        """
+        for prefix, name in (("deepseek-", "deepseek"), ("glm-", "glm")):
+            if self.model.startswith(prefix):
+                return name
+        raise JudgeConfigError(
+            f"chưa biết họ của {self.model!r}. Thêm bảng giá + mục MIN_REASONING "
+            "trước khi chấm bằng model này — nếu không, chi phí sẽ báo $0 và tham "
+            "số suy luận sẽ gửi sai họ mà không có gì kêu."
+        )
 
     @property
     def pricing(self) -> ModelPricing:
-        return DEEPSEEK_PRICING.get(self.model, ModelPricing())
+        table = {"deepseek": DEEPSEEK_PRICING, "glm": GLM_PRICING}[self.family]
+        return table.get(self.model, ModelPricing())
+
+    @property
+    def reasoning_body(self) -> dict[str, Any] | None:
+        """`None` = để provider tự quyết (bật hết cỡ). Ngược lại: **thấp nhất
+        provider cho phép** — với GLM đó không phải là tắt.
+
+        Bất đối xứng này là thật và không khắc phục được: `glm-5.3-flash` trả
+        HTTP 400 khi bị yêu cầu tắt suy luận, chỉ nhận `low/high/max`. Nên hai
+        nhánh judge của `W5-04` **không** so được ở điều kiện suy luận giống
+        nhau, và mọi bất đồng giữa chúng đều mang lẫn một phần khác biệt ấy.
+        Ghi ra đây để báo cáo không kết luận quá tay.
+        """
+        return None if self.reasoning else MIN_REASONING[self.family]
 
 
 @dataclass(frozen=True)
@@ -507,7 +554,7 @@ class Judge:
             max_tokens=self.config.max_tokens,
             json_mode=self.config.json_mode,
             seed=self.config.seed,
-            extra_body=None if self.config.reasoning else MIN_REASONING["deepseek"],
+            extra_body=self.config.reasoning_body,
         )
         return (
             response.text,

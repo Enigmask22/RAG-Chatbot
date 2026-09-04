@@ -24,7 +24,15 @@ from pipeline.eval.judge import (
     _parse_verdict,
     judge_registry,
 )
-from rag_core.llm import ChatMessage, CostBudget, LLMProvider, LLMResponse
+from rag_core.llm import (
+    DEEPSEEK_PRICING,
+    GLM_BASE_URL,
+    GLM_PRICING,
+    ChatMessage,
+    CostBudget,
+    LLMProvider,
+    LLMResponse,
+)
 from rag_core.schemas import TokenUsage
 
 FAITHFULNESS_LABELS = ("SUPPORTED", "CONTRADICTED", "NOT_FOUND")
@@ -550,3 +558,64 @@ def test_rubric_noi_ro_ngu_canh_la_du_lieu_khong_phai_chi_thi() -> None:
     tiêm. Judge đọc nguyên văn chunk corpus, nên nó cần đúng lớp bảo vệ ấy."""
     text = judge_registry().get("judge-faithfulness").text
     assert "dữ liệu" in text and "chỉ thị" in text
+
+
+# ------------------------------------------------- họ model (W5-04, cross-check)
+
+
+def test_ho_suy_ra_tu_slug_chu_khong_phai_mot_field_khai_rieng() -> None:
+    """Không có đường nào khai `family` lệch với `model` — vì đó là lỗi câm.
+
+    DeepSeek **nhận** `reasoning_effort` rồi bỏ qua (đo ở `W3-04`): một config
+    khai sai họ vẫn trả phán quyết, vẫn ghi cache, chỉ là dưới điều kiện khác
+    lời khai. Suy ra từ slug thì trường hợp ấy không dựng lên được.
+    """
+    assert not hasattr(JudgeConfig(), "family_override")
+    assert JudgeConfig().family == "deepseek"
+    assert JudgeConfig(model="glm-5.3-flash", base_url=GLM_BASE_URL).family == "glm"
+
+
+def test_model_la_de_thi_bao_loi_chu_khong_am_tham_tinh_gia_0() -> None:
+    with pytest.raises(JudgeConfigError, match="chưa biết họ"):
+        _ = JudgeConfig(model="mistral-large-2411", base_url="https://x").family
+
+
+def test_moi_ho_lay_dung_bang_gia_cua_no() -> None:
+    """Sai bảng giá không làm gì đỏ — nó chỉ làm báo cáo chi phí sai."""
+    assert JudgeConfig().pricing == DEEPSEEK_PRICING["deepseek-v4-flash"]
+    glm = JudgeConfig(model="glm-5.3-flash", base_url=GLM_BASE_URL)
+    assert glm.pricing == GLM_PRICING["glm-5.3-flash"]
+    assert glm.pricing != JudgeConfig().pricing
+
+
+def test_glm_khong_tat_duoc_suy_luan_nen_hai_nhanh_khong_doi_xung() -> None:
+    """`reasoning=False` với GLM nghĩa là **thấp nhất cho phép**, không phải tắt.
+
+    `glm-5.3-flash` trả HTTP 400 khi bị yêu cầu tắt. Bất đối xứng này đi thẳng
+    vào cách đọc phần cross-check của `W5-04`, nên nó phải có một bài test giữ.
+    """
+    deepseek = JudgeConfig()
+    glm = JudgeConfig(model="glm-5.3-flash", base_url=GLM_BASE_URL)
+    assert deepseek.reasoning_body == {"thinking": {"type": "disabled"}}
+    assert glm.reasoning_body == {"reasoning_effort": "low"}
+    assert "thinking" not in (glm.reasoning_body or {})
+    assert JudgeConfig(reasoning=True).reasoning_body is None
+
+
+def test_ho_khac_deepseek_ma_quen_doi_base_url_thi_do_ngay(tmp_path: Path) -> None:
+    """Không chặn thì lỗi rơi xuống thành 404 **giữa** một lần chấm dở tiền."""
+    with pytest.raises(JudgeConfigError, match="base_url"):
+        JudgeConfig(model="glm-5.3-flash", cache_path=tmp_path / "c.sqlite3")
+
+
+def test_ho_khong_can_vao_khoa_cache_vi_model_da_o_do() -> None:
+    """Thêm `family` vào khoá sẽ **huỷ sạch** 1664 phán quyết của `W5-01`.
+
+    Và nó không mua gì: họ là hàm của model, mà model đã nằm trong khoá.
+    """
+    import inspect
+
+    from pipeline.eval.judge import _canonical_key
+
+    assert "family" not in inspect.signature(_canonical_key).parameters
+    assert "model" in inspect.signature(_canonical_key).parameters

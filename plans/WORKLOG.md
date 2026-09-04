@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (10) (cuối file)** — `W5-01` + `W5-02` xong, **`W5` 3/11**. ⭐⭐ Harness eval tìm ra **hai lỗi production** trước khi in được con số nào: image trôi khỏi `uv.lock` (mọi request truy hồi trả 503, mà `runtime_drift` vẫn báo `null`) và **hai người dùng hỏi cùng lúc là đủ để hỏng** (`Already borrowed`; `W4-13` không thấy vì mọi phép đo ở đó tuần tự). ⭐⭐ Phép đo suýt sai: `uncited_grounding = 0,427` sắp thành "22% nội dung không có căn cứ" — đọc ví dụ thì gần hết là câu meta; rubric v2 đưa nó lên **0,856**. faithfulness **0,9877** ✅ · refusal **0,9091** ✅ · citation accuracy cấp quote **0,8308** ❌. Tái lập ở **$0**. **2241 test xanh** (+8 e2e).
+> **Phiên mới nhất: 2026-09-05 (11) (cuối file)** — `W5-04` xong, **`W5` 4/11**. Faithfulness `0,9877` **đúng** (nhãn tay quy về quần thể: `0,9905` [0,9800–1,0000], κ judge–người **0,737**). ⭐⭐ Nhưng đổi **mỗi** model judge làm metric dịch **7,5 điểm** — GLM cho `0,9246`, DeepSeek suy luận-bật cho `1,0000`. ⭐⭐ **Judge hỏng không cho điểm thấp, nó cho điểm tuyệt đối**: bật suy luận mất 32/50 phán quyết vì chạm `max_tokens`, và ca bị mất có ngữ cảnh dài gần gấp đôi nên **cả 3 mệnh đề thất bại thật đều bị loại**; 18 ca sống sót đều `SUPPORTED`. ⭐⭐ File "mù" của tôi **rò rỉ qua thứ tự dòng** — phát hiện ở mẫu 18/50, phải bốc lại bằng seed khác. 4 nợ mới `TD-65`…`TD-68`. `W0-07` **hết hiệu lực** (câu hỏi chưa bao giờ dẫn tới quyết định nào).
+>
+> Phiên trước: **2026-09-04 (10)** — `W5-01` + `W5-02` xong, **`W5` 3/11**. ⭐⭐ Harness eval tìm ra **hai lỗi production** trước khi in được con số nào: image trôi khỏi `uv.lock` (mọi request truy hồi trả 503, mà `runtime_drift` vẫn báo `null`) và **hai người dùng hỏi cùng lúc là đủ để hỏng** (`Already borrowed`; `W4-13` không thấy vì mọi phép đo ở đó tuần tự). ⭐⭐ Phép đo suýt sai: `uncited_grounding = 0,427` sắp thành "22% nội dung không có căn cứ" — đọc ví dụ thì gần hết là câu meta; rubric v2 đưa nó lên **0,856**. faithfulness **0,9877** ✅ · refusal **0,9091** ✅ · citation accuracy cấp quote **0,8308** ❌. Tái lập ở **$0**. **2241 test xanh** (+8 e2e).
 >
 > Phiên trước: **2026-09-04 (9)** — `W5-03` xong, **`W5` 1/11**. Judge chấm **nhãn** (không bao giờ trả điểm), cache địa chỉ theo nội dung, trần chi phí kiểm trước. ⭐⭐ Đo được **`deepseek-reasoner` được phục vụ bởi `deepseek-v4-flash`** — plan bảo ghim nó, nhưng nó là con trỏ phía server, đúng thứ quy tắc cứng #1 cấm. ⭐⭐ **Suy luận bật không mua thêm một phán quyết đúng nào**: 12/12 ở cả ba nhánh, nhưng nhánh tắt có 0/36 phán quyết hỏng, rẻ 5,4×, nhanh 2,5× — và 5/5 lời gọi hỏng đều cụt đúng ở `max_tokens`. ⭐⭐ **Cache là thứ duy nhất làm eval tái lập được** (`TD-41`: `temp=0` không tất định); lần 2 **$0 / 0,01 s**. Tiêm 13/14 đỏ, J2 sống sót vì là mã chết → gỡ. ⭐ `NEW-07`: dashboard tự kiểm sau **bốn** lần cùng một lỗi sổ sách. **2185 test xanh.**
 >
@@ -3616,3 +3618,109 @@ theo sau bởi chữ số. Cái thật sự bảo vệ `1.234.567` là `\s+` tro
 cross-check bằng judge khác họ qua OpenRouter). Tập 12 mẫu của `W5-03`
 (`data/eval/judge_gold_faithfulness.jsonl`) là hạt giống; 407 phán quyết
 faithfulness và 242 phán quyết relevancy của lần chạy này là quần thể để lấy mẫu.
+
+---
+
+## 2026-09-05 (11) — `W5-04`: hiệu chỉnh judge, và một judge hỏng cho điểm tuyệt đối
+
+**Trạng thái**: `W5` **4/11** · 51 `[x]` backlog gốc + 7 `NEW` · **2307 test xanh**, 7 skip
+(3 unit + 4 e2e thiếu key) · `make lint` sạch cả ba lệnh · chi phí phiên **$0,0522**.
+
+**Kết luận một dòng**: `0,9877` của `W5-01` **đúng** — nhãn tay quy về quần thể cho
+`0,9905` [0,9800–1,0000], bao con số ấy, nên ngưỡng `0,92` qua thật. Nhưng nó là con
+số của **một** giám khảo, và đổi giám khảo làm nó dịch **7,5 điểm**.
+
+| nguồn nhãn | faithfulness | κ vs người |
+|---|---|---|
+| người (50 mẫu tay) | **0,9905** [0,9800–1,0000] | — |
+| `deepseek-v4-flash` suy luận tắt ← đang dùng | 0,9877 | **0,737** |
+| `glm-5.3-flash` (Z.ai, khác họ) | 0,9246 | 0,371 |
+| `deepseek-v4-flash` suy luận **bật** | **1,0000** ⚠️ | 0,112 |
+
+**⭐⭐ Judge hỏng không cho điểm thấp — nó cho điểm tuyệt đối.** Bật suy luận trên
+đúng 50 mẫu ấy: **32/50 phán quyết mất trắng** vì chuỗi suy luận ăn hết
+`max_tokens=512`. Cái đáng sợ không phải tỉ lệ hỏng mà là **cái gì** hỏng:
+
+```
+ngữ cảnh ca BỊ MẤT    : trung vị 2952 ký tự     ca CÒN LẠI: 1582
+nhãn tay ca BỊ MẤT    : NO_CLAIM 17 · SUPPORTED 12 · NOT_FOUND 2 · CONTRADICTED 1
+nhãn tay ca CÒN LẠI   : SUPPORTED 18  ← toàn bộ
+```
+
+Ngữ cảnh dài ⇒ suy luận dài ⇒ chạm trần ⇒ mất đúng những ca sẽ kéo điểm xuống. Cả
+ba mệnh đề thất bại thật đều nằm trong nhóm bị loại ⇒ faithfulness `1,0000`.
+Đây là hệ quả **không lường trước** của một quyết định **đúng** ở `W5-03`: loại phán
+quyết không đọc được khỏi cả tử lẫn mẫu. Quy tắc ấy chỉ an toàn khi "không đọc được"
+độc lập với nhãn; ở đây nó tương quan gần như hoàn hảo và trở thành thiên lệch sống
+sót → `TD-67`: `gate.py` phải **FAIL** khi `n_unjudged/n` > 5%, không chỉ báo cáo.
+
+Đây cũng là câu trả lời cho điều `W5-03` cố tình hoãn lại trong docstring
+(*"12 mẫu dễ không nói gì về ca khó"*) — và câu trả lời tệ hơn dự đoán: không phải
+"đắt hơn mà không tốt hơn", mà là hỏng.
+
+**⭐⭐ File "mù" của tôi rò rỉ qua thứ tự dòng, và tôi phát hiện ở mẫu 18/50.**
+`sample` ghi mẫu theo tầng: 5 `NOT_FOUND`, rồi 15 `NO_CLAIM`, rồi 30 `SUPPORTED`.
+File không chứa nhãn nào — **vị trí dòng thì chứa**. Từ mục 18 trở đi tôi đã biết
+trước judge nói gì. Xử lý: thêm bước trộn, **bốc lại bằng seed khác** (`20260906`),
+vứt 18 nhãn đã gán, gán lại cả 50. Sắp theo `ref` không cứu được vì
+`unanswerable-*`/`#s0` tương quan với nhãn. Test hồi quy đếm **số lần đổi tầng** khi
+đi dọc danh sách (gom cụm ⇒ 2, trộn ⇒ >10) chứ không kiểm "file có cột nhãn không".
+
+**⭐⭐ Mẫu phân tầng là bắt buộc, và nó buộc phải công bố hai con số κ.** Phân bố
+402/26/5/0 cho `Pe = 0,866`, nên mẫu số kappa chỉ còn `0,134` và **một bất đồng kéo κ
+đi 0,15**. Lấy 50 mẫu ngẫu nhiên đều thì **kỳ vọng 0,58 mẫu `NOT_FOUND`** — nhánh
+judge dễ sai nhất thường không có mẫu nào. Đã phân tầng thì κ trên 50 mẫu **không
+phải** κ quần thể, nên báo cáo giữ cả κ mẫu (0,813) lẫn κ quy về quần thể
+(Horvitz–Thompson, 0,737), và bootstrap lấy lại mẫu **trong từng tầng**.
+`cohen_kappa` trả `None` khi `Pe = 1` — hai đồng hồ đứng yên cũng chỉ cùng một giờ.
+
+**⭐ Tự kiểm gắn sẵn**: tầng *chính là* nhãn judge, nên tỉ lệ có trọng số phía judge
+phải trùng khít `W5-01`. Ra `0,9877149877` = `402/407` tới chữ số cuối, CI suy biến
+thành một điểm (đúng, không phải lỗi).
+
+**⭐ Nhánh khác họ không xác nhận — nó phơi ra rằng luật khó nhất của rubric phụ
+thuộc model.** GLM κ=0,371, và bất đồng không rải đều: `NO_CLAIM` recall **0,529** —
+8/17 câu meta bị GLM gọi là `SUPPORTED`. GLM về cơ bản không thi hành luật 2, đúng
+lỗi rubric v1 đã mắc và `W5-01` đã sửa. Cơ chế của 6,3 điểm rất cụ thể: 2 bất đồng
+trong tầng `SUPPORTED` × trọng số 13,4 / 407 ≈ 6,6 điểm ⇒ **mỗi bất đồng ở tầng ấy
+trị giá 3,3 điểm**, tức 50 mẫu đủ khẳng định `0,9877 > 0,92` nhưng không đủ phân biệt
+`0,9877` với `0,9905`.
+
+**⚠️ `NOT_FOUND` precision 0,40** (5 lần gọi, đúng 2) — cả 3 báo động giả đều đẩy
+faithfulness **xuống**, nên judge hiện tại sai về phía an toàn. Và một lỗ hổng rubric
+chỉ việc gán nhãn tay mới thấy: luật 2 không phân biệt lời khai *"nguồn im lặng"*
+**đúng** với **sai**. Một mệnh đề bịa rằng ngữ cảnh không nói về X, trong khi ngữ cảnh
+ghi rõ `2,4% (m/m) tháng 9`, hiện được chấm `NO_CLAIM` — **miễn phí** → `TD-65`.
+
+**`W0-07` hết hiệu lực, không phải được trả lời.** Không có `OPENROUTER_API_KEY`
+(checklist đã ghi từ `W3-08`). Nhưng câu hỏi ấy chưa bao giờ dẫn tới quyết định nào:
+quy tắc cứng #1 cấm preset **bất kể** nó trỏ vào đâu. Thứ cần là một họ model thứ hai
+— `GLM_API_KEY` có sẵn. `Judge` mở cho họ thứ hai bằng `family` **suy ra từ slug**,
+không phải một field khai riêng: khai lệch thì `extra_body` gửi sai họ mà DeepSeek
+*nhận rồi bỏ qua* (`W3-04`), tức lỗi câm. Và `family` không vào khoá cache (model đã ở
+đó) nên 1664 phán quyết `W5-01` còn nguyên.
+
+⚠️ Hai nhánh judge **không** so được ở điều kiện suy luận giống nhau: `glm-5.3-flash`
+trả HTTP 400 khi bị yêu cầu tắt suy luận, mức thấp nhất là `low`.
+
+**Tiêm lỗi 17/17 đỏ**, không phép nào sống sót — trong đó `C1` (bỏ trộn thứ tự) tái
+tạo đúng lỗi ở trên.
+
+**Nợ mới**: `TD-65` (luật 2 rubric bỏ lọt lời khai "nguồn im lặng" sai) ·
+`TD-66` (con số phải mang `(judge_model, rubric_spec)` như `bundle_version`) ·
+`TD-67` (gate phải FAIL theo `n_unjudged`) · `TD-68` (`judge-answer-relevancy@v1`
+chưa hiệu chỉnh dù đang nuôi refusal accuracy `0,9091`).
+
+**Giới hạn phải nói ra**: người gán nhãn là LLM, không phải người độc lập — hash
+chứng minh phán quyết cố định trước, không chứng minh không đọc trộm. n=50, một người
+chấm, nên cận dưới CI95 của κ quần thể là **0,478**: dữ liệu không loại trừ được giá
+trị dưới ngưỡng. 3/5 ca bất đồng nằm đúng chỗ mờ của rubric chứ không phải judge sai.
+
+**Hiện vật**: `reports/tasks/judge-calibration.md` · `reports/runs/w5-04-calibration.json`
+· `w5-04-calibration-reasoning-arm.json` · `w5-04-faith-cross-glm.jsonl` ·
+`w5-04-faith-arm-reasoning.jsonl` · `data/eval/calibration/w5-04-faith-{blind,sealed,human}.jsonl`
+
+**Việc tiếp theo**: `W5-05` — `pipeline/eval/gate.py`. Ba thứ hạng mục này vừa đặt lên
+bàn nó: ngưỡng `n_unjudged` (`TD-67`), `(judge_model, rubric_spec)` trong khoá so sánh
+champion (`TD-66`), và một ngưỡng citation accuracy đang **đỏ** sẵn (`TD-64`, 0,8308
+vs 0,85) để chứng minh gate biết nói FAIL.

@@ -1,0 +1,723 @@
+{
+  "task": "W5-04",
+  "run": "w5-answers-v1",
+  "rubric": "judge-faithfulness@v2",
+  "rubric_sha256": "44cb90505aa2bf032194ae8670ab3855b678ca69233cddb8092fd83bfd1b50ea",
+  "judge_model": "deepseek-v4-flash",
+  "judge_reasoning": false,
+  "cross": {
+    "judge_model": "glm-5.3-flash",
+    "judge_family": "glm",
+    "reasoning_body": {
+      "reasoning_effort": "low"
+    }
+  },
+  "sealed_sha256": "6f0095d62558ef6e28880986d37058ae8d9525d1ee781df7416c5071a71f1399",
+  "cache_digest": "79d7df51897a1448c522234b40d160a9c4daa63018a241cc716b6606773b7fd1",
+  "n": 50,
+  "population": {
+    "NOT_FOUND": 5,
+    "NO_CLAIM": 26,
+    "SUPPORTED": 402
+  },
+  "allocation": {
+    "CONTRADICTED": 5,
+    "NOT_FOUND": 5,
+    "NO_CLAIM": 15,
+    "SUPPORTED": 30
+  },
+  "weights": {
+    "NO_CLAIM": 1.7333,
+    "NOT_FOUND": 1.0,
+    "SUPPORTED": 13.4
+  },
+  "label_counts": {
+    "human": {
+      "CONTRADICTED": 1,
+      "NOT_FOUND": 2,
+      "NO_CLAIM": 17,
+      "SUPPORTED": 30
+    },
+    "judge": {
+      "NOT_FOUND": 5,
+      "NO_CLAIM": 15,
+      "SUPPORTED": 30
+    },
+    "cross": {
+      "CONTRADICTED": 2,
+      "NOT_FOUND": 4,
+      "NO_CLAIM": 9,
+      "SUPPORTED": 35
+    }
+  },
+  "agreement": {
+    "judge_vs_human": {
+      "sample": {
+        "n_items": 50,
+        "observed_agreement": 0.9,
+        "kappa": 0.8127340823970037,
+        "kappa_ci": {
+          "lo": 0.6830985915492956,
+          "hi": 0.9261992619926198,
+          "n_undefined": 0
+        },
+        "pabak": 0.8,
+        "confusion": {
+          "labels": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_FOUND",
+            "NO_CLAIM",
+            "UNPARSEABLE"
+          ],
+          "matrix": [
+            [
+              29.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              2.0,
+              14.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "n_items": 50,
+          "total_weight": 50.0
+        },
+        "per_label": {
+          "SUPPORTED": {
+            "precision": 0.9666666666666667,
+            "recall": 0.9666666666666667,
+            "f1": 0.9666666666666667,
+            "support_a": 30.0,
+            "support_b": 30.0
+          },
+          "CONTRADICTED": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": null,
+            "support_a": 1.0,
+            "support_b": 0.0
+          },
+          "NOT_FOUND": {
+            "precision": 0.4,
+            "recall": 1.0,
+            "f1": 0.5714285714285715,
+            "support_a": 2.0,
+            "support_b": 5.0
+          },
+          "NO_CLAIM": {
+            "precision": 0.9333333333333333,
+            "recall": 0.8235294117647058,
+            "f1": 0.8749999999999999,
+            "support_a": 17.0,
+            "support_b": 15.0
+          },
+          "UNPARSEABLE": {
+            "precision": null,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 0.0
+          }
+        }
+      },
+      "population": {
+        "n_items": 50,
+        "observed_agreement": 0.9581216320246344,
+        "kappa": 0.7367704675846558,
+        "kappa_ci": {
+          "lo": 0.47818135850328697,
+          "hi": 0.9655556439424068,
+          "n_undefined": 0
+        },
+        "pabak": 0.9162432640492684,
+        "confusion": {
+          "labels": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_FOUND",
+            "NO_CLAIM",
+            "UNPARSEABLE"
+          ],
+          "matrix": [
+            [
+              388.6,
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.7333,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              13.4,
+              0.0,
+              2.0,
+              24.2667,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "n_items": 50,
+          "total_weight": 433.0
+        },
+        "per_label": {
+          "SUPPORTED": {
+            "precision": 0.9666666666666667,
+            "recall": 0.9974332648870636,
+            "f1": 0.9818089944416372,
+            "support_a": 389.59999999999985,
+            "support_b": 401.99999999999983
+          },
+          "CONTRADICTED": {
+            "precision": null,
+            "recall": 0.0,
+            "f1": null,
+            "support_a": 1.7333333333333334,
+            "support_b": 0.0
+          },
+          "NOT_FOUND": {
+            "precision": 0.4,
+            "recall": 1.0,
+            "f1": 0.5714285714285715,
+            "support_a": 2.0,
+            "support_b": 5.0
+          },
+          "NO_CLAIM": {
+            "precision": 0.9333333333333333,
+            "recall": 0.611764705882353,
+            "f1": 0.7390862944162437,
+            "support_a": 39.66666666666668,
+            "support_b": 26.00000000000001
+          },
+          "UNPARSEABLE": {
+            "precision": null,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 0.0
+          }
+        }
+      }
+    },
+    "cross_vs_human": {
+      "sample": {
+        "n_items": 50,
+        "observed_agreement": 0.78,
+        "kappa": 0.5726495726495727,
+        "kappa_ci": {
+          "lo": 0.35015290519877684,
+          "hi": 0.7747747747747749,
+          "n_undefined": 0
+        },
+        "pabak": 0.56,
+        "confusion": {
+          "labels": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_FOUND",
+            "NO_CLAIM",
+            "UNPARSEABLE"
+          ],
+          "matrix": [
+            [
+              27.0,
+              1.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              8.0,
+              0.0,
+              0.0,
+              9.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "n_items": 50,
+          "total_weight": 50.0
+        },
+        "per_label": {
+          "SUPPORTED": {
+            "precision": 0.7714285714285715,
+            "recall": 0.9,
+            "f1": 0.8307692307692307,
+            "support_a": 30.0,
+            "support_b": 35.0
+          },
+          "CONTRADICTED": {
+            "precision": 0.5,
+            "recall": 1.0,
+            "f1": 0.6666666666666666,
+            "support_a": 1.0,
+            "support_b": 2.0
+          },
+          "NOT_FOUND": {
+            "precision": 0.5,
+            "recall": 1.0,
+            "f1": 0.6666666666666666,
+            "support_a": 2.0,
+            "support_b": 4.0
+          },
+          "NO_CLAIM": {
+            "precision": 1.0,
+            "recall": 0.5294117647058824,
+            "f1": 0.6923076923076924,
+            "support_a": 17.0,
+            "support_b": 9.0
+          },
+          "UNPARSEABLE": {
+            "precision": null,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 0.0
+          }
+        }
+      },
+      "population": {
+        "n_items": 50,
+        "observed_agreement": 0.8785219399538107,
+        "kappa": 0.371139843891698,
+        "kappa_ci": {
+          "lo": 0.16619361620795106,
+          "hi": 0.7310845696435448,
+          "n_undefined": 0
+        },
+        "pabak": 0.7570438799076213,
+        "confusion": {
+          "labels": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_FOUND",
+            "NO_CLAIM",
+            "UNPARSEABLE"
+          ],
+          "matrix": [
+            [
+              361.8,
+              1.0,
+              26.8,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.7333,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              24.8,
+              0.0,
+              0.0,
+              14.8667,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "n_items": 50,
+          "total_weight": 433.0
+        },
+        "per_label": {
+          "SUPPORTED": {
+            "precision": 0.9358510087946197,
+            "recall": 0.9286447638603695,
+            "f1": 0.9322339603195053,
+            "support_a": 389.5999999999999,
+            "support_b": 386.5999999999999
+          },
+          "CONTRADICTED": {
+            "precision": 0.6341463414634146,
+            "recall": 1.0,
+            "f1": 0.7761194029850745,
+            "support_a": 1.7333333333333334,
+            "support_b": 2.7333333333333334
+          },
+          "NOT_FOUND": {
+            "precision": 0.06944444444444445,
+            "recall": 1.0,
+            "f1": 0.12987012987012989,
+            "support_a": 2.0,
+            "support_b": 28.8
+          },
+          "NO_CLAIM": {
+            "precision": 1.0,
+            "recall": 0.3747899159663866,
+            "f1": 0.5452322738386309,
+            "support_a": 39.66666666666667,
+            "support_b": 14.86666666666667
+          },
+          "UNPARSEABLE": {
+            "precision": null,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 0.0
+          }
+        }
+      }
+    },
+    "judge_vs_cross": {
+      "sample": {
+        "n_items": 50,
+        "observed_agreement": 0.76,
+        "kappa": 0.5366795366795367,
+        "kappa_ci": {
+          "lo": 0.33593750000000006,
+          "hi": 0.7338403041825095,
+          "n_undefined": 0
+        },
+        "pabak": 0.52,
+        "confusion": {
+          "labels": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_FOUND",
+            "NO_CLAIM",
+            "UNPARSEABLE"
+          ],
+          "matrix": [
+            [
+              28.0,
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              1.0,
+              2.0,
+              1.0,
+              0.0
+            ],
+            [
+              6.0,
+              1.0,
+              0.0,
+              8.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "n_items": 50,
+          "total_weight": 50.0
+        },
+        "per_label": {
+          "SUPPORTED": {
+            "precision": 0.8,
+            "recall": 0.9333333333333333,
+            "f1": 0.8615384615384616,
+            "support_a": 30.0,
+            "support_b": 35.0
+          },
+          "CONTRADICTED": {
+            "precision": 0.0,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 2.0
+          },
+          "NOT_FOUND": {
+            "precision": 0.5,
+            "recall": 0.4,
+            "f1": 0.4444444444444445,
+            "support_a": 5.0,
+            "support_b": 4.0
+          },
+          "NO_CLAIM": {
+            "precision": 0.8888888888888888,
+            "recall": 0.5333333333333333,
+            "f1": 0.6666666666666667,
+            "support_a": 15.0,
+            "support_b": 9.0
+          },
+          "UNPARSEABLE": {
+            "precision": null,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 0.0
+          }
+        }
+      },
+      "population": {
+        "n_items": 50,
+        "observed_agreement": 0.9031562740569669,
+        "kappa": 0.4244102126256665,
+        "kappa_ci": {
+          "lo": 0.21871542073310576,
+          "hi": 0.7694811614924775,
+          "n_undefined": 0
+        },
+        "pabak": 0.8063125481139337,
+        "confusion": {
+          "labels": [
+            "SUPPORTED",
+            "CONTRADICTED",
+            "NOT_FOUND",
+            "NO_CLAIM",
+            "UNPARSEABLE"
+          ],
+          "matrix": [
+            [
+              375.2,
+              0.0,
+              26.8,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              1.0,
+              2.0,
+              1.0,
+              0.0
+            ],
+            [
+              10.4,
+              1.7333,
+              0.0,
+              13.8667,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "n_items": 50,
+          "total_weight": 433.0
+        },
+        "per_label": {
+          "SUPPORTED": {
+            "precision": 0.9705121572684946,
+            "recall": 0.9333333333333332,
+            "f1": 0.9515597260968804,
+            "support_a": 401.9999999999999,
+            "support_b": 386.59999999999985
+          },
+          "CONTRADICTED": {
+            "precision": 0.0,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 2.7333333333333334
+          },
+          "NOT_FOUND": {
+            "precision": 0.06944444444444445,
+            "recall": 0.4,
+            "f1": 0.1183431952662722,
+            "support_a": 5.0,
+            "support_b": 28.8
+          },
+          "NO_CLAIM": {
+            "precision": 0.9327354260089686,
+            "recall": 0.5333333333333333,
+            "f1": 0.6786296900489397,
+            "support_a": 26.000000000000007,
+            "support_b": 14.86666666666667
+          },
+          "UNPARSEABLE": {
+            "precision": null,
+            "recall": null,
+            "f1": null,
+            "support_a": 0.0,
+            "support_b": 0.0
+          }
+        }
+      }
+    }
+  },
+  "headline": {
+    "judge_reweighted": {
+      "point": 0.9877149877149877,
+      "lo": 0.9877149877149877,
+      "hi": 0.9877149877149877,
+      "median": 0.9877149877149877,
+      "n_resamples": 2000,
+      "n_undefined": 0,
+      "level": 0.95
+    },
+    "human_reweighted": {
+      "point": 0.9905084745762711,
+      "lo": 0.9800097513408094,
+      "hi": 1.0,
+      "median": 0.990821176856253,
+      "n_resamples": 2000,
+      "n_undefined": 0,
+      "level": 0.95
+    },
+    "cross_reweighted": {
+      "point": 0.9245854591836735,
+      "lo": 0.8284438775510206,
+      "hi": 0.9928126497364638,
+      "median": 0.9268176778076984,
+      "n_resamples": 2000,
+      "n_undefined": 0,
+      "level": 0.95
+    }
+  },
+  "disagreements": [
+    {
+      "ref": "aggregation-3895b9f4ae#s5",
+      "stratum": "NOT_FOUND",
+      "human": "NO_CLAIM",
+      "judge": "NOT_FOUND",
+      "cross": "NO_CLAIM",
+      "why_human": "'It only mentions... but no equivalent limit is stated for MFIs' — nói về phạm vi nguồn; luật 2.",
+      "judge_reason": "Ngữ cảnh không nói về giới hạn sở hữu nước ngoài đối với MFI, chỉ nói về quy định cấp phép và giám sát MFI.",
+      "context": "[1] This passage is in the financial sector reform section of \"Taking Stock\", a World Bank report prepared for the Mid-year Consultative Group Meeting for Vietnam in Can Tho, June 2005, covering 2004 and early 2005. It describes Decree 28/2005/ND-CP, which creates a new framework for licensing and supervising microfinance institutions in Vietnam, with lighter regulation than banks.\n\ntly after.\r\n\r\n         Microfinance. Through Decree 28/2005/ND-CP a new framework for the regulation\nMicrofinance. Through Decree 28/2005/ND-CP a new framework for the regulation\r\nand supervision of microfinance institutions (MFIs) has been developed. Thus far there has\r\nnot been any formal regulation in this area despite the existence of a wide variety of\r\norganizations that provide micro-credit. Decree 28 defines MFIs and will provide for the\r\nlicensing and supervision of the institutions based on specific criteria in areas such as capital,\r\ncorporate governance, and business plans. It permits the MFIs to expand operations on a\r\nuniform basis across the country and will allow for the provision of a range of basic financial\r\nservices, depending on the type of license granted. The supervision of the MFIs is not as\r\nstrict as for banks as the institutions are much smaller in scale and therefore should not have\r\nto contend with the relatively complex regulations that apply to banks.\r\n\r\n         Joint Stock Banks. Recent regulations allow foreign banks operating in Vietnam to\nJoint Stock Banks. Recent regulations allow foreign banks operating in Vietnam to\r\nbuy up to 30 perc\n\n[2] This passage is in the financial sector reform section of \"Taking Stock\", a World Bank report for Vietnam's Mid-year Consultative Group Meeting in Can Tho, June 2005. It covers new regulations allowing foreign banks to buy up to 30 percent of shares in Vietnamese joint stock banks, including ANZ's 10 percent acquisition of Sacombank.\n\nbanks.\r\n\r\n         Joint Stock Banks. Recent regulations allow foreign banks operating in Vietnam to\nJoint Stock Banks. Recent regulations allow foreign banks operating in Vietnam to\r\nbuy up to 30 percent of shares in local joint stock commercial banks (JSBs) and allow JSBs\r\nto list on the stock market. The shareholder limit of individual foreign organizations in JSBs\r\nwill be increased, from 10 percent to 15 percent, while the cap on individual investors will\r\nremain unchanged at 10 percent. Foreign financial institutions have shown keen interest in\r\nbuying into Vietnamese JSBs. The local banks are willing to offer shares to foreign\r\ncounterparts, viewing this as an opportunity to upgrade technology, enhance management\r\nskills, and develop new products and services. Recently ANZ, a foreign bank, acquired 10\r\npercent of the shares of Sacombank, the largest JSB. With this Sacombank has hit the 30\r\n\r\n\r\n                                               23\r\n\fTaking Stock\r\n\r\n\r\npercent limit for foreign ownership. Three JSBs have expressed interest in listing on the stock\npercent limit for foreign ownership. Three JSBs have expressed interest in listing on the stock\r\nexc",
+      "claim": "It only mentions that foreign banks could buy up to 30 percent of shares in local joint stock commercial banks,, but no equivalent limit is stated for MFIs."
+    },
+    {
+      "ref": "aggregation-c332ac1180#s1",
+      "stratum": "SUPPORTED",
+      "human": "NO_CLAIM",
+      "judge": "SUPPORTED",
+      "cross": "SUPPORTED",
+      "why_human": "Câu dẫn kết thúc bằng dấu hai chấm, nói về nguồn; luật 2 / 'câu dẫn'.",
+      "judge_reason": "Ngữ cảnh nêu rõ Việt Nam xuất khẩu kém sang Trung Quốc nhưng đáp ứng được nhu cầu Nhật Bản, khác biệt rõ ràng.",
+      "context": "[1] In this section of the 2013 World Bank and National Committee for International Economic Cooperation report on trade facilitation and Vietnam's economic growth, the discussion of product and market expansion (Section 2.5) assesses how well Vietnam supplies the most dynamic imports of its major trading partners, covering the Chinese and Japanese markets. It finds Vietnam performs poorly against China's resource-based import demand but meets a broader range of Japanese demand, aided by Japanese FDI in Vietnam.\n\nf 20 products. Vietnam performs poorly in exports to China with respect to the latter’s most dynamic\nimports, with exports of 15 of these products under US$10 million in 2010. Vietnam exported five\r\n        products with a value of more than US$10 million to China in 2010. Of these only fruit and sound/TV\r\n        recorders were not metal ores/concentrates-based.\r\n\r\n  n     Japan market: Japan’s 20 most important imports are more balanced in both the number of products in\r\n        each technological group and the import value. Unlike the other major markets, Vietnam seems able to\r\n        meet Japan’s rising demand in a number of products, including office machines, mechanical transmission\r\n        equipment, ships/boats, pig iron/ferro alloys, iron/steel bars/rods, iron/steel/aluminum structures, and\r\n        residual petroleum products. This can be partly explained by the fact that Japan has significant FDI in\r\n        Vietnam, with companies like Canon, and Panasonic operating large factories to supply the rest of Asia\r\n        and Japan.\r\n\r\n\r\n  2.6 Conclusion\nand Japan.\r\n\r\n\r\n  2.6 Conclusion\r\n\r\n  These statistics are consistent with Vietnam’s growth model, w",
+      "claim": "Tuy nhiên, nguồn có đề cập đến sự khác biệt của Việt Nam khi xuất khẩu sang Nhật Bản so với Trung Quốc, như sau:"
+    },
+    {
+      "ref": "cross_lingual-3e5b84a32c#s5",
+      "stratum": "NOT_FOUND",
+      "human": "NO_CLAIM",
+      "judge": "NOT_FOUND",
+      "cross": "SUPPORTED",
+      "why_human": "Câu nói nguồn thiếu thông tin về cơ quan quản lý; luật 2.",
+      "judge_reason": "Ngữ cảnh không đề cập đến cơ quan quản lý của quỹ hưu trí và công ty bảo hiểm.",
+      "context": "[1] Đoạn thuộc chương \"Cơ quan quản lý giám sát\" của báo cáo \"Khai mở tiềm năng thị trường vốn Việt Nam 2023\" (Ngân hàng Thế giới, Việt Nam 2023), trang 78, nói về việc các tổ chức tài chính phi ngân hàng (tín dụng phi ngân hàng, quỹ hưu trí, bảo hiểm) dựa vào thị trường vốn để huy động hoặc đầu tư, nhưng việc phối hợp chính sách giữa các cơ quan quản lý hiếm khi bao gồm phân tích tác động đầy đủ lên các phân ngành khác.\n\n\n     đa vai trò trên thị trường vốn, họ dựa vào các thị trường vốn hoặc là để huy động vốn (tổ chức\nđa vai trò trên thị trường vốn, họ dựa vào các thị trường vốn hoặc là để huy động vốn (tổ chức\r\n     tín dụng phi ngân hàng) hoặc để đầu tư (các tổ chức như quỹ hưu trí và công ty bảo hiểm). Sự\r\n     phối hợp như vậy có tồn tại, thông qua lấy ý kiến các văn bản, nhưng hiếm khi có một bản đề\r\n     xuất chính sách quản lý có đầy đủ phân tích các tác động bao gồm cả các phân ngành khác.\r\n\r\n     197.\t Lĩnh vực ngân hàng có lợi ích trong sự phát triển của thị trường vốn; do vậy, việc tham\r\n     gia của cơ quan quản lý lĩnh vực ngân hàng (NHNN) trong việc hình thành cải cách và triển\r\n     khai là rõ ràng. Các ngân hàng sẽ là một trong những bên hưởng lợi chính trong sự phát triển\r\n     thị trường vốn tại Việt Nam. Những cải thiện đối với toàn bộ các khía cạnh của thị trường vốn\r\n     sẽ giúp thị trường Việt Nam trở nên hấp dẫn hơn và giúp lĩnh vực ngân hàng trong ba khía\r\n     cạnh chính: (1) vốn hoá ngân hàng: các ngân hàng thường là một trong những ngành lớn nhất\ncạnh chính: (1) vốn hoá ngân hàng: các ngân hàng thường là một trong những ngành lớn nhất\r\n     sử d",
+      "claim": "Các tổ chức như quỹ hưu trí và công ty bảo hiểm được nhắc đến như những bên tham gia thị trường vốn, nhưng không có thông tin về cơ quan quản lý chúng."
+    },
+    {
+      "ref": "factoid-38cc46d0ad#s1",
+      "stratum": "NO_CLAIM",
+      "human": "CONTRADICTED",
+      "judge": "NO_CLAIM",
+      "cross": "CONTRADICTED",
+      "why_human": "⚠️ Mệnh đề meta SAI: nói nguồn 'không nêu rõ số liệu m/m cho riêng tháng 9', trong khi ngữ cảnh [1] ghi rõ 'tăng 2,4% (m/m)... vào tháng 9 năm 2023' và 'doanh số bán hàng hóa tăng 2,1% (m/m)... trong tháng 9'. Luật 2 của rubric không phân biệt lời khai 'nguồn im lặng' ĐÚNG với lời khai SAI.",
+      "judge_reason": "Câu này nói về việc các nguồn không nêu rõ số liệu m/m cho riêng tháng 9, tức là nhận xét về sự thiếu thông tin trong ngữ cảnh, không phải một mệnh đề về thế giới.",
+      "context": "[1] Đoạn này nằm trong báo cáo \"Cập nhật Kinh tế vĩ mô Việt Nam\" tháng 9/2023 (do Ngân hàng Thế giới công bố), mục \"Những diễn biến kinh tế gần đây\". Đoạn nói về sự phục hồi sản xuất công nghiệp quý 3-2023 (IIP tăng 3,5% so cùng kỳ) và tình trạng doanh số bán lẻ hàng hóa còn trầm lắng ở Việt Nam tháng 9/2023.\n\nệp tiếp tục c ải thiện trong quý                        Doanh số bán lẻ hàng hóa tiếp tục trầm lắng.\n3-2023.                                                               Doanh số bán lẻ hàng hóa và dịch vụ (NSA) tăng 2,4% (m/m)\r\n                                                                      và 9,4% (so cùng kỳ) vào tháng 9 năm 2023, thấp hơn nhiều\r\nChỉ số sản xuất công nghiệp (IIP) ghi nhận mức tăng trưởng            so với mức trước đại dịch (11 – 12%), phản ánh nhu cầu trong\r\nhàng tháng dương thứ năm trong tháng 9 (0,1% m/m) kể từ               nước khá trầm lắng (Hình Error! Not a valid bookmark self-\r\ntháng 5 năm 2023 (Hình 2). IIP tăng 3,5% (so cùng kỳ) trong           reference.4). Chiếm 78% doanh số bán lẻ, doanh số bán hàng\r\nQ3-2023, so với -0,2% (so cùng kỳ) trong Q2-2023 và -2,6%             hóa tăng 2,1% (m/m) và 7,4% (so cùng kỳ) trong tháng 9 –\r\n(so cùng kỳ) trong Q1-2023, được hỗ trợ bởi tăng trưởng các           tương ứng khoảng 54% mức tăng trưởng trước đại dịch (13-\nlĩnh vực sản xuất trong nước và định hướng xuất khẩu như              14 phần trăm). Trong khi đó, d\n\n[2] Đoạn nằm trong mục \"Tăng trưởng doanh số bán lẻ tiếp tục chững lại\" của báo cáo \"Cập nhật Kinh tế vĩ mô Việt Nam\" tháng 10/2023 do Ngân hàng Thế giới công bố; đoạn nêu doanh số bán lẻ Việt Nam ổn định ở mức khoảng 7% so với cùng kỳ trong các tháng 8-10/2023, thấp hơn nhiều so với khoảng 13% trước đại dịch.\n\n trước, SA). Sau khi chạm đáy ở mức\r\n    5,0% (so với cùng kỳ, SA) vào tháng 7, tăng trưởng doanh số\n5,0% (so với cùng kỳ, SA) vào tháng 7, tăng trưởng doanh số\r\n    bán lẻ đã ổn định ở mức khoảng 7% (so với cùng kỳ, SA) trong\r\n    tháng 8, tháng 9 và tháng 10, thấp hơn nhiều so với tốc độ\r\n    tăng trưởng trước đại dịch là khoảng 13% (so với cùng kỳ, SA)\r\n    (Hình 2). Chiếm gần 80% tổng doanh số bán lẻ, doanh số bán\r\n    hàng hóa tháng 10 giảm 1,54% (so với tháng trước, SA) so với\r\n\r\n\r\n1\r\n  Chuỗi số liệu được điều chỉnh theo mùa vụ (SA) của tổng doanh số bán lẻ và các cấu phần của tổng doanh số bán lẻ (tức là doanh số hàng hóa và doanh số dịch vụ)\r\nkhông khớp cả về giá trị và tốc độ tăng trưởng, bởi vì chúng được điều chỉnh theo mùa vụ một cách riêng rẽ.\r\n\r\n                                                                               Trang 2\r\n\f                           T h á n g 1 0 / 2 0 2 3 • C ậ p nh ậ t Ki nh t ế vĩ mô Vi ệ t Nam\r\n\r\n\r\n\r\nHoạt động FDI vẫn ổn định trong bối cảnh bất ổn toàn              Tăng trưởng tín dụng vẫn tiếp tục chậm\r\ncầu\ncầu\r\n                                                                  Tăng trưởng tín dụng vẫn chậm",
+      "claim": "Các nguồn chỉ đề cập đến tăng trưởng doanh số bán lẻ tháng 9 so với cùng kỳ năm trước (9,4%), hoặc mức tăng trưởng ổn định khoảng 7% trong các tháng 8-10, nhưng không nêu rõ số liệu so với tháng trước (m/m) cho riêng tháng 9."
+    },
+    {
+      "ref": "unanswerable-599e160838#s3",
+      "stratum": "NOT_FOUND",
+      "human": "SUPPORTED",
+      "judge": "NOT_FOUND",
+      "cross": "CONTRADICTED",
+      "why_human": "Ngữ cảnh có 'chi R&D của Việt Nam (0,5% GDP)'. Cột 0,41 trong Hình 2.15 là một cấu phần của biểu đồ xếp chồng, không mâu thuẫn.",
+      "judge_reason": "Ngữ cảnh không đề cập đến chi R&D của Việt Nam là 0,5% GDP.",
+      "context": "[1] Đoạn mở tiểu mục \"Tình trạng thiếu vốn đầu tư kéo dài và phân bổ nguồn lực kém hiệu quả trong GDĐH và R&D\" của chương 2 báo cáo \"Điểm lại Tháng 9/2025: Cập nhật tình hình kinh tế Việt Nam, Chuyên đề: Bứt tốc phát triển nhân tài công nghệ cao của Việt Nam\" của Ngân hàng Thế giới, so sánh chi R&D của Việt Nam (0,5% GDP) với Hàn Quốc, Trung Quốc, Ma-lai-xia, Thái Lan.\n\nuốc\r\n(4,8% GDP) hoặc Trung Quốc, và các quốc gia trong khu vực như Ma-lai-xia và Thái Lan. Hình 2.15\n(4,8% GDP) hoặc Trung Quốc, và các quốc gia trong khu vực như Ma-lai-xia và Thái Lan. Hình 2.15\r\nminh họa mức độ đầu tư cho R&D của Việt Nam và phân bổ theo nguồn vốn của Nhà nước và tư\r\nnhân, so sánh với các quốc gia khác trong khu vực. Đầu tư thấp khiến cho Việt Nam chưa có được\r\ncụm KH&CN lớn tầm cỡ toàn cầu, chưa có được số lượng các sản phẩm nghiên cứu khoa học cần\r\n\r\n\r\n\r\n                                     CHUYÊN ĐỀ: BỨT TỐC PHÁT TRIỂN NHÂN TÀI CÔNG NGHỆ CAO CỦA VIỆT NAM I 4 3\r\n\fthiết để tạo động lực cho nền kinh tế dựa trên ĐMST. Chính vì vậy, số lượng các công bố khoa học,\r\nbằng sáng chế và kết quả ĐMST công nghệ cao còn hạn chế, trong khi chuyển giao công nghệ cho\r\ncác doanh nghiệp còn chậm.\r\n\r\n\r\n                          Hình 2.15. Chi cho R&D của khu vực công và khu vực tư nhân\r\n        6,00                                                Chi cho R&D của khu vực doanh nghiệp\r\n                 4,96                                       Chi cho R&D của khu vực công\n4,96                                       Chi cho R&D của khu vực công\r\n        5,00\r\n\r\n        4,0\n\n[2] Đoạn trình bày Hình 2.15 về chi cho R&D của khu vực công và tư nhân tính theo % GDP tại Hàn Quốc, Hoa Kỳ, Trung Quốc, Liên minh châu Âu, Sing-ga-po, Thái Lan, Ma-lai-xia, Việt Nam và Phi-líp-pin, nằm trong báo cáo \"Điểm lại Tháng 9/2025: Cập nhật tình hình kinh tế Việt Nam, Chuyên đề: Bứt tốc phát triển nhân tài công nghệ cao của Việt Nam\" của Ngân hàng Thế giới.\n\nanh nghiệp\r\n                 4,96                                       Chi cho R&D của khu vực công\n4,96                                       Chi cho R&D của khu vực công\r\n        5,00\r\n\r\n        4,00                  3,45\r\n% GDP\r\n\r\n\r\n\r\n\r\n        3,00                               2,58\r\n                                                            2,13\r\n                                                                          1,85\r\n        2,00\r\n                                                                                         1,16            0,95\r\n        1,00                                                                                                            0,41         0,32\r\n        0,00\r\n               Hàn Quốc      Hoa Kỳ     Trung Quốc     Liên minh       Sing-ga-po       Thái Lan       Ma-lai-xia      Việt Nam   Phi-líp-pin\r\n                (2023)       (2023)       (2023)        châu Âu          (2022)          (2022)         (2020)          (2023)     (2018)\r\n                                                         (2023)\n(2023)\r\n\r\nNguồn: Hàn Quốc, Hoa Kỳ, Trung Quốc, Liên minh Châu Âu, Sing-ga-po (Cơ sở dữ liệu các chỉ ",
+      "claim": "Nguồn và nêu chi R&D của Việt Nam là 0,5% GDP (năm 2023)."
+    }
+  ]
+}

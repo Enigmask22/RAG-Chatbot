@@ -1,0 +1,51 @@
+{"_header": {"run": "w5-answers-v1", "judge_model": "deepseek-v4-flash", "judge_family": "deepseek", "judge_reasoning": true, "reasoning_body": null, "served_models": {"deepseek-v4-flash": 50}, "spent_usd": 0.04078, "unparseable": 32}}
+{"ref": "adversarial-5042beb45a#s1", "label": "SUPPORTED", "reason": "Ngữ cảnh nêu chính xác FDI inflows giảm từ 10.0 tỷ USD năm 2008 xuống 7.4 tỷ USD năm 2009.", "served_model": "deepseek-v4-flash"}
+{"ref": "adversarial-8e6294af71#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "adversarial-d5d2e44792#s2", "label": "SUPPORTED", "reason": "Ngữ cảnh trực tiếp nói rằng vì Việt Nam muốn đạt tiêu chí quốc gia thu nhập cao vào năm 2045, nước này cần phải đối phó dứt khoát với biến đổi khí hậu, khớp với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "adversarial-f2e342287d#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-02aabe0eca#s4", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-173c1edaf8#s3", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-30fc4cc114#s5", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-3895b9f4ae#s5", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-4474de5afe#s4", "label": "SUPPORTED", "reason": "Ngữ cảnh trực tiếp nói rằng kho bạc sẽ ngừng phát hành lẻ trái phiếu cho nhà đầu tư cá nhân để giảm chi phí giao dịch.", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-4f02b39e36#s3", "label": "SUPPORTED", "reason": "Ngữ cảnh trực tiếp nói rằng đảm bảo đầu tư vào năng lực lưới điện để cung cấp tính linh hoạt hấp thụ thêm năng lượng tái tạo là quan trọng, khớp với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-4f02b39e36#s4", "label": "SUPPORTED", "reason": "Ngữ cảnh khẳng định rằng 'Accelerating implementation of energy efficiency plans — including through effective pricing policies such as a carbon tax or an emissions trading system — is also a priority', tương đương với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-4f02b39e36#s7", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-c332ac1180#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-c332ac1180#s4", "label": "SUPPORTED", "reason": "Ngữ cảnh nêu đúng danh sách các sản phẩm Việt Nam có thể đáp ứng nhu cầu tăng của Nhật Bản, khớp hoàn toàn với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-de7c45d9f1#s10", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-e1cba94567#s2", "label": "SUPPORTED", "reason": "Ngữ cảnh nói đúng về cơ hội cho ngân hàng cổ phần tư nhân thoái vốn SOE và làm sạch sở hữu chéo, cùng khả năng đưa ngân hàng nhỏ/yếu vào cơ chế xử lý có trật tự.", "served_model": "deepseek-v4-flash"}
+{"ref": "aggregation-f4938b028c#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "cross_lingual-0eed8d739d#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "cross_lingual-3e5b84a32c#s5", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "cross_lingual-68e87dcabf#s1", "label": "SUPPORTED", "reason": "Ngữ cảnh có câu khẳng định Việt Nam cam kết chấm dứt đầu tư mới vào điện than, tăng cường năng lượng tái tạo và loại bỏ điện than vào những năm 2040, giống hệt mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "cross_lingual-fb8c1fb2cf#s3", "label": "SUPPORTED", "reason": "Ngữ cảnh có câu trực tiếp khẳng định các dự án xây dựng mới cần tính đến rủi ro khí hậu thông qua các đánh giá môi trường có hệ thống.", "served_model": "deepseek-v4-flash"}
+{"ref": "cross_lingual-ff377d9b8c#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-346a7d897a#s1", "label": "SUPPORTED", "reason": "Ngữ cảnh nêu chính xác cùng số liệu và nội dung trong mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-38cc46d0ad#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-4e74c49f6c#s0", "label": "SUPPORTED", "reason": "Ngữ cảnh nêu rõ '28 tỉnh ven biển đã thành lập 18 khu kinh tế ven biển', khớp hoàn toàn với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-6227db3612#s0", "label": "SUPPORTED", "reason": "Ngữ cảnh nêu đúng ý: sản lượng thương mại suy giảm trong quý một và chững lại trong quý hai năm 2016.", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-6b9e9c8f90#s1", "label": "SUPPORTED", "reason": "Ngữ cảnh trực tiếp nói rằng các cấu trúc sở hữu phức tạp 'dẫn đến khai khống vốn thông qua đòn bẩy nhiều tầng', khớp với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-7d2921da39#s1", "label": "SUPPORTED", "reason": "Ngữ cảnh nói trung bình từ ba nguồn là 72% trong 2013/14 và 81% trong 2017, khớp chính xác với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-a6776546dc#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "factoid-c6c7bf6598#s0", "label": "SUPPORTED", "reason": "Ngữ cảnh trực tiếp nói rằng ngày 2 tháng 6, Bộ Chính trị ban hành Nghị quyết thông qua Chiến lược cải cách tư pháp đến năm 2020.", "served_model": "deepseek-v4-flash"}
+{"ref": "multi_hop-0034f52985#s4", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "multi_hop-6ba8b46dfb#s0", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "multi_hop-78a942bf28#s0", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "multi_hop-78a942bf28#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "multi_hop-78a942bf28#s2", "label": "SUPPORTED", "reason": "Ngữ cảnh nói rõ CIC nắm giữ 500.000 hồ sơ doanh nghiệp tính đến năm 2011.", "served_model": "deepseek-v4-flash"}
+{"ref": "multi_hop-c3047b1934#s1", "label": "SUPPORTED", "reason": "Câu văn trong ngữ cảnh nói rằng việc tăng cường hơn nữa về cơ sở hạ tầng tài chính, cải cách thể chế và phát triển thị trường sản phẩm là cần thiết để tiến bộ hơn trong tài chính toàn diện, trùng khớp với các thành phần trong mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "table_lookup-e5d00e4b6d#s0", "label": "SUPPORTED", "reason": "Ngữ cảnh nói rằng tài sản khu vực ngân hàng chiếm 92% tài sản của các tổ chức tài chính vào năm 2011, khớp hoàn toàn với mệnh đề.", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-09bfa65f40#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-200ea2a853#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-2c1fe5b79f#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-39938ae0f3#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-4164215da4#s2", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-43f487fc36#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-48ffa40b59#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-4a1a212aec#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-599e160838#s3", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-6183246ffd#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-71910a86e1#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-a16b8d0dcc#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}
+{"ref": "unanswerable-fad0c9715f#s1", "label": null, "reason": "không tìm thấy JSON trong phản hồi", "served_model": "deepseek-v4-flash"}

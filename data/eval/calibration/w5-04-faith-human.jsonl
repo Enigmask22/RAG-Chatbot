@@ -1,0 +1,51 @@
+{"_header": {"task": "W5-04", "annotator": "claude-opus-5 (agent), đọc file mù, không mở file niêm phong trước khi ghi xong", "rubric": "judge-faithfulness@v2", "labelled_at": "2026-09-05", "n": 50, "note": "Nhãn gán theo ĐÚNG rubric v2 mà judge nhận, không theo trực giác riêng — nếu không thì kappa đo bất đồng về rubric chứ không đo sai sót của judge."}}
+{"ref": "adversarial-8e6294af71#s1", "gold": "NO_CLAIM", "why": "Câu nói về phạm vi của nguồn ('the context does not state that both...'); luật 2."}
+{"ref": "cross_lingual-3e5b84a32c#s5", "gold": "NO_CLAIM", "why": "Câu nói nguồn thiếu thông tin về cơ quan quản lý; luật 2."}
+{"ref": "factoid-6b9e9c8f90#s1", "gold": "SUPPORTED", "why": "'overstatement of capital through multiple gearing' nguyên văn trong [1] và [2]."}
+{"ref": "multi_hop-0034f52985#s4", "gold": "SUPPORTED", "why": "Ngữ cảnh: HOSE chiếm 77% tổng vốn hoá; và 'tổng vốn hoá thị trường' ở câu trước chính là HOSE+HNX (743 công ty)."}
+{"ref": "aggregation-c332ac1180#s4", "gold": "SUPPORTED", "why": "Bảy sản phẩm liệt kê khớp nguyên văn danh sách Japan market."}
+{"ref": "aggregation-de7c45d9f1#s10", "gold": "NOT_FOUND", "why": "Ngữ cảnh có vai trò bãi đẻ của rừng ngập mặn nhưng KHÔNG có công thức nào, không có tham số ρ, không nhắc Quảng Ninh."}
+{"ref": "adversarial-5042beb45a#s1", "gold": "SUPPORTED", "why": "'FDI inflows fell to USD7.4 billion in 2009, compared to 10.0 billion in 2008' — khớp cả số lẫn chiều."}
+{"ref": "cross_lingual-0eed8d739d#s1", "gold": "SUPPORTED", "why": "Khớp nội dung; 'chủ yếu' hơi mạnh hơn 'nhiều khi' của nguồn nhưng không đổi số cũng không đổi chiều."}
+{"ref": "unanswerable-599e160838#s3", "gold": "SUPPORTED", "why": "Ngữ cảnh có 'chi R&D của Việt Nam (0,5% GDP)'. Cột 0,41 trong Hình 2.15 là một cấu phần của biểu đồ xếp chồng, không mâu thuẫn."}
+{"ref": "aggregation-3895b9f4ae#s5", "gold": "NO_CLAIM", "why": "'It only mentions... but no equivalent limit is stated for MFIs' — nói về phạm vi nguồn; luật 2."}
+{"ref": "unanswerable-71910a86e1#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có nhãn năm cho 2008; luật 2, và đúng."}
+{"ref": "cross_lingual-68e87dcabf#s1", "gold": "SUPPORTED", "why": "Nguyên văn: 'ending all investment in new coal power generation... phasing out coal power by the 2040s'."}
+{"ref": "factoid-a6776546dc#s1", "gold": "SUPPORTED", "why": "Tổng 8,5 US$/tấn gồm chi phí vận hành + trạm kiểm soát + nhân công bốc xếp — đúng ba khoản."}
+{"ref": "adversarial-d5d2e44792#s2", "gold": "SUPPORTED", "why": "Nguyên văn: 'Vì Việt Nam muốn đạt tiêu chí quốc gia thu nhập cao vào năm 2045...'."}
+{"ref": "aggregation-173c1edaf8#s3", "gold": "SUPPORTED", "why": "Nguyên văn ghép từ [1] và [2] của cùng đoạn 23."}
+{"ref": "unanswerable-6183246ffd#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có số liệu tổng thể cho 2015; luật 2."}
+{"ref": "multi_hop-78a942bf28#s1", "gold": "SUPPORTED", "why": "Quy tắc MOF chống 'thất thoát vốn nhà nước' + báo cáo tài chính DNNN thiếu minh bạch — cả hai đều trong ngữ cảnh."}
+{"ref": "aggregation-02aabe0eca#s4", "gold": "SUPPORTED", "why": "Nguyên văn: 'comprises one representative from each of the eight donors who contributed financial and human resources to the PPAs'."}
+{"ref": "aggregation-30fc4cc114#s5", "gold": "SUPPORTED", "why": "Nguyên văn: 'load limitation, speed limitation, and maximum hours of continuous service for the drivers'."}
+{"ref": "cross_lingual-ff377d9b8c#s1", "gold": "NO_CLAIM", "why": "'báo cáo không nêu rõ mức tăng bao nhiêu điểm phần trăm trong năm 2009' — luật 2."}
+{"ref": "table_lookup-e5d00e4b6d#s0", "gold": "SUPPORTED", "why": "'92 percent of financial institutions' assets' năm 2011 — khớp."}
+{"ref": "unanswerable-4a1a212aec#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có số liệu cho Lào 2023; luật 2."}
+{"ref": "unanswerable-39938ae0f3#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có mục tiêu cho 2030; luật 2."}
+{"ref": "unanswerable-43f487fc36#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có số liệu GDĐH năm 2040; luật 2."}
+{"ref": "multi_hop-6ba8b46dfb#s0", "gold": "NOT_FOUND", "why": "'CIC no longer provides periodic reports of supervisory value' KHÔNG có trong ngữ cảnh — đoạn về CIC bị cắt ngay sau '23 million records on'. Nửa sau (giám sát yếu) thì đúng nguyên văn."}
+{"ref": "multi_hop-c3047b1934#s1", "gold": "SUPPORTED", "why": "Nguyên văn đoạn 27."}
+{"ref": "aggregation-4f02b39e36#s3", "gold": "SUPPORTED", "why": "'Ensuring investments in the capacity of the power grid, which can provide flexibility to absorb additional renewable energy' — khớp."}
+{"ref": "aggregation-4474de5afe#s4", "gold": "SUPPORTED", "why": "'The treasury will also stop retail issuance of bonds to individual investors to reduce transaction costs' — 'will' → 'planned to' là diễn đạt lại."}
+{"ref": "unanswerable-fad0c9715f#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có số liệu cho 2003; luật 2."}
+{"ref": "factoid-6227db3612#s0", "gold": "SUPPORTED", "why": "Nguyên văn: 'khối lượng thương mại suy giảm trong quý một và chững lại trong quý hai năm 2016'."}
+{"ref": "unanswerable-a16b8d0dcc#s1", "gold": "NO_CLAIM", "why": "Nói ngữ cảnh không có số liệu đấu giá đất Hà Nội 2024; luật 2."}
+{"ref": "aggregation-4f02b39e36#s7", "gold": "SUPPORTED", "why": "Ngữ cảnh cắt đúng ở 'transferring part of the carbon'; cùng một câu, phần đuôi bị cắt bởi ranh giới chunk chứ không phải bịa. Ca biên."}
+{"ref": "aggregation-f4938b028c#s1", "gold": "SUPPORTED", "why": "Hai mệnh đề đều nguyên văn ('First,... Second,...'). Liên từ 'necessary because' đảo chiều nhân quả so với 'has important institutional ramifications' — méo ở liên từ, không ở dữ kiện. Ca biên."}
+{"ref": "multi_hop-78a942bf28#s0", "gold": "SUPPORTED", "why": "Nguyên văn FSAP: quy tắc MOF chống 'the loss of state capital' cản trở ghi nhận lỗ và che giấu hiệu quả yếu kém."}
+{"ref": "factoid-7d2921da39#s1", "gold": "SUPPORTED", "why": "'The average leisure visitor share across these three sources is 72 percent in 2013/14 and 81 percent in 2017' — khớp cả ba nguồn."}
+{"ref": "aggregation-e1cba94567#s2", "gold": "SUPPORTED", "why": "Nguyên văn đoạn về private joint-stock banks + orderly bank resolution regime."}
+{"ref": "cross_lingual-fb8c1fb2cf#s3", "gold": "SUPPORTED", "why": "Nguyên văn tiếng Việt trong ngữ cảnh."}
+{"ref": "aggregation-c332ac1180#s1", "gold": "NO_CLAIM", "why": "Câu dẫn kết thúc bằng dấu hai chấm, nói về nguồn; luật 2 / 'câu dẫn'."}
+{"ref": "factoid-346a7d897a#s1", "gold": "SUPPORTED", "why": "1.584 và 649 khớp nguyên văn."}
+{"ref": "adversarial-f2e342287d#s1", "gold": "SUPPORTED", "why": "22,2 nghìn tỷ VND (0,8% GDP) Q1-2025 khớp nguyên văn."}
+{"ref": "unanswerable-2c1fe5b79f#s1", "gold": "NO_CLAIM", "why": "Nói nguồn chỉ nêu mục tiêu và điều kiện; luật 2."}
+{"ref": "factoid-38cc46d0ad#s1", "gold": "CONTRADICTED", "why": "⚠️ Mệnh đề meta SAI: nói nguồn 'không nêu rõ số liệu m/m cho riêng tháng 9', trong khi ngữ cảnh [1] ghi rõ 'tăng 2,4% (m/m)... vào tháng 9 năm 2023' và 'doanh số bán hàng hóa tăng 2,1% (m/m)... trong tháng 9'. Luật 2 của rubric không phân biệt lời khai 'nguồn im lặng' ĐÚNG với lời khai SAI."}
+{"ref": "multi_hop-78a942bf28#s2", "gold": "SUPPORTED", "why": "'500,000 firms as of 2011' — khớp."}
+{"ref": "unanswerable-48ffa40b59#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có số liệu 2011-2015; luật 2."}
+{"ref": "unanswerable-09bfa65f40#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không cho tỉ lệ được hỏi; luật 2."}
+{"ref": "aggregation-4f02b39e36#s4", "gold": "SUPPORTED", "why": "Nguyên văn về energy efficiency plans + carbon tax / ETS."}
+{"ref": "unanswerable-4164215da4#s2", "gold": "NO_CLAIM", "why": "Nói nguồn không có số liệu dự báo; luật 2."}
+{"ref": "factoid-4e74c49f6c#s0", "gold": "SUPPORTED", "why": "'28 tỉnh ven biển đã thành lập 18 khu kinh tế ven biển' — nguyên văn."}
+{"ref": "factoid-c6c7bf6598#s0", "gold": "SUPPORTED", "why": "'On the 2 June, the Politburo issued a Resolution adopting the JRS to 2020'; năm 2005 suy ra được từ chính ngữ cảnh (LSDS 24/5/2005, báo cáo 12/2005)."}
+{"ref": "unanswerable-200ea2a853#s1", "gold": "NO_CLAIM", "why": "Nói nguồn không có con số dự kiến cho 2025; luật 2."}
