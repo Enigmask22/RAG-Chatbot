@@ -10,38 +10,38 @@
 
 ### 1.1 Code thực tế
 
-| Thành phần | Hiện trạng | Mức độ |
-|---|---|---|
-| Kiến trúc | 1 file `app.py` 666 dòng, logic UI + model + RAG trộn lẫn | POC |
-| Ingestion | `PyPDFLoader` — chỉ text thô, mất bảng/heading/layout | POC |
-| Chunking | `EnhancedChunker` hybrid (semantic + fixed) + cache pickle | Điểm sáng duy nhất |
-| Embedding | `bkai-foundation-models/vietnamese-bi-encoder` — chỉ tiếng Việt, không cross-lingual | Hạn chế |
-| Vector store | `Chroma.from_documents()` **in-memory**, mất sạch khi restart | POC |
-| Retrieval | `as_retriever(k=5)` — dense-only, **không** BM25, **không** rerank, **không** filter | POC |
-| Generation | Vicuna-7B-v1.5 (model 2023, đã lỗi thời), prompt string, parse bằng `text.split("Trả lời:")` | POC |
-| Citation | Không có | Thiếu |
-| State | `st.session_state` — chat history bay khi refresh browser | POC |
-| API | Không có | Thiếu |
-| Eval | Không có bất kỳ metric nào | **Thiếu nghiêm trọng** |
-| Test | 0 test | Thiếu |
-| Observability | Không có | Thiếu |
-| Deploy | Không Dockerfile, không CI | Thiếu |
+| Thành phần    | Hiện trạng                                                                                   | Mức độ                 |
+| ------------- | -------------------------------------------------------------------------------------------- | ---------------------- |
+| Kiến trúc     | 1 file `app.py` 666 dòng, logic UI + model + RAG trộn lẫn                                    | POC                    |
+| Ingestion     | `PyPDFLoader` — chỉ text thô, mất bảng/heading/layout                                        | POC                    |
+| Chunking      | `EnhancedChunker` hybrid (semantic + fixed) + cache pickle                                   | Điểm sáng duy nhất     |
+| Embedding     | `bkai-foundation-models/vietnamese-bi-encoder` — chỉ tiếng Việt, không cross-lingual         | Hạn chế                |
+| Vector store  | `Chroma.from_documents()` **in-memory**, mất sạch khi restart                                | POC                    |
+| Retrieval     | `as_retriever(k=5)` — dense-only, **không** BM25, **không** rerank, **không** filter         | POC                    |
+| Generation    | Vicuna-7B-v1.5 (model 2023, đã lỗi thời), prompt string, parse bằng `text.split("Trả lời:")` | POC                    |
+| Citation      | Không có                                                                                     | Thiếu                  |
+| State         | `st.session_state` — chat history bay khi refresh browser                                    | POC                    |
+| API           | Không có                                                                                     | Thiếu                  |
+| Eval          | Không có bất kỳ metric nào                                                                   | **Thiếu nghiêm trọng** |
+| Test          | 0 test                                                                                       | Thiếu                  |
+| Observability | Không có                                                                                     | Thiếu                  |
+| Deploy        | Không Dockerfile, không CI                                                                   | Thiếu                  |
 
 ### 1.2 Rủi ro với CV hiện tại (cần xử lý trước khi phỏng vấn)
 
 Mục CV đang ghi cho project này:
 
-> *"...ChromaDB, FAISS, embedding models, chunking strategies (semantic + fixed), **hybrid search**, grounded answer generation, retrieval caching"*
-> *"...achieving **3× faster** processing, **15× faster** reprocessing, and an **80–90% cache hit rate** on GPU T4"*
+> _"...ChromaDB, FAISS, embedding models, chunking strategies (semantic + fixed), **hybrid search**, grounded answer generation, retrieval caching"_
+> _"...achieving **3× faster** processing, **15× faster** reprocessing, and an **80–90% cache hit rate** on GPU T4"_
 
 Vấn đề:
 
-1. **"Hybrid search" không tồn tại trong code.** Trong repo, "hybrid" là *hybrid chunking* (semantic + fixed), không phải *hybrid retrieval* (BM25 + dense). Interviewer hỏi "anh fuse BM25 và dense bằng RRF hay weighted score?" là lộ ngay. → Sau nâng cấp thì claim này thành **đúng**.
+1. **"Hybrid search" không tồn tại trong code.** Trong repo, "hybrid" là _hybrid chunking_ (semantic + fixed), không phải _hybrid retrieval_ (BM25 + dense). Interviewer hỏi "anh fuse BM25 và dense bằng RRF hay weighted score?" là lộ ngay. → Sau nâng cấp thì claim này thành **đúng**.
 2. **"FAISS" không xuất hiện trong code**, chỉ nằm trong `requirements.txt` như comment `# Alternative vector database`.
 3. **Các con số 3×/15×/80–90% không có artifact chứng minh** — không có benchmark script, không có log, không có bảng số. Interviewer kỹ tính sẽ hỏi "đo trên bao nhiêu doc, baseline là gì?". → Sau nâng cấp sẽ có `reports/` với số liệu tái lập được.
 4. **Thiếu hoàn toàn từ khóa mà JD RAG 2026 nào cũng có**: reranking, evaluation/RAGAS, observability, citation/grounding, latency SLO.
 
-**Kết luận:** project hiện tại đang ở mức "làm theo tutorial AIO/LangChain". Sau nâng cấp phải trả lời được câu hỏi kinh điển: *"Làm sao anh biết retrieval của anh tốt?"* — đây chính là ranh giới giữa junior POC và junior production.
+**Kết luận:** project hiện tại đang ở mức "làm theo tutorial AIO/LangChain". Sau nâng cấp phải trả lời được câu hỏi kinh điển: _"Làm sao anh biết retrieval của anh tốt?"_ — đây chính là ranh giới giữa junior POC và junior production.
 
 ---
 
@@ -145,25 +145,61 @@ Serving Plane **không bao giờ** import code từ Pipeline Plane. Hai bên ch�
   "created_at": "2026-09-02T10:00:00Z",
   "git_sha": "a1b2c3d",
   "components": {
-    "chunking":  { "strategy": "structure_aware_contextual", "target_tokens": 512, "overlap_tokens": 64 },
-    "embedding": { "model": "BAAI/bge-m3", "dim": 1024, "normalize": true, "revision": "5617a9f" },
-    "index":     { "backend": "qdrant", "collection": "docs_v14", "snapshot": "s3://bundles/idx_v14.snapshot" },
-    "retrieval": { "mode": "hybrid_rrf", "dense_k": 50, "sparse_k": 50, "rrf_k": 60 },
-    "rerank":    { "model": "BAAI/bge-reranker-v2-m3", "top_n": 6 },
-    "prompt":    { "id": "grounded_qa_vi_en", "version": 7 },
-    "generation":{ "primary": "deepseek-chat", "fallback": "qwen3-8b-vllm", "max_tokens": 1024, "temperature": 0.0 }
+    "chunking": {
+      "strategy": "structure_aware_contextual",
+      "target_tokens": 512,
+      "overlap_tokens": 64,
+    },
+    "embedding": {
+      "model": "BAAI/bge-m3",
+      "dim": 1024,
+      "normalize": true,
+      "revision": "5617a9f",
+    },
+    "index": {
+      "backend": "qdrant",
+      "collection": "docs_v14",
+      "snapshot": "s3://bundles/idx_v14.snapshot",
+    },
+    "retrieval": {
+      "mode": "hybrid_rrf",
+      "dense_k": 50,
+      "sparse_k": 50,
+      "rrf_k": 60,
+    },
+    "rerank": { "model": "BAAI/bge-reranker-v2-m3", "top_n": 6 },
+    "prompt": { "id": "grounded_qa_vi_en", "version": 7 },
+    "generation": {
+      "primary": "deepseek-chat",
+      "fallback": "qwen3-8b-vllm",
+      "max_tokens": 1024,
+      "temperature": 0.0,
+    },
   },
   "eval": {
     "golden_set": "golden_v3 (247 queries)",
-    "evaluated_with_generator": "deepseek-chat@2026-08",   // BẮT BUỘC: gate chỉ so like-for-like
-    "judge": { "model": "deepseek-reasoner", "temperature": 0.0, "kappa_vs_human": 0.68 },
-    "recall@10": 0.913, "ndcg@10": 0.847, "mrr": 0.791,
-    "faithfulness": 0.94, "answer_relevancy": 0.89, "citation_accuracy": 0.91,
+    "evaluated_with_generator": "deepseek-chat@2026-08", // BẮT BUỘC: gate chỉ so like-for-like
+    "judge": {
+      "model": "deepseek-reasoner",
+      "temperature": 0.0,
+      "kappa_vs_human": 0.68,
+    },
+    "recall@10": 0.913,
+    "ndcg@10": 0.847,
+    "mrr": 0.791,
+    "faithfulness": 0.94,
+    "answer_relevancy": 0.89,
+    "citation_accuracy": 0.91,
     "refusal_correctness": 0.88,
-    "p95_latency_ms": 2840, "cost_per_query_usd": 0.0031
+    "p95_latency_ms": 2840,
+    "cost_per_query_usd": 0.0031,
   },
-  "gate": { "champion_compared": "1.3.2", "status": "PASS", "report": "reports/eval_v140.html" },
-  "checksum": "sha256:..."
+  "gate": {
+    "champion_compared": "1.3.2",
+    "status": "PASS",
+    "report": "reports/eval_v140.html",
+  },
+  "checksum": "sha256:...",
 }
 ```
 
@@ -189,14 +225,14 @@ Bước 7 là **Continuous Training loop** — cực kỳ ăn điểm với JD n
 
 ### 3.1 Ingestion — từ "đọc text" lên "hiểu tài liệu"
 
-| Hiện tại | Nâng cấp |
-|---|---|
-| `PyPDFLoader` | **Docling** (IBM) hoặc **unstructured**: layout-aware, giữ heading hierarchy, trích bảng ra Markdown, đọc reading-order đúng với PDF 2 cột |
+| Hiện tại         | Nâng cấp                                                                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PyPDFLoader`    | **Docling** (IBM) hoặc **unstructured**: layout-aware, giữ heading hierarchy, trích bảng ra Markdown, đọc reading-order đúng với PDF 2 cột               |
 | Không xử lý scan | **OCR fallback**: phát hiện trang scan (text density < threshold) → Qwen2.5-VL / Gemini Vision (bạn đã có kinh nghiệm từ SmartSchool → tái sử dụng được) |
-| Chỉ PDF | PDF, DOCX, PPTX, XLSX, HTML, Markdown, EML |
-| Đồng bộ, chặn UI | **Async job queue** (arq/Celery): `POST /ingest` trả `job_id`, worker xử lý nền, `GET /ingest/{job_id}` theo dõi tiến độ |
-| Không dedupe | Content-hash dedupe + incremental re-index (chỉ embed lại chunk thay đổi) |
-| Không metadata | Metadata phong phú: `doc_id, page, section_path, lang, doc_type, effective_date, tenant_id, table_flag` → dùng cho **metadata filtering** khi retrieve |
+| Chỉ PDF          | PDF, DOCX, PPTX, XLSX, HTML, Markdown, EML                                                                                                               |
+| Đồng bộ, chặn UI | **Async job queue** (arq/Celery): `POST /ingest` trả `job_id`, worker xử lý nền, `GET /ingest/{job_id}` theo dõi tiến độ                                 |
+| Không dedupe     | Content-hash dedupe + incremental re-index (chỉ embed lại chunk thay đổi)                                                                                |
+| Không metadata   | Metadata phong phú: `doc_id, page, section_path, lang, doc_type, effective_date, tenant_id, table_flag` → dùng cho **metadata filtering** khi retrieve   |
 
 ### 3.2 Chunking — giữ điểm mạnh sẵn có, nâng lên state-of-the-art
 
@@ -212,13 +248,13 @@ Giữ `EnhancedChunker` (đó là phần bạn tự viết, có giá trị) như
 
 ### 3.3 Embedding & Index
 
-| Hạng mục | Chọn | Lý do |
-|---|---|---|
-| Embedding | **BAAI/bge-m3** | Multilingual mạnh với tiếng Việt, 8192 token context, sinh **đồng thời** dense + sparse (lexical) + ColBERT multi-vector → hybrid search "native". Đúng yêu cầu corpus song ngữ Việt–Anh |
-| Đối chứng | `multilingual-e5-large`, `gte-multilingual-base`, giữ `vietnamese-bi-encoder` làm baseline | Có ablation → có bảng số → có nội dung kể trong phỏng vấn |
-| Vector DB | **Qdrant** | Hybrid search native, payload filtering, named vectors, scalar/binary quantization, snapshot API (phục vụ bundle), có Docker image nhẹ |
-| Giữ Chroma? | Bỏ khỏi production, giữ trong pipeline làm baseline so sánh | Trung thực với CV |
-| Quantization | Scalar quantization int8 + HNSW tuning (`m`, `ef_construct`) | Ghi điểm phần "inference optimization" bạn đang explore |
+| Hạng mục     | Chọn                                                                                       | Lý do                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Embedding    | **BAAI/bge-m3**                                                                            | Multilingual mạnh với tiếng Việt, 8192 token context, sinh **đồng thời** dense + sparse (lexical) + ColBERT multi-vector → hybrid search "native". Đúng yêu cầu corpus song ngữ Việt–Anh |
+| Đối chứng    | `multilingual-e5-large`, `gte-multilingual-base`, giữ `vietnamese-bi-encoder` làm baseline | Có ablation → có bảng số → có nội dung kể trong phỏng vấn                                                                                                                                |
+| Vector DB    | **Qdrant**                                                                                 | Hybrid search native, payload filtering, named vectors, scalar/binary quantization, snapshot API (phục vụ bundle), có Docker image nhẹ                                                   |
+| Giữ Chroma?  | Bỏ khỏi production, giữ trong pipeline làm baseline so sánh                                | Trung thực với CV                                                                                                                                                                        |
+| Quantization | Scalar quantization int8 + HNSW tuning (`m`, `ef_construct`)                               | Ghi điểm phần "inference optimization" bạn đang explore                                                                                                                                  |
 
 ### 3.4 Retrieval — nơi tạo khác biệt lớn nhất
 
@@ -261,28 +297,28 @@ Ràng buộc: **RTX 4060 Laptop 8GB**, không có Claude key, chỉ có **DeepSe
 
 #### Ngân sách VRAM 8GB — vì sao không thể self-host generator tại local
 
-| Thành phần | VRAM (fp16) | Ghi chú |
-|---|---:|---|
-| `bge-m3` | ~2.3 GB | thường trực trong Serving Plane |
-| `bge-reranker-v2-m3` | ~2.2 GB | thường trực |
-| **Còn lại** | **~3.5 GB** | sau khi trừ overhead CUDA/driver |
-| Qwen3-8B AWQ 4-bit | ~5 GB weights + KV cache | **không vừa** |
+| Thành phần           |              VRAM (fp16) | Ghi chú                          |
+| -------------------- | -----------------------: | -------------------------------- |
+| `bge-m3`             |                  ~2.3 GB | thường trực trong Serving Plane  |
+| `bge-reranker-v2-m3` |                  ~2.2 GB | thường trực                      |
+| **Còn lại**          |              **~3.5 GB** | sau khi trừ overhead CUDA/driver |
+| Qwen3-8B AWQ 4-bit   | ~5 GB weights + KV cache | **không vừa**                    |
 
 Context RAG thực tế (6 chunk × ~1000 token + prompt + output) cần KV cache đáng kể. Kết luận: **8GB đủ cho embedding + reranker, không đủ để thêm generator.** Đây là lý do kỹ thuật, không phải lựa chọn tùy tiện.
 
 #### Bảng phân vai
 
-| Vai | Chạy ở đâu | Model | Vì sao |
-|---|---|---|---|
-| Embedding | **Local GPU** | `bge-m3` | Không cần API. Quyết định phần lớn metric |
-| Reranker | **Local GPU** | `bge-reranker-v2-m3` | Như trên |
-| **Generator được đo** (pipeline eval) | **vLLM, GPU thuê** | `Qwen3-8B` pinned revision, `temp=0`, seed cố định | **Tái lập tuyệt đối** — số dịch chuyển thì chắc chắn do retrieval, không do provider đổi model ngầm |
-| Contextual chunking (5–10k call) | **vLLM offline batch, GPU thuê** | `Qwen3-8B` | Rẻ nhất, không rate limit, không phụ thuộc mạng |
-| Golden set draft generation | DeepSeek API | `deepseek-chat` | Chạy 1 lần, rẻ |
-| Generator production (serving) | **DeepSeek API** → OpenRouter fallback → vLLM profile | `deepseek-chat` | Always-on, không cần GPU → giữ được demo public (`G6`) |
-| Query rewrite (online) | DeepSeek API | `deepseek-chat` | Latency thấp, không chịu được cold start của vLLM |
-| **Judge** | **DeepSeek trực tiếp** | `deepseek-reasoner`, `temp=0`, pinned | Judge là **dụng cụ đo** — phải là model mạnh nhất có sẵn |
-| Judge cross-check (50 mẫu) | OpenRouter, **pin slug khác họ** | không dùng preset | Đo agreement giữa 2 họ model → phát hiện bias của judge chính |
+| Vai                                   | Chạy ở đâu                                            | Model                                              | Vì sao                                                                                              |
+| ------------------------------------- | ----------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Embedding                             | **Local GPU**                                         | `bge-m3`                                           | Không cần API. Quyết định phần lớn metric                                                           |
+| Reranker                              | **Local GPU**                                         | `bge-reranker-v2-m3`                               | Như trên                                                                                            |
+| **Generator được đo** (pipeline eval) | **vLLM, GPU thuê**                                    | `Qwen3-8B` pinned revision, `temp=0`, seed cố định | **Tái lập tuyệt đối** — số dịch chuyển thì chắc chắn do retrieval, không do provider đổi model ngầm |
+| Contextual chunking (5–10k call)      | **vLLM offline batch, GPU thuê**                      | `Qwen3-8B`                                         | Rẻ nhất, không rate limit, không phụ thuộc mạng                                                     |
+| Golden set draft generation           | DeepSeek API                                          | `deepseek-chat`                                    | Chạy 1 lần, rẻ                                                                                      |
+| Generator production (serving)        | **DeepSeek API** → OpenRouter fallback → vLLM profile | `deepseek-chat`                                    | Always-on, không cần GPU → giữ được demo public (`G6`)                                              |
+| Query rewrite (online)                | DeepSeek API                                          | `deepseek-chat`                                    | Latency thấp, không chịu được cold start của vLLM                                                   |
+| **Judge**                             | **DeepSeek trực tiếp**                                | `deepseek-reasoner`, `temp=0`, pinned              | Judge là **dụng cụ đo** — phải là model mạnh nhất có sẵn                                            |
+| Judge cross-check (50 mẫu)            | OpenRouter, **pin slug khác họ**                      | không dùng preset                                  | Đo agreement giữa 2 họ model → phát hiện bias của judge chính                                       |
 
 #### Ba quy tắc bắt buộc về tính tái lập
 
@@ -295,7 +331,7 @@ Context RAG thực tế (6 chunk × ~1000 token + prompt + output) cần KV cach
 Nếu pipeline eval dùng Qwen3-8B (vLLM) mà production serve DeepSeek → **gate đang gác một hệ thống khác với hệ thống thật**. Xử lý:
 
 - Tách rõ **2 tầng eval**:
-  - **Retrieval eval** (Recall@k, nDCG, MRR, P@k) — **không cần LLM nào**, chỉ cần embedding + reranker chạy local. Deterministic, rẻ, chạy trong CI mỗi commit. *Đây là phần lõi và hoàn toàn không bị ảnh hưởng bởi việc thiếu Claude key.*
+  - **Retrieval eval** (Recall@k, nDCG, MRR, P@k) — **không cần LLM nào**, chỉ cần embedding + reranker chạy local. Deterministic, rẻ, chạy trong CI mỗi commit. _Đây là phần lõi và hoàn toàn không bị ảnh hưởng bởi việc thiếu Claude key._
   - **End-to-end eval** (faithfulness, citation accuracy, refusal) — cần generator, chạy nightly, ghi rõ generator nào.
 - Thêm **generator ablation** vào ma trận: `Qwen3-8B (vLLM)` vs `deepseek-chat` vs `OpenRouter pinned slug` trên **cùng một retrieval stack** → bảng quality × latency × cost. Bảng này biến ràng buộc phần cứng thành một **quyết định model routing có số liệu** — đúng thứ JD ghi "model selection / cost governance" muốn nghe.
 - Trong so sánh head-to-head giữa các generator, ưu tiên **metric xác định** (citation accuracy, refusal correctness — kiểm bằng rule, không qua judge) để tránh self-preference bias khi judge cùng họ với một trong các generator. Faithfulness vẫn báo cáo nhưng **ghi rõ cảnh báo bias**.
@@ -304,35 +340,35 @@ Nếu pipeline eval dùng Qwen3-8B (vLLM) mà production serve DeepSeek → **ga
 
 **Chỉ 3 task bắt buộc cần GPU lớn hơn 4060.** Tổng cả dự án ước ~10–20 GPU-hour.
 
-| Task | Vì sao cần | VRAM tối thiểu | Ước lượng thô |
-|---|---|---|---|
-| `W3-04` Contextual chunking | ~15k chunk, prompt chứa cả tài liệu → KV cache lớn, 8GB không đủ | 24 GB | 2–4h |
-| `W5-11` Generator ablation, nhánh vLLM | Serve `Qwen3-8B` cho 250 query e2e | 24 GB | 1–2h |
-| *(tùy chọn)* Fine-tune reranker/embedding | `bge-reranker-v2-m3` chỉ ~568M tham số → 24GB thừa sức | 24 GB | 3–6h |
-| `W2-08`, `W3-09` Ablation index | **Không bắt buộc** — 4060 chạy qua đêm là xong | — | — |
+| Task                                      | Vì sao cần                                                       | VRAM tối thiểu | Ước lượng thô |
+| ----------------------------------------- | ---------------------------------------------------------------- | -------------- | ------------- |
+| `W3-04` Contextual chunking               | ~15k chunk, prompt chứa cả tài liệu → KV cache lớn, 8GB không đủ | 24 GB          | 2–4h          |
+| `W5-11` Generator ablation, nhánh vLLM    | Serve `Qwen3-8B` cho 250 query e2e                               | 24 GB          | 1–2h          |
+| _(tùy chọn)_ Fine-tune reranker/embedding | `bge-reranker-v2-m3` chỉ ~568M tham số → 24GB thừa sức           | 24 GB          | 3–6h          |
+| `W2-08`, `W3-09` Ablation index           | **Không bắt buộc** — 4060 chạy qua đêm là xong                   | —              | —             |
 
 ##### Chọn cấu hình RunPod
 
 **Secure Cloud vs Community Cloud** — đây là quyết định quan trọng nhất, và là lý do RunPod tốt hơn vast.ai:
 
-| | Secure Cloud | Community Cloud |
-|---|---|---|
-| Chủ máy | Đối tác datacenter được RunPod thẩm định | Cá nhân / host nhỏ ngang mô hình vast.ai |
-| Mô hình tin cậy | Có kiểm soát vận hành & vật lý | Chủ máy có root — coi như đã bị xâm nhập |
-| Giá | Cao hơn | Rẻ hơn |
-| **Khuyến nghị** | ✅ **Dùng mặc định** | Chỉ cho job throwaway, không dữ liệu nhạy cảm |
+|                 | Secure Cloud                             | Community Cloud                               |
+| --------------- | ---------------------------------------- | --------------------------------------------- |
+| Chủ máy         | Đối tác datacenter được RunPod thẩm định | Cá nhân / host nhỏ ngang mô hình vast.ai      |
+| Mô hình tin cậy | Có kiểm soát vận hành & vật lý           | Chủ máy có root — coi như đã bị xâm nhập      |
+| Giá             | Cao hơn                                  | Rẻ hơn                                        |
+| **Khuyến nghị** | ✅ **Dùng mặc định**                     | Chỉ cho job throwaway, không dữ liệu nhạy cảm |
 
 Chênh lệch giá trên tổng ~15 GPU-hour là rất nhỏ so với việc mất kiểm soát dữ liệu. **Chốt: Secure Cloud.**
 
 **GPU nên chọn:**
 
-| GPU | VRAM | Dùng cho | Đánh giá |
-|---|---:|---|---|
+| GPU          |  VRAM | Dùng cho                                                    | Đánh giá                                               |
+| ------------ | ----: | ----------------------------------------------------------- | ------------------------------------------------------ |
 | **RTX 4090** | 24 GB | Contextual chunking, generator ablation, fine-tune reranker | ✅ **Mặc định** — throughput/giá tốt nhất cho model 8B |
-| L4 | 24 GB | Như trên nhưng chậm hơn | Rẻ hơn; hợp job dài chạy qua đêm, không gấp |
-| RTX A5000 | 24 GB | Index build, embedding ablation | Rẻ, đủ cho job không cần throughput cao |
-| L40S / A40 | 48 GB | Chỉ khi muốn thêm `Qwen3-14B/32B` vào generator ablation | Mở rộng scope, không bắt buộc |
-| A100 / H100 | 80 GB | Không cần cho scope này | Lãng phí tiền |
+| L4           | 24 GB | Như trên nhưng chậm hơn                                     | Rẻ hơn; hợp job dài chạy qua đêm, không gấp            |
+| RTX A5000    | 24 GB | Index build, embedding ablation                             | Rẻ, đủ cho job không cần throughput cao                |
+| L40S / A40   | 48 GB | Chỉ khi muốn thêm `Qwen3-14B/32B` vào generator ablation    | Mở rộng scope, không bắt buộc                          |
+| A100 / H100  | 80 GB | Không cần cho scope này                                     | Lãng phí tiền                                          |
 
 **Pod vs Serverless:** dùng **Pod (On-Demand)** cho tất cả. Serverless hợp với endpoint always-on chịu tải thất thường — không phải mô hình của ta (job batch 2–4h). Cold start của Serverless với model 8B còn làm chậm eval.
 
@@ -344,7 +380,7 @@ Chênh lệch giá trên tổng ~15 GPU-hour là rất nhỏ so với việc m�
 
 ##### Nguyên tắc secret (giữ nguyên, không nới lỏng)
 
-**Nguyên tắc kiến trúc:** *máy GPU thuê chỉ chạy job GPU-bound, tự chứa; mọi thứ chạm tới API trả phí đều chạy ở máy local.*
+**Nguyên tắc kiến trúc:** _máy GPU thuê chỉ chạy job GPU-bound, tự chứa; mọi thứ chạm tới API trả phí đều chạy ở máy local._
 
 Hệ quả: **không job nào ở trên cần API key.** Contextual chunking dùng vLLM chạy ngay trên pod. Generator ablation tách nhánh theo nơi chạy — nhánh vLLM trên pod, nhánh DeepSeek/OpenRouter chạy từ laptop (chúng không cần GPU). Judge luôn chạy từ laptop.
 
@@ -355,7 +391,7 @@ Quy tắc vận hành trên RunPod:
 1. **SSH bằng keypair riêng cho RunPod**, không dùng chung key với GitHub/máy cá nhân. Thu hồi khi xong dự án.
 2. **Không đặt `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY` vào pod env vars hay RunPod Secrets** — không ngoại lệ.
 3. **Chuyển dữ liệu:** HF private dataset repo + fine-grained token scoped đúng repo đó (thu hồi sau job), hoặc `runpodctl send/receive`. Không cấu hình git credential trên pod — kéo code từ repo public hoặc upload tarball.
-4. **Không lưu gì nhạy cảm trên network volume** — volume do RunPod quản lý, không mã hóa đầu-cuối phía bạn. *(Với corpus công khai như quyết định bên dưới thì điểm này thành vô hại — đó là một lợi ích phụ của việc chọn dữ liệu public.)*
+4. **Không lưu gì nhạy cảm trên network volume** — volume do RunPod quản lý, không mã hóa đầu-cuối phía bạn. _(Với corpus công khai như quyết định bên dưới thì điểm này thành vô hại — đó là một lợi ích phụ của việc chọn dữ liệu public.)_
 5. Terminate pod khi xong; giữ lại network volume nếu còn phiên sau.
 
 #### Corpus: bắt buộc dùng dữ liệu công khai
@@ -384,6 +420,7 @@ serving/
 ```
 
 Bổ sung:
+
 - **Conversation persistence trong Postgres** thay `st.session_state` — chat history sống sót qua restart, hỗ trợ multi-user.
 - **SSE streaming** thay `invoke()` chặn — UX khác hẳn.
 - **Multi-tenant isolation** ở tầng Qdrant payload filter + Postgres row-level.
@@ -391,12 +428,12 @@ Bổ sung:
 
 ### 3.8 Observability
 
-| Lớp | Công cụ | Đo gì |
-|---|---|---|
-| Trace | **Langfuse** (self-host trong compose) | Full trace mỗi query: rewrite → chunks retrieved (kèm score) → rerank → prompt → completion. Cost & token per step |
-| Metrics | Prometheus + Grafana | RED (rate/error/duration), p50/p95/p99 theo từng stage, cache hit rate, retrieval empty rate, refusal rate, cost/hour |
-| Log | structlog JSON + request_id correlation | Debug được 1 request xuyên toàn hệ thống |
-| Feedback | 👍/👎 + lý do → Postgres → Langfuse score | Câu 👎 tự động vào hàng đợi review → bổ sung golden set |
+| Lớp      | Công cụ                                   | Đo gì                                                                                                                 |
+| -------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Trace    | **Langfuse** (self-host trong compose)    | Full trace mỗi query: rewrite → chunks retrieved (kèm score) → rerank → prompt → completion. Cost & token per step    |
+| Metrics  | Prometheus + Grafana                      | RED (rate/error/duration), p50/p95/p99 theo từng stage, cache hit rate, retrieval empty rate, refusal rate, cost/hour |
+| Log      | structlog JSON + request_id correlation   | Debug được 1 request xuyên toàn hệ thống                                                                              |
+| Feedback | 👍/👎 + lý do → Postgres → Langfuse score | Câu 👎 tự động vào hàng đợi review → bổ sung golden set                                                               |
 
 **Dashboard Grafana "RAG Health"** với: retrieval quality proxy (avg top-1 rerank score), % câu trả lời có citation verified, cost/day, p95 latency. Screenshot dashboard này đưa vào README = ấn tượng ngay từ giây đầu.
 
@@ -436,11 +473,18 @@ Bổ sung:
 # pipeline/experiments/exp_042_matrix.yaml
 name: chunking_x_embedding_ablation
 grid:
-  chunking:  [fixed_512, semantic, hybrid_current, structure_aware, structure_aware_contextual]
+  chunking:
+    [
+      fixed_512,
+      semantic,
+      hybrid_current,
+      structure_aware,
+      structure_aware_contextual,
+    ]
   embedding: [vietnamese-bi-encoder, multilingual-e5-large, bge-m3]
   retrieval: [dense_only, hybrid_rrf]
-  rerank:    [none, bge-reranker-v2-m3]
-  generator: [qwen3-8b-vllm, deepseek-chat]   # chi dung cho e2e eval; retrieval eval khong can
+  rerank: [none, bge-reranker-v2-m3]
+  generator: [qwen3-8b-vllm, deepseek-chat] # chi dung cho e2e eval; retrieval eval khong can
 golden_set: golden_v1
 seed: 1337
 temperature: 0.0
@@ -461,7 +505,7 @@ GATE = {
 }
 ```
 
-`make gate` → PASS/FAIL + HTML report. CI chặn merge nếu FAIL. Đây là câu trả lời hoàn hảo cho *"Làm sao anh biết thay đổi này không làm hệ thống tệ đi?"*
+`make gate` → PASS/FAIL + HTML report. CI chặn merge nếu FAIL. Đây là câu trả lời hoàn hảo cho _"Làm sao anh biết thay đổi này không làm hệ thống tệ đi?"_
 
 ---
 
@@ -506,6 +550,7 @@ rag-platform/
 ```
 
 **Quy tắc bất khả xâm phạm:**
+
 - `serving/` **không** import `pipeline/`. Cả hai chỉ import `packages/rag_core`.
 - `serving/` **không** chứa hằng số config retrieval — mọi thứ đến từ `RagBundle`.
 - Mọi thay đổi ảnh hưởng chất lượng → phải đi qua `pipeline/eval` → `gate` → `promote`.
@@ -514,14 +559,14 @@ rag-platform/
 
 ## 6. Lộ trình 6 tuần (part-time ~12–15h/tuần)
 
-| Tuần | Mục tiêu | Deliverable kiểm chứng được |
-|---|---|---|
-| **1** | **Nền móng + Eval trước tiên** | Monorepo, `rag_core` refactor từ code cũ, docker-compose (qdrant/postgres/redis), **golden set v1 (150 query)**, retrieval eval chạy được, **baseline number của hệ thống hiện tại** |
-| **2** | **Retrieval upgrade** | bge-m3, hybrid RRF, reranker, metadata filter. Ablation matrix đầu tiên → leaderboard. Kỳ vọng nDCG@10 tăng rõ rệt so với baseline |
-| **3** | **Ingestion + Chunking nâng cao** | Docling, structure-aware + contextual chunking, parent-child, async ingestion worker, incremental re-index |
-| **4** | **Serving Plane** | FastAPI + SSE streaming + citation + LLM router + Postgres persistence + auth + semantic cache. Bundle loader + hot-reload |
-| **5** | **Eval đầy đủ + Gate + Observability** | RAGAS/judge metrics, judge calibration, `make gate`, Langfuse + Grafana dashboard, CI (lint/test/smoke-eval) + nightly full eval |
-| **6** | **Hoàn thiện & trình bày** | Web UI streaming + citation highlight + feedback, HF Spaces demo, README có số liệu thật, ARCHITECTURE.md + EVALUATION.md, load test (locust), cập nhật CV |
+| Tuần  | Mục tiêu                               | Deliverable kiểm chứng được                                                                                                                                                          |
+| ----- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1** | **Nền móng + Eval trước tiên**         | Monorepo, `rag_core` refactor từ code cũ, docker-compose (qdrant/postgres/redis), **golden set v1 (150 query)**, retrieval eval chạy được, **baseline number của hệ thống hiện tại** |
+| **2** | **Retrieval upgrade**                  | bge-m3, hybrid RRF, reranker, metadata filter. Ablation matrix đầu tiên → leaderboard. Kỳ vọng nDCG@10 tăng rõ rệt so với baseline                                                   |
+| **3** | **Ingestion + Chunking nâng cao**      | Docling, structure-aware + contextual chunking, parent-child, async ingestion worker, incremental re-index                                                                           |
+| **4** | **Serving Plane**                      | FastAPI + SSE streaming + citation + LLM router + Postgres persistence + auth + semantic cache. Bundle loader + hot-reload                                                           |
+| **5** | **Eval đầy đủ + Gate + Observability** | RAGAS/judge metrics, judge calibration, `make gate`, Langfuse + Grafana dashboard, CI (lint/test/smoke-eval) + nightly full eval                                                     |
+| **6** | **Hoàn thiện & trình bày**             | Web UI streaming + citation highlight + feedback, HF Spaces demo, README có số liệu thật, ARCHITECTURE.md + EVALUATION.md, load test (locust), cập nhật CV                           |
 
 **Cần RunPod ở tuần nào:** chỉ **tuần 3** (`W3-04` contextual chunking) và **tuần 5** (`W5-11` generator ablation). Tuần 1, 2, 4, 6 chạy trọn trên 4060 local.
 
@@ -533,21 +578,21 @@ rag-platform/
 
 ## 7. Mapping sang JD thị trường
 
-| Yêu cầu thường gặp trong JD RAG/LLM 2026 | Sau nâng cấp, chứng minh bằng |
-|---|---|
-| Xây dựng RAG pipeline end-to-end | `packages/rag_core` + 2 plane rõ ràng |
-| Hybrid search, reranking | Qdrant sparse+dense, RRF, bge-reranker + **bảng số ablation** |
-| Vector database (Qdrant/Milvus/pgvector) | Qdrant với quantization, snapshot, payload filter |
-| Chunking strategies | 5 chiến lược có so sánh định lượng, kể cả Contextual Retrieval |
-| Đánh giá chất lượng RAG | Golden set + RAGAS + LLM judge **có calibration** + regression gate |
-| Prompt engineering | Prompt registry có version, được eval như một component |
-| LLM API + self-host | Router DeepSeek ⇄ OpenRouter ⇄ vLLM, circuit breaker, budget cap; **generator ablation có số liệu** |
-| FastAPI, streaming, async | SSE, async worker, connection pooling |
-| Docker, CI/CD | Compose 1 lệnh, GitHub Actions, nightly eval |
-| Observability, cost control | Langfuse + Prometheus/Grafana + cost/query dashboard |
-| Guardrails, an toàn | Prompt injection defense, citation verification, PII redaction |
-| MLOps / CT loop | Bundle registry + promotion gate + feedback → golden set |
-| Multi-tenant | Payload filter + row-level isolation |
+| Yêu cầu thường gặp trong JD RAG/LLM 2026 | Sau nâng cấp, chứng minh bằng                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Xây dựng RAG pipeline end-to-end         | `packages/rag_core` + 2 plane rõ ràng                                                               |
+| Hybrid search, reranking                 | Qdrant sparse+dense, RRF, bge-reranker + **bảng số ablation**                                       |
+| Vector database (Qdrant/Milvus/pgvector) | Qdrant với quantization, snapshot, payload filter                                                   |
+| Chunking strategies                      | 5 chiến lược có so sánh định lượng, kể cả Contextual Retrieval                                      |
+| Đánh giá chất lượng RAG                  | Golden set + RAGAS + LLM judge **có calibration** + regression gate                                 |
+| Prompt engineering                       | Prompt registry có version, được eval như một component                                             |
+| LLM API + self-host                      | Router DeepSeek ⇄ OpenRouter ⇄ vLLM, circuit breaker, budget cap; **generator ablation có số liệu** |
+| FastAPI, streaming, async                | SSE, async worker, connection pooling                                                               |
+| Docker, CI/CD                            | Compose 1 lệnh, GitHub Actions, nightly eval                                                        |
+| Observability, cost control              | Langfuse + Prometheus/Grafana + cost/query dashboard                                                |
+| Guardrails, an toàn                      | Prompt injection defense, citation verification, PII redaction                                      |
+| MLOps / CT loop                          | Bundle registry + promotion gate + feedback → golden set                                            |
+| Multi-tenant                             | Payload filter + row-level isolation                                                                |
 
 Sau khi hoàn thành, project này **một mình** phủ gần trọn một JD Mid-level RAG Engineer, không chỉ Junior.
 
@@ -591,20 +636,20 @@ Sau khi hoàn thành, project này **một mình** phủ gần trọn một JD M
 
 ## 9. Rủi ro & cách kiểm soát
 
-| Rủi ro | Xác suất | Giảm thiểu |
-|---|---|---|
-| Scope creep, làm 3 tháng không xong | Cao | Tuần 1 phải có eval chạy được. Mỗi tuần 1 deliverable demo được. Cắt tính năng, không cắt eval |
-| Chi phí LLM judge cho eval | Thấp | DeepSeek rất rẻ so với frontier model; cache judge theo hash (query+answer+context), smoke set 30 câu cho CI, full set chỉ nightly |
-| OpenRouter preset đổi model ngầm → metric dịch không rõ nguyên nhân | **Cao** | Cấm dùng preset trong eval; luôn pin slug; log field `model` thực tế trong response và cảnh báo khi lệch |
-| Eval bằng Qwen3-8B nhưng production serve DeepSeek → gate gác sai hệ thống | **Cao** | `RagBundle.evaluated_with_generator` bắt buộc; gate chỉ so like-for-like; chạy generator ablation định kỳ |
-| 8GB VRAM không đủ cho embedding + reranker + LLM cùng lúc | Cao | Serving chỉ giữ embedding + reranker trên GPU (~4.5GB); generator qua API. vLLM chỉ bật theo phiên trên GPU thuê |
-| Golden set tốn công thủ công | Cao | LLM sinh nháp → chỉ review/sửa. 150 câu ≈ 6–8h. Đây là khoản đầu tư đáng giá nhất trong project |
-| Không có GPU thường trực | Trung bình | Pipeline plane chạy theo phiên trên RunPod Secure Cloud (RTX 4090 24GB) + network volume. Serving plane không cần GPU (dùng API) |
-| Lộ API key / dữ liệu trên GPU thuê | Trung bình (Secure Cloud) | Pod chỉ chạy job GPU-bound tự chứa, **không mang API key**. Chuyển dữ liệu bằng token scoped ngắn hạn, thu hồi sau job. SSH keypair riêng cho RunPod. **Không dùng Community Cloud** |
-| Dùng tài liệu thật của khách hàng Enigmas → vi phạm NDA | **Cao, hậu quả nặng** | Bắt buộc corpus công khai (World Bank/ADB VN, văn bản pháp luật có bản dịch chính thức, báo cáo thường niên HOSE). Kiểm tra ở `W0-03` trước khi ingest bất cứ file nào |
-| Quên terminate pod / network volume tính tiền âm thầm | Trung bình | Đặt spending limit trên RunPod; checklist cuối mỗi phiên phải terminate pod; ghi GPU-hour đã dùng vào `reports/tasks/gpu-usage.md` |
-| Over-engineering, khó demo | Trung bình | `make up` phải chạy được toàn bộ trên laptop. HF Spaces demo là bắt buộc |
-| Repo cũ đang được link trong CV | — | Nâng cấp **trên repo mới**, giữ repo cũ tới khi bản mới có README + demo hoàn chỉnh, rồi mới đổi link |
+| Rủi ro                                                                     | Xác suất                  | Giảm thiểu                                                                                                                                                                           |
+| -------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Scope creep, làm 3 tháng không xong                                        | Cao                       | Tuần 1 phải có eval chạy được. Mỗi tuần 1 deliverable demo được. Cắt tính năng, không cắt eval                                                                                       |
+| Chi phí LLM judge cho eval                                                 | Thấp                      | DeepSeek rất rẻ so với frontier model; cache judge theo hash (query+answer+context), smoke set 30 câu cho CI, full set chỉ nightly                                                   |
+| OpenRouter preset đổi model ngầm → metric dịch không rõ nguyên nhân        | **Cao**                   | Cấm dùng preset trong eval; luôn pin slug; log field `model` thực tế trong response và cảnh báo khi lệch                                                                             |
+| Eval bằng Qwen3-8B nhưng production serve DeepSeek → gate gác sai hệ thống | **Cao**                   | `RagBundle.evaluated_with_generator` bắt buộc; gate chỉ so like-for-like; chạy generator ablation định kỳ                                                                            |
+| 8GB VRAM không đủ cho embedding + reranker + LLM cùng lúc                  | Cao                       | Serving chỉ giữ embedding + reranker trên GPU (~4.5GB); generator qua API. vLLM chỉ bật theo phiên trên GPU thuê                                                                     |
+| Golden set tốn công thủ công                                               | Cao                       | LLM sinh nháp → chỉ review/sửa. 150 câu ≈ 6–8h. Đây là khoản đầu tư đáng giá nhất trong project                                                                                      |
+| Không có GPU thường trực                                                   | Trung bình                | Pipeline plane chạy theo phiên trên RunPod Secure Cloud (RTX 4090 24GB) + network volume. Serving plane không cần GPU (dùng API)                                                     |
+| Lộ API key / dữ liệu trên GPU thuê                                         | Trung bình (Secure Cloud) | Pod chỉ chạy job GPU-bound tự chứa, **không mang API key**. Chuyển dữ liệu bằng token scoped ngắn hạn, thu hồi sau job. SSH keypair riêng cho RunPod. **Không dùng Community Cloud** |
+| Dùng tài liệu thật của khách hàng Enigmas → vi phạm NDA                    | **Cao, hậu quả nặng**     | Bắt buộc corpus công khai (World Bank/ADB VN, văn bản pháp luật có bản dịch chính thức, báo cáo thường niên HOSE). Kiểm tra ở `W0-03` trước khi ingest bất cứ file nào               |
+| Quên terminate pod / network volume tính tiền âm thầm                      | Trung bình                | Đặt spending limit trên RunPod; checklist cuối mỗi phiên phải terminate pod; ghi GPU-hour đã dùng vào `reports/tasks/gpu-usage.md`                                                   |
+| Over-engineering, khó demo                                                 | Trung bình                | `make up` phải chạy được toàn bộ trên laptop. HF Spaces demo là bắt buộc                                                                                                             |
+| Repo cũ đang được link trong CV                                            | —                         | Nâng cấp **trên repo mới**, giữ repo cũ tới khi bản mới có README + demo hoàn chỉnh, rồi mới đổi link                                                                                |
 
 ---
 
