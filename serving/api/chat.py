@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, time, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from rag_core.llm import BudgetExceeded
 from rag_core.retrieval.filters import MetadataFilter
 from serving.api.security import principal_of
 from serving.api.sse import SSE_HEADERS, encode
@@ -34,6 +36,13 @@ __all__ = ["router"]
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+
+def _seconds_to_utc_midnight() -> int:
+    """Bao nhiêu giây nữa thì ngân sách ngày được nạp lại. Xem `DailyBudget`."""
+    now = datetime.now(UTC)
+    tomorrow = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=UTC)
+    return max(1, int((tomorrow - now).total_seconds()))
 
 
 def get_service(request: Request) -> ChatService:
@@ -87,6 +96,16 @@ async def chat(
         )
     except ConversationNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except BudgetExceeded as exc:
+        # ⭐ `429`, không `503`: trần chi phí là một **hạn mức**, và nó hết cho
+        # tới nửa đêm UTC chứ không phải "thử lại sau vài giây". `Retry-After`
+        # nói ra con số ấy để client không phải đoán — cùng khuôn với hạn mức
+        # nhịp của `W4-04`.
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            str(exc),
+            headers={"Retry-After": str(_seconds_to_utc_midnight())},
+        ) from exc
     except CrossTenantError as exc:
         # Lời của lỗi cố ý **không** nhắc tenant mà client đã xin (`W4-04`).
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
@@ -109,6 +128,28 @@ async def chat(
         media_type="text/event-stream; charset=utf-8",
         headers={**SSE_HEADERS, "X-Conversation-Id": turn.conversation_id},
     )
+
+
+@router.get("/admin/llm")
+def llm_status(service: ServiceDep) -> dict[str, Any]:
+    """Trạng thái bộ định tuyến LLM — `W4-08`.
+
+    Ở file này chứ không ở `admin.py` vì `admin.py` có prefix `/admin/bundle` và
+    tài nguyên ở đây là `ChatService`, không phải registry. Scope `admin` vẫn
+    được ép **tự động**: `W4-04` kiểm theo tiền tố đường dẫn ở middleware, chứ
+    không bằng một dependency gắn tay từng route — nên một route admin mới không
+    thể quên hàng rào.
+
+    ⭐ Đây là chỗ duy nhất nhìn thấy cầu dao. Không có nó thì "primary đang bị
+    cắt, mọi câu trả lời đến từ nhánh dự phòng" là một trạng thái **không quan
+    sát được**: request vẫn 200, câu trả lời vẫn có, chỉ có model khác và hoá
+    đơn khác.
+    """
+    router_obj = getattr(service.llm, "status", None)
+    if router_obj is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chưa cấu hình bộ định tuyến LLM")
+    result: dict[str, Any] = router_obj()
+    return result
 
 
 @router.get("/conversations/{conversation_id}")

@@ -18,7 +18,8 @@ from .base import (
     StreamingLLM,
 )
 from .budget import BudgetExceeded, CostBudget
-from .openai_compat import OpenAICompatProvider
+from .openai_compat import OpenAICompatProvider, PermanentLLMError
+from .router import CircuitBreaker, CircuitState, DailyBudget, LLMRouter, Route
 from .tokenizer import HFTokenCounter
 
 __all__ = [
@@ -31,14 +32,20 @@ __all__ = [
     "MIN_REASONING",
     "BudgetExceeded",
     "ChatMessage",
+    "CircuitBreaker",
+    "CircuitState",
     "CostBudget",
+    "DailyBudget",
     "HFTokenCounter",
     "LLMChunk",
     "LLMError",
     "LLMProvider",
     "LLMResponse",
+    "LLMRouter",
     "ModelPricing",
     "OpenAICompatProvider",
+    "PermanentLLMError",
+    "Route",
     "StreamingLLM",
     "build_deepseek_provider",
     "build_glm_provider",

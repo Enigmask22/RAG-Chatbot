@@ -60,6 +60,7 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `W4-05` Postgres + RLS | [`tasks/w4-05-postgres-alembic.md`](tasks/w4-05-postgres-alembic.md) | — | — | — | ⭐⭐ **`FORCE ROW LEVEL SECURITY`**: chủ bảng được miễn policy, nên `ENABLE` một mình là trang trí trong khi `pg_tables.rowsecurity` vẫn báo `true` |
 | `W4-06` `POST /chat` SSE | [`tasks/w4-06-chat-sse.md`](tasks/w4-06-chat-sse.md) | — | — | — | ⭐⭐ Đường phân giới "còn trả được HTTP status" vs "chỉ còn khung SSE" là một đường **thật** trong mã; lần chạy thật đầu trả **0 ký tự** (1024/1024 token vào chuỗi suy luận) và tìm ra `TD-40` |
 | `W4-07` hiểu câu hỏi | [`tasks/w4-07-query-understanding.md`](tasks/w4-07-query-understanding.md) | — | — | `w4-07-language-directive.json`, `w4-07-real-run.json` | ⭐⭐ Chỉ thị ngôn ngữ **8/8 → 0/8** (tỉ lệ nền là *tất cả*); ⭐⭐ tiêm lỗi phơi ra `"thầy cô"`/`"chị em"` bị xếp là chào hỏi ⇒ **không truy hồi**; ⭐⭐ lần chạy thật **đảo ngược** quyết định "model xem câu gốc". 27 case gán nhãn tay, chỉ **7 held-out (6/7)** là bằng chứng |
+| `W4-08` LLM Router | [`tasks/w4-08-llm-router.md`](tasks/w4-08-llm-router.md) | — | — | `w4-08-router-real.json` | ⭐⭐ Chuyển nhà cung cấp **giữa stream** nối hai câu trả lời khác nhau — ranh giới là mẩu đầu tiên, có hai test kẹp lấy; ⭐ ba loại hỏng ba cách đối xử (`PermanentLLMError` mới); tiêm lỗi 12 phép, **2 sống sót và cả hai là lỗ thật**; chạy thật DeepSeek → GLM |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy

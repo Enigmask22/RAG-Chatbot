@@ -29,11 +29,24 @@ from .base import ChatMessage, LLMChunk, LLMError, LLMProvider, LLMResponse, Mod
 if TYPE_CHECKING:
     import httpx
 
-__all__ = ["OpenAICompatProvider"]
+__all__ = ["OpenAICompatProvider", "PermanentLLMError"]
 
 logger = logging.getLogger(__name__)
 
 _RETRYABLE_STATUS = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+
+
+class PermanentLLMError(LLMError):
+    """4xx **không** thử lại được: request của mình sai, không phải nhà cung cấp chết.
+
+    Từ ngoài nhìn vào, "sai tên model" và "provider sập" trước đây là cùng một
+    `LLMError`, và `W4-08` cần tách chúng: mở cầu dao vì một request sai của
+    chính mình là **tự cắt** nhà cung cấp chính trong 30 giây cho một lỗi mà
+    thử lại bao nhiêu lần cũng thế.
+
+    Vẫn là `LLMError`, nên mọi `except LLMError` đã viết trước đây không đổi
+    hành vi.
+    """
 
 
 class _Transient(LLMError):
@@ -282,7 +295,7 @@ class OpenAICompatProvider(LLMProvider):
                     # 4xx khác là lỗi của mình (sai key, sai slug, prompt quá
                     # dài). Cùng lý lẽ với `_post_with_retry`, và ở đây nó còn
                     # đắt hơn: người dùng đang nhìn một ô chat trống.
-                    raise LLMError(message)
+                    raise PermanentLLMError(message)
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -323,7 +336,7 @@ class OpenAICompatProvider(LLMProvider):
                 if response.status_code not in _RETRYABLE_STATUS:
                     # 4xx khác là lỗi của mình (sai key, sai tên model, prompt
                     # quá dài). Thử lại chỉ tốn tiền và làm chậm việc phát hiện.
-                    raise LLMError(
+                    raise PermanentLLMError(
                         f"{self.model} trả HTTP {response.status_code}: {response.text[:500]}"
                     )
                 last_error = LLMError(f"HTTP {response.status_code}: {response.text[:200]}")

@@ -38,7 +38,11 @@ from rag_core.llm import (
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_GLM_MODEL,
     MIN_REASONING,
+    CircuitBreaker,
+    DailyBudget,
+    LLMRouter,
     OpenAICompatProvider,
+    Route,
     build_deepseek_provider,
     build_glm_provider,
 )
@@ -140,58 +144,137 @@ def _postgres_check() -> Check:
     return check
 
 
-def build_llm(settings: Settings) -> OpenAICompatProvider | None:
-    """Nguồn sinh text của `POST /chat` — `W4-06`.
+def build_provider(
+    settings: Settings, provider: str, model: str | None
+) -> OpenAICompatProvider | None:
+    """Một nhánh của bộ định tuyến. `None` = chưa cấu hình được (thiếu key).
 
-    ⭐ Trả `None` thay vì ném khi thiếu key. Cùng lý lẽ với việc bundle nạp lỗi
-    không giết tiến trình (§đầu module): một container không lên được thì không
-    có `/ready` nào để hỏi vì sao, và ở đây còn tệ hơn vì `/health`, `/ready`,
-    `/admin/bundle` đều còn dùng được bình thường mà không cần LLM. Thiếu key
-    làm hỏng đúng **một** endpoint, nên nó phải hỏng đúng một endpoint.
+    ⭐ Trả `None` thay vì ném. Cùng lý lẽ với việc bundle nạp lỗi không giết
+    tiến trình (§đầu module): một container không lên được thì không có
+    `/ready` nào để hỏi vì sao, và ở đây còn tệ hơn vì `/health`, `/ready`,
+    `/admin/bundle` đều còn dùng được bình thường mà không cần LLM.
 
-    ⭐ Kiểu trả về là lớp **cụ thể**, không phải `StreamingLLM`, và đó là chỗ
-    đúng để hẹp lại: `W4-07` cần cùng client này ở giao diện *không* stream
-    (`LLMProvider.complete`) để viết lại câu hỏi. Một client, một pool kết nối,
-    một model — và điểm hẹp nằm ở factory, nơi kiểu cụ thể vốn đã biết, chứ
-    không lan vào `ChatService` hay `QueryUnderstanding` (cả hai vẫn khai
-    Protocol, nên router của `W4-08` vẫn cắm vào được).
+    ⭐ Kiểu trả về là lớp **cụ thể**, không phải Protocol, và đó là chỗ đúng để
+    hẹp lại: `W4-07` cần cùng client này ở giao diện *không* stream
+    (`LLMProvider.complete`). Một client, một pool kết nối, một model.
+
+    ⚠️ `max_retries` lấy từ `chat_max_retries` (mặc định **1**), không phải mặc
+    định 4 của provider: xem docstring của trường ấy — 4 lần với backoff tới
+    30 s là đúng cho job offline và sai cho một request có người đang đợi.
     """
-    if settings.chat_provider == "none":
+    if provider == "none":
         return None
-    key = (
-        settings.deepseek_api_key if settings.chat_provider == "deepseek" else settings.glm_api_key
-    )
+    key = {
+        "deepseek": settings.deepseek_api_key,
+        "glm": settings.glm_api_key,
+        "openrouter": settings.openrouter_api_key,
+    }.get(provider)
     if key is None:
         logger.warning(
-            "chat_provider=%s nhưng chưa có API key — POST /chat sẽ trả 503, "
+            "nhánh LLM %r chưa có API key — bỏ qua nhánh này",
+            provider,
+        )
+        return None
+    if provider == "deepseek":
+        return build_deepseek_provider(
+            model or DEFAULT_DEEPSEEK_MODEL,
+            api_key=key.get_secret_value(),
+            base_url=settings.deepseek_base_url,
+            max_retries=settings.chat_max_retries,
+        )
+    if provider == "glm":
+        return build_glm_provider(
+            model or DEFAULT_GLM_MODEL,
+            api_key=key.get_secret_value(),
+            base_url=settings.glm_base_url,
+            max_retries=settings.chat_max_retries,
+        )
+    if model is None:
+        # ⚠️ OpenRouter **không** có mặc định ở đây, và đó là quy tắc cứng #1:
+        # slug phải tường minh. Một mặc định ở chỗ này là một con trỏ do người
+        # khác nắm, đúng thứ mà quy tắc ấy cấm.
+        logger.warning("nhánh openrouter cần `chat_fallback_model` là slug tường minh — bỏ qua")
+        return None
+    return OpenAICompatProvider(
+        model,
+        api_key=key.get_secret_value(),
+        base_url=settings.openrouter_base_url,
+        max_retries=settings.chat_max_retries,
+    )
+
+
+def build_llm(settings: Settings) -> LLMRouter | None:
+    """Bộ định tuyến LLM của `POST /chat` — `W4-08`.
+
+    Một nhánh cũng là một router: đường đi qua cầu dao, trần chi phí và dòng log
+    "model thực tế đã phục vụ" giống hệt nhau dù có fallback hay không. Cấu hình
+    một-nhánh và cấu hình hai-nhánh vì thế **không** phải hai đường mã khác nhau
+    — chỗ mà một fallback chưa từng chạy sẽ lặng lẽ hỏng.
+
+    ⭐ `extra_body` gắn vào **từng** `Route`, không vào `ChatService`: xem
+    docstring của `Route.extra_body`. Hai nhà cung cấp cần hai tham số tắt suy
+    luận khác nhau, và một bảng dùng chung hỏng im lặng ở nhà này.
+    """
+    primary = build_provider(settings, settings.chat_provider, settings.chat_model)
+    if primary is None:
+        logger.warning(
+            "chưa cấu hình được nhánh LLM chính (chat_provider=%s) — POST /chat sẽ trả 503, "
             "phần còn lại của API vẫn chạy",
             settings.chat_provider,
         )
         return None
-    if settings.chat_provider == "deepseek":
-        return build_deepseek_provider(
-            settings.chat_model or DEFAULT_DEEPSEEK_MODEL,
-            api_key=key.get_secret_value(),
-            base_url=settings.deepseek_base_url,
+
+    routes = [
+        Route(
+            provider=primary,
+            label=settings.chat_provider,
+            extra_body=MIN_REASONING.get(settings.chat_provider),
+            breaker=CircuitBreaker(
+                failure_threshold=settings.chat_breaker_threshold,
+                cooldown_s=settings.chat_breaker_cooldown_s,
+            ),
         )
-    return build_glm_provider(
-        settings.chat_model or DEFAULT_GLM_MODEL,
-        api_key=key.get_secret_value(),
-        base_url=settings.glm_base_url,
+    ]
+    fallback = build_provider(
+        settings, settings.chat_fallback_provider, settings.chat_fallback_model
     )
+    if fallback is not None:
+        routes.append(
+            Route(
+                provider=fallback,
+                label=settings.chat_fallback_provider,
+                extra_body=MIN_REASONING.get(settings.chat_fallback_provider),
+                breaker=CircuitBreaker(
+                    failure_threshold=settings.chat_breaker_threshold,
+                    cooldown_s=settings.chat_breaker_cooldown_s,
+                ),
+            )
+        )
+    budget = (
+        DailyBudget(settings.chat_daily_budget_usd, name="chat")
+        if settings.chat_daily_budget_usd > 0
+        else None
+    )
+    if budget is None:
+        logger.warning("chat_daily_budget_usd=0 — KHÔNG có trần chi phí ngày cho POST /chat")
+    return LLMRouter(routes=routes, budget=budget)
 
 
-def build_understanding(settings: Settings, llm: OpenAICompatProvider | None) -> QueryUnderstanding:
-    """Bước hiểu câu hỏi của `W4-07`, dùng **chung** client với đường sinh.
+def build_understanding(settings: Settings, llm: LLMRouter | None) -> QueryUnderstanding:
+    """Bước hiểu câu hỏi của `W4-07`, dùng **chung** bộ định tuyến với đường sinh.
 
     ⚠️ `chat_rewrite=false` tắt **đúng một** trong ba việc: viết lại đa lượt, thứ
     duy nhất tốn tiền và tốn TTFB. Định tuyến và phát hiện ngôn ngữ là luật
     thuần, không có lý do nào để tắt và không có công tắc nào tắt chúng.
+
+    ⭐ **Không** truyền `extra_body` nữa: từ `W4-08` mỗi `Route` mang bảng của
+    nhà cung cấp mình, và một giá trị ở tầng lời gọi sẽ **ghi đè** bảng ấy cho
+    *mọi* nhánh — tức áp tham số của DeepSeek lên nhánh GLM, thứ trả HTTP 400.
+    Cùng lý do `ChatService.extra_body` giờ để trống.
     """
     return QueryUnderstanding(
         llm=llm if settings.chat_rewrite else None,
         timeout_s=settings.chat_rewrite_timeout_s,
-        extra_body=MIN_REASONING.get(settings.chat_provider),
     )
 
 
@@ -285,8 +368,8 @@ def create_app(
         llm=llm,
         top_k=resolved.chat_top_k,
         max_tokens=resolved.chat_max_tokens,
-        # Bảng đo được ở `W3-04`, dùng lại nguyên vẹn — xem `ChatService.extra_body`.
-        extra_body=MIN_REASONING.get(resolved.chat_provider),
+        # ⭐ `extra_body` để trống: từ `W4-08` mỗi `Route` mang bảng của nhà
+        # cung cấp mình, và một giá trị ở đây sẽ ghi đè bảng ấy cho MỌI nhánh.
         understanding=build_understanding(resolved, llm),
     )
     # ⚠️ **Thứ tự quan trọng và nó ngược trực giác.** `add_middleware` *chèn lên

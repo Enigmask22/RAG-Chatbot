@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from rag_core.llm import ChatMessage, LLMChunk, LLMError, LLMResponse
+from rag_core.llm import BudgetExceeded, ChatMessage, LLMChunk, LLMError, LLMResponse
 from rag_core.retrieval.filters import MetadataFilter
 from rag_core.schemas import Chunk, DocumentMetadata, RetrievedChunk, TokenUsage
 from serving.api.sse import encode
@@ -456,3 +456,41 @@ def test_an_unknown_language_adds_no_directive_at_all() -> None:
     content = turn.prompt()[-1].content
     assert "Answer in English." not in content
     assert "Trả lời bằng tiếng Việt." not in content
+
+
+# ---------------------------------------------------------------------------
+# `W4-08` — trần chi phí cạn GIỮA lượt
+# ---------------------------------------------------------------------------
+
+
+class BrokeLLM(FakeLLM):
+    """Router báo hết ngân sách ngay khi mở stream."""
+
+    emit_first = False
+    """Mở cờ này thì nó hỏng **sau** mẩu đầu — ca khác hẳn, và chưa cần tới."""
+
+    async def astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[LLMChunk]:
+        if self.emit_first:
+            yield LLMChunk(delta="một mẩu")
+        raise BudgetExceeded("chat/2026-09-04: đã tiêu $1.0000, trần $1.0000")
+
+
+@pytest.mark.asyncio
+async def test_a_budget_that_runs_out_mid_turn_is_an_error_frame_with_its_own_name() -> None:
+    """⚠️ `prepare()` chỉ hỏi được "ngân sách đã cạn chưa" — ở thời điểm ấy prompt
+    chưa tồn tại nên không ước được giá của lời gọi sắp tới. Một lời gọi **vượt**
+    trần vì thế vẫn xảy ra sau `200 OK`, và từ đó nó chỉ còn là một khung SSE.
+
+    `finish_reason` riêng (`budget`) chứ không gộp vào `error`: hết tiền và
+    provider chết là hai sự cố cần hai hành động khác nhau, và gộp chúng lại làm
+    cả hai không đếm được.
+    """
+    service = _service(BrokeLLM())
+    kinds = dict(await _drain(service, _turn()))
+
+    assert "done" not in kinds
+    assert "BudgetExceeded" in kinds["error"]["detail"]
+    assert kinds["error"]["partial_chars"] == 0
+    # Lượt vẫn đi qua đường ghi với nhãn riêng; `_save` thật mới là chỗ từ chối
+    # ghi một hàng rỗng (`test_an_empty_answer_is_not_written_as_an_empty_row`).
+    assert service.saved == [{"text": "", "model": "fake-model", "finish_reason": "budget"}]

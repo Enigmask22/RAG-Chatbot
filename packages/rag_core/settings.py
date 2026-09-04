@@ -136,6 +136,45 @@ class Settings(BaseSettings):
     chat_top_k: int = Field(default=5, ge=1, le=50)
     chat_max_tokens: int = Field(default=1024, ge=1)
 
+    # ------------------------------------------------------- LLM Router (W4-08)
+    chat_fallback_provider: Literal["openrouter", "glm", "none"] = "none"
+    """Nhánh dự phòng khi nhà cung cấp chính hỏng. `none` = chỉ một nhánh.
+
+    ⚠️ Mặc định là `none` **có chủ đích**: một fallback chưa từng được gọi lần
+    nào là một fallback chưa biết có chạy không, và bật nó im lặng nghĩa là lần
+    đầu nó chạy sẽ là lúc nhà chính đang chết — chỗ tệ nhất để phát hiện ra sai
+    key hoặc sai slug. Bật nó là một quyết định, và `GET /admin/llm` cho biết
+    nó đã phục vụ bao nhiêu request.
+    """
+
+    chat_fallback_model: str | None = None
+    """⚠️ Với OpenRouter phải là **slug tường minh** (`deepseek/deepseek-chat`).
+
+    Quy tắc cứng #1 được ép bằng mã ở `OpenAICompatProvider.__init__`: một model
+    bắt đầu bằng `@preset/` bị từ chối ngay lúc dựng, không phải lúc gọi.
+    """
+
+    chat_daily_budget_usd: float = Field(default=1.0, ge=0.0)
+    """Trần chi phí sinh text mỗi ngày (UTC). `0` = **không trần**, phải khai rõ.
+
+    ⚠️ Đếm **trong tiến trình** — cùng giới hạn với hạn mức nhịp của `W4-04`
+    (`TD-39`): N replica ⇒ trần thật là N×, và restart đưa bộ đếm về 0. Nó chặn
+    được ca nó sinh ra để chặn (một vòng lặp hỏng đốt sạch ngân sách trong mười
+    phút) nhưng không phải một trần đúng nghĩa cho nhiều tiến trình.
+    """
+
+    chat_breaker_threshold: int = Field(default=3, ge=1)
+    chat_breaker_cooldown_s: float = Field(default=30.0, gt=0.0)
+
+    chat_max_retries: int = Field(default=1, ge=0)
+    """Số lần thử lại **bên trong một** lời gọi, cho đường serving.
+
+    Mặc định của `OpenAICompatProvider` là 4 với backoff tới 30 s mỗi lần — đúng
+    cho một job offline nghìn lời gọi, **sai** cho một request có người đang
+    ngồi đợi: một lời gọi hỏng có thể mất hơn một phút trước khi router kịp
+    chuyển sang nhánh dự phòng. Ở đây thử lại nhanh rồi nhường cho fallback.
+    """
+
     # ------------------------------------------------- Query understanding (W4-07)
     chat_rewrite: bool = True
     """Bật/tắt **viết lại câu hỏi đa lượt** — và chỉ nó.

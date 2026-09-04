@@ -1,0 +1,39 @@
+{
+  "fallback_transient": {
+    "served_model": "glm-5.3-flash",
+    "requested": "glm-5.3-flash",
+    "chars": 625,
+    "cost_usd": 0.000103,
+    "primary_state": "closed",
+    "primary_failures": 1,
+    "head": "# RAG là gì?  **RAG (Retrieval-Augmented Generation)** là kỹ thuật kết hợp **truy xuất thông tin** ("
+  },
+  "fallback_permanent": {
+    "served_model": "glm-5.3-flash",
+    "cost_usd": 8.4e-05,
+    "primary_state": "closed",
+    "primary_failures": 0
+  },
+  "cross_param": {
+    "result": "lỗi như dự kiến",
+    "permanent": false,
+    "message": "mọi route đều không phục vụ được: glm: glm-5.3-flash trả HTTP 400: {\"error\":{\"code\":\"1210\",\"message\":\"This model always engages in thinking and cannot be disabled; please use low, high, or max\"}}"
+  },
+  "breaker": {
+    "state": "open",
+    "latencies_ms": [
+      2943.6,
+      2288.7,
+      3240.2,
+      2009.5
+    ],
+    "budget": {
+      "day": "2026-09-04",
+      "cap_usd": 0.5,
+      "spent_usd": 0.000142,
+      "remaining_usd": 0.499858,
+      "calls": 4
+    }
+  },
+  "total_cost_usd": 0.000187
+}

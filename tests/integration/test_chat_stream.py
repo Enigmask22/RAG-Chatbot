@@ -49,6 +49,7 @@ pytestmark = pytest.mark.integration
 
 ACME_KEY = "rag_acme_chat_key"
 GLOBEX_KEY = "rag_globex_chat_key"
+ADMIN_KEY = "rag_acme_admin_key"
 
 _PORTS = iter(range(8091, 8120))
 """⚠️ Mỗi tiến trình uvicorn phải có **cổng riêng**.
@@ -118,6 +119,12 @@ def workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 "tenant_id": "globex",
                 "key_id": "globex-1",
                 "scopes": [],
+                "rate_limit_per_minute": 10_000,
+            },
+            digest_of(ADMIN_KEY): {
+                "tenant_id": "acme",
+                "key_id": "acme-admin",
+                "scopes": ["admin"],
                 "rate_limit_per_minute": 10_000,
             },
         },
@@ -758,3 +765,117 @@ def test_a_cross_tenant_filter_is_still_403_on_a_turn_that_never_retrieves(serve
             headers=_headers(),
         )
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# `W4-08` — bộ định tuyến LLM, nhìn từ ngoài qua SSE
+# ---------------------------------------------------------------------------
+
+
+def test_a_dead_primary_is_invisible_to_the_client(database: Engine, workspace: Path) -> None:
+    """Nhánh chính chết **trước** token đầu ⇒ người dùng không thấy gì khác.
+
+    ⭐ Nhưng hoá đơn và model thì khác, nên bằng chứng phải là `done.model`:
+    `200 OK` cộng một câu trả lời trôi chảy là chính xác thứ mà một fallback
+    thành công trông giống — và cũng là thứ mà một fallback **im lặng hỏng**
+    trông giống, nếu không ai nhìn tên model.
+    """
+    proc, base = _serve(workspace, CHAT_TEST_ROUTER="fallback", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            _, frames = _chat(client, base, "câu hỏi thật về nghèo đói")
+            status = client.get(f"{base}/admin/llm", headers=_headers(ADMIN_KEY)).json()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    done = next(d for _, n, d in frames if n == "done")
+    assert done["finish_reason"] == "stop"
+    assert done["model"] == "scripted-model-served", "câu trả lời phải đến từ nhánh dự phòng"
+    assert "".join(d["text"] for _, n, d in frames if n == "delta").startswith("Theo ")
+    assert "CHÍNH-" not in "".join(d["text"] for _, n, d in frames if n == "delta")
+
+    primary = status["routes"][0]
+    assert primary["label"] == "primary"
+    assert primary["consecutive_failures"] == 1, "cầu dao phải đếm được lần hỏng này"
+
+
+def test_a_primary_that_dies_mid_stream_becomes_an_error_frame_not_a_spliced_answer(
+    database: Engine, workspace: Path
+) -> None:
+    """⭐⭐ Ranh giới mẩu đầu tiên, đo trên đường thật.
+
+    Nhánh chính gửi hai mẩu rồi chết. Nếu router chuyển nhánh ở đây, client nhận
+    `CHÍNH-0 CHÍNH-1 Theo tài liệu [1]…` — một đoạn văn trôi chảy mà **không
+    model nào nói ra**, kèm `finish_reason: stop`. Không có gì trong phản hồi
+    nói rằng nó đã xảy ra.
+    """
+    proc, base = _serve(workspace, CHAT_TEST_ROUTER="midstream", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            _, frames = _chat(client, base, "câu hỏi thật về nghèo đói")
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    text = "".join(d["text"] for _, n, d in frames if n == "delta")
+    kinds = [n for _, n, _ in frames]
+
+    assert text == "CHÍNH-0 CHÍNH-1 ", "phần đã sinh giữ nguyên, không nối thêm của nhánh khác"
+    assert "Theo " not in text, "nhánh dự phòng KHÔNG được nối vào giữa stream"
+    assert "error" in kinds and "done" not in kinds
+    detail = next(d for _, n, d in frames if n == "error")["detail"]
+    assert "không ai nói" in detail
+
+
+def test_an_exhausted_daily_budget_is_429_before_a_single_byte_is_sent(
+    database: Engine, workspace: Path
+) -> None:
+    """⭐⭐ "Từ chối có thông báo rõ" là một **HTTP status**, không phải một dòng
+    SSE dừng lại.
+
+    Trần chi phí kiểm được **trước** truy hồi, nên nó còn thành `429` kèm
+    `Retry-After` đọc được bằng máy — cùng đường phân giới mà `W4-06` đã dựng.
+    Để nó rơi vào trong stream thì client nhận `200 OK` và một dòng token trống.
+    """
+    proc, base = _serve(workspace, CHAT_TEST_ROUTER="broke", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                f"{base}/chat", json={"message": "câu hỏi bất kỳ"}, headers=_headers()
+            )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    assert response.status_code == 429
+    assert int(response.headers["Retry-After"]) > 0
+    assert "trần" in response.json()["detail"]
+
+
+def test_the_llm_status_endpoint_needs_the_admin_scope(database: Engine, workspace: Path) -> None:
+    """`W4-04` ép scope theo **tiền tố đường dẫn** ở middleware, nên một route
+    admin mới không thể quên hàng rào. Test này là phép kiểm rằng điều đó vẫn
+    đúng cho một route vừa thêm ở file khác (`api/chat.py`, không `api/admin.py`)."""
+    keys = workspace / "no-admin-keys.json"
+    write_keys(
+        keys,
+        {
+            digest_of("rag_reader_key"): {
+                "tenant_id": "acme",
+                "key_id": "reader",
+                "scopes": [],
+                "rate_limit_per_minute": 1000,
+            }
+        },
+    )
+    proc, base = _serve(workspace, CHAT_TEST_KEYS=str(keys))
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            denied = client.get(
+                f"{base}/admin/llm", headers={"Authorization": "Bearer rag_reader_key"}
+            )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+    assert denied.status_code == 403

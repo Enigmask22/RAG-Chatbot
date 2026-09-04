@@ -27,7 +27,16 @@ from typing import Any
 from fastapi import FastAPI
 
 from rag_core.bundle import RagBundle
-from rag_core.llm import ChatMessage, LLMChunk, LLMError, LLMProvider, LLMResponse
+from rag_core.llm import (
+    ChatMessage,
+    DailyBudget,
+    LLMChunk,
+    LLMError,
+    LLMProvider,
+    LLMResponse,
+    LLMRouter,
+    Route,
+)
 from rag_core.retrieval.filters import FilterSpec
 from rag_core.schemas import Chunk, DocumentMetadata, RetrievedChunk, TokenUsage
 from rag_core.settings import Settings
@@ -41,6 +50,8 @@ ENV_KEYS = "CHAT_TEST_KEYS"
 ENV_DELTA_MS = "CHAT_TEST_DELTA_MS"
 ENV_RETRIEVAL_MS = "CHAT_TEST_RETRIEVAL_MS"
 ENV_MODE = "CHAT_TEST_MODE"
+ENV_ROUTER = "CHAT_TEST_ROUTER"
+"""`fallback` = nhánh chính chết trước token đầu · `midstream` = chết sau token thứ hai · `broke` = trần chi phí đã cạn."""
 ENV_REWRITE = "CHAT_TEST_REWRITE"
 """Chuỗi mà bộ viết lại của `W4-07` trả về. Không đặt = không cấu hình bộ viết lại."""
 
@@ -168,6 +179,33 @@ class ScriptedRewriter(LLMProvider):
         )
 
 
+class BrokenLLM:
+    """Nhánh chính chết — trước hoặc sau mẩu đầu tiên, theo `CHAT_TEST_ROUTER`."""
+
+    name = "broken"
+    model = "broken-model"
+
+    def __init__(self, fail_after: int | None = None) -> None:
+        self.fail_after = fail_after
+
+    async def astream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+        extra_body: Any = None,
+    ) -> AsyncIterator[LLMChunk]:
+        if self.fail_after is None:
+            raise LLMError("nhánh chính trả HTTP 503")
+        for i in range(self.fail_after):
+            yield LLMChunk(delta=f"CHÍNH-{i} ")
+        raise LLMError("nhánh chính đứt giữa chừng")
+
+    def complete(self, *args: Any, **kwargs: Any) -> LLMResponse:
+        raise LLMError("nhánh chính trả HTTP 503")
+
+
 def _build(bundle: RagBundle) -> tuple[Any, None]:
     return SlowRetriever(), None
 
@@ -187,6 +225,24 @@ def make() -> FastAPI:
     )
     app = create_app(settings=settings, build_runtime=_build, probe_factory=_probes)
     app.state.chat.llm = ScriptedLLM()
+    mode = os.environ.get(ENV_ROUTER, "")
+    if mode:
+        # ⭐ Cùng `LLMRouter` của production, chỉ đổi nhà cung cấp giả — nên test
+        # này đo đúng đoạn mã sẽ chạy thật, không đo một bản sao của nó.
+        budget = DailyBudget(0.01)
+        if mode == "broke":
+            # Ngân sách hôm nay **đã** cạn từ trước — đúng ca thật, và là ca duy
+            # nhất `prepare()` trả lời được bằng một HTTP status: ở thời điểm ấy
+            # prompt chưa tồn tại nên không ước được giá của lời gọi sắp tới.
+            budget.charge(0.02)
+        primary = BrokenLLM(fail_after=2 if mode == "midstream" else None)
+        app.state.chat.llm = LLMRouter(
+            routes=[
+                Route(provider=primary, label="primary"),  # type: ignore[arg-type]
+                Route(provider=ScriptedLLM(), label="fallback"),  # type: ignore[arg-type]
+            ],
+            budget=budget,
+        )
     if ENV_REWRITE in os.environ:
         app.state.chat.understanding = QueryUnderstanding(llm=ScriptedRewriter())
     return app

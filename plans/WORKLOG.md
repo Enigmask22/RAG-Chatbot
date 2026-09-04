@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (cuối file)** — `W4-07` xong, `W4` **7/13**. Hiểu câu hỏi trước khi truy hồi. ⭐⭐ Chỉ thị ngôn ngữ **8/8 → 0/8**; ⭐⭐ tiêm lỗi phơi ra `"thầy cô"` bị xếp là chào hỏi ⇒ không truy hồi; ⭐⭐ lần chạy thật đảo ngược một quyết định thiết kế. ⚠️ File này có lỗ hổng 03/09 → 04/09 — xem changelog `CHECKLIST.md`.
+> **Phiên mới nhất: 2026-09-04 (2) (cuối file)** — `W4-08` xong, `W4` **8/13**. Bộ định tuyến LLM, chạy thật DeepSeek → GLM. ⭐⭐ Chuyển nhà cung cấp **giữa stream** nối hai câu trả lời khác nhau; ⚠️ tiêm lỗi 12 phép, 2 sống sót và cả hai là lỗ thật.
+>
+> Phiên trước: **2026-09-04** — `W4-07` xong, `W4` **7/13**. Hiểu câu hỏi trước khi truy hồi. ⭐⭐ Chỉ thị ngôn ngữ **8/8 → 0/8**; ⭐⭐ tiêm lỗi phơi ra `"thầy cô"` bị xếp là chào hỏi ⇒ không truy hồi; ⭐⭐ lần chạy thật đảo ngược một quyết định thiết kế. ⚠️ File này có lỗ hổng 03/09 → 04/09 — xem changelog `CHECKLIST.md`.
 >
 > Phiên trước: **2026-08-22 (10)** — `W3-08` xong, `W3` **7/9**, `G3` **2/3**. API điều khiển ingestion + worker arq (`pipeline/ingest/`). ✅ `POST` **p50 3,47 ms · p95 4,26 ms**, dư **47×** so với trần 200 ms — nhanh vì endpoint không làm gì, và có test **tiến trình con** ghim rằng import app không kéo theo torch. ⭐⭐ **`max_tries` KHÔNG thử lại `Exception` thường**: arq chỉ thử lại `Retry`/`RetryJob`/`CancelledError` (`arq/worker.py:613-633`) — tôi viết test để chứng minh nó hoạt động, test đỏ, và hoá ra mặc định của arq đúng; phân loại lỗi chuyển vào `is_transient`. ⚠️⚠️ **`doc_ids` suýt thành endpoint XOÁ index** — `build_index` gỡ mọi tài liệu không thấy trong lượt chạy, nên diễn đạt "index lại tài liệu này" bằng bộ lọc corpus sẽ xoá 59 tài liệu kia và trả 200. ⚠️ Ba lỗi test đều hỏng không giống nguyên nhân (`Annotated` trong hàm → 422 query param; hàng đợi Redis dùng chung; thứ tự fixture). 💡 Và `-q` tôi gõ suốt nhiều phiên thành `-qq`, tắt hẳn dòng tổng kết — `pyproject.toml` đã cảnh báo từ `W2-05`.
 >
@@ -3187,3 +3189,39 @@ circuit breaker + budget cap). Nó có sẵn hai chỗ cắm không phải sửa
 
 ⚠️ Quy tắc cứng #1 áp thẳng vào `W4-08`: **không** dùng OpenRouter preset
 (`@preset/...`), luôn ghim slug tường minh và log model **thực tế** đã phục vụ.
+
+
+---
+
+## 2026-09-04 (2) · `W4-08` — bộ định tuyến LLM
+
+### Đã xong
+
+`packages/rag_core/llm/router.py` (mới): `CircuitBreaker`, `DailyBudget`, `Route`,
+`LLMRouter` — cài **cả** `LLMProvider.complete` lẫn `StreamingLLM.astream`, nên nó
+cắm vào `ChatService.llm` và `QueryUnderstanding.llm` **không sửa dòng nào** ở hai
+chỗ đó (cả hai đã khai bằng Protocol từ `W4-06`/`W4-07`).
+
+Ba điều đáng nhớ:
+
+1. **Chuyển nhà cung cấp giữa stream** nối hai câu trả lời khác nhau thành một
+   đoạn văn không model nào nói ra. Ranh giới là mẩu đầu tiên; hai test kẹp lấy.
+2. **Ba loại hỏng, ba cách đối xử** — cần lớp lỗi mới `PermanentLLMError`.
+3. **Tiêm lỗi 12 phép, 2 sống sót**, và một trong hai không chữa được bằng test
+   hiển nhiên (máy ở UTC+7 nên test ấy xanh phần lớn thời gian kể cả khi có bug).
+
+**1986 test xanh, 3 skip.** Chi phí API $0,00033. 3 nợ mới `TD-47`…`TD-49`.
+
+### Lệnh để tiếp tục
+
+```bash
+docker compose up -d
+uv run pytest tests/unit/test_llm_router.py -q
+# bật fallback thật: CHAT_FALLBACK_PROVIDER=glm trong môi trường, rồi
+make serve && curl -H "Authorization: Bearer <admin key>" localhost:8000/admin/llm
+```
+
+Việc tiếp theo: **`W4-09`** (structured output + citation verification — bỏ hẳn
+`text.split("Trả lời:")`). Nó nằm ở **nửa dưới** của đường phân giới `W4-06`:
+xác minh citation cần toàn bộ câu trả lời, nên một citation bịa chỉ báo được
+bằng một khung SSE, không bằng HTTP status.
