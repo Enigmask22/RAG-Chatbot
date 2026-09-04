@@ -3333,3 +3333,33 @@ CHECKLIST.md và reports/README.md cũng đã bị formatter căn cột bảng �
 **Việc tiếp theo**: `W4-12` (guardrails — bộ 10 payload injection trong tài
 liệu, PII redaction ở log; cặp với `TD-46` lịch sử hội thoại là mặt injection
 thứ hai) → `W4-13` (Dockerfile + compose + smoke e2e; dọn key store) → `G4`.
+
+
+---
+
+## Phiên 2026-09-04 (6b) — viết lại lịch sử git (gỡ tên công ty không liên quan)
+
+Theo yêu cầu trực tiếp của người dùng: một tên công ty không liên quan tới dự
+án bị nhắc trong 3 file kế hoạch (`2026-08-14-rag-upgrade-proposal.md`,
+`CHECKLIST.md`, `test_corpus_manifest.py`) từ commit đầu. Người dùng đã tự thay
+chuỗi ở tip; phần lịch sử (~70 commit cũ) xử lý bằng `git filter-repo
+--replace-text` + force push (backup bundle trước khi chạy:
+`D:/studioproj/rag-chatbot-pre-rewrite-2026-09-04.bundle`). Đã quét lại toàn bộ
+`rev-list --all` sau rewrite: **0** lần xuất hiện, mọi biến thể hoa-thường.
+Email tác giả 75 commit đều là địa chỉ cá nhân, commit message chưa từng chứa tên.
+
+⚠️ **Mọi hash commit trước 2026-09-04 (6b) đã đổi.** Bảng đối chiếu cho các
+hash được trích trong sổ sách:
+
+| hash cũ (trong docs) | hash mới |
+|---|---|
+| `0b87cfe` | `0aee327` |
+| `3dec677` | `9f4ff62` |
+| `b48a34b` | `cdaf7e3` |
+| `b9fcbce` | `f484943` |
+| `c253fa5` | `f42185e` |
+| `f5ec22b` | `54cef7d` |
+
+Các hash khác nhắc trong văn bản tường thuật (nếu gặp) tra bằng bundle backup.
+GitHub có thể còn giữ các commit cũ truy cập được bằng SHA trực tiếp cho tới
+lần GC — nếu cần xoá tuyệt đối, gửi yêu cầu GitHub Support.
