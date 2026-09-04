@@ -14,14 +14,15 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
 import redis as redis_sync
 from sqlalchemy import Engine
 
-from tests.integration.test_chat_stream import _chat, _serve, database, workspace  # noqa: F401
+from serving.core.chat import cache_namespace
+from tests.integration.test_chat_stream import _chat, _serve
 
 pytestmark = pytest.mark.integration
 
@@ -109,10 +110,13 @@ def test_the_namespace_carries_a_ttl_and_the_bundle_version(
             bundle_version = frames[0][2]["bundle_version"]
             deadline = time.monotonic() + 5.0
             client_r = redis_sync.Redis.from_url(REDIS_URL)
-            key = f"semcache:acme:{bundle_version}"
-            while client_r.ttl(key) < 0 and time.monotonic() < deadline:
+            # `W4-11`: namespace giờ mang cả version prompt — xem `cache_namespace`
+            key = f"semcache:acme:{cache_namespace(bundle_version)}"
+            # redis-py sync client khai kiểu union với Awaitable — ép int
+            # cho mypy; runtime luôn là int ở client đồng bộ.
+            while int(cast("int", client_r.ttl(key))) < 0 and time.monotonic() < deadline:
                 time.sleep(0.2)
-            ttl = client_r.ttl(key)
+            ttl = int(cast("int", client_r.ttl(key)))
             client_r.close()
     finally:
         proc.terminate()

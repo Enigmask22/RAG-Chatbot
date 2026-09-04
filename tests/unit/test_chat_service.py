@@ -609,7 +609,7 @@ async def test_language_mismatch_is_measured_on_the_visible_text_only() -> None:
 
 import numpy as np  # noqa: E402
 
-from serving.core.chat import cache_eligible  # noqa: E402
+from serving.core.chat import cache_eligible, cache_namespace  # noqa: E402
 from serving.core.semantic_cache import CachedAnswer  # noqa: E402
 
 
@@ -693,9 +693,7 @@ async def test_a_successful_answer_is_stored_with_the_visible_text() -> None:
     turn = _turn(cache_vector=np.ones(4, dtype=np.float32))
 
     await _drain(service, turn)
-    for task in list(asyncio.all_tasks()):
-        pass  # store chạy nền — drain xong là loop còn task
-    await asyncio.sleep(0)
+    await asyncio.sleep(0)  # store chạy nền — nhường loop một nhịp cho task ấy
 
     assert len(cache.stored) == 1
     entry = cache.stored[0]
@@ -749,3 +747,64 @@ async def test_a_truncated_answer_is_never_cached() -> None:
     await asyncio.sleep(0)
 
     assert cache.stored == []
+
+
+# ---------------------------------------------------------------------------
+# 10. `W4-11` — prompt registry ở tầng service
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_meta_frame_declares_the_prompt_version() -> None:
+    """DoD `W4-11`: mỗi lượt tự khai prompt nào đứng sau nó. Ghim chuỗi CỤ THỂ
+    chứ không so với hằng số — bump version phải làm test này đỏ để người sửa
+    nhìn thấy mọi chỗ con số eval sẽ thôi so được."""
+    events = await _drain(_service(FakeLLM()), _turn())
+
+    assert events[0][1]["prompt"] == "chat-system@v1"
+
+
+@pytest.mark.asyncio
+async def test_a_no_retrieval_turn_declares_its_own_prompt() -> None:
+    turn = _turn(plan=_plan(route="no_retrieval", reason="chào hỏi"), contexts=[])
+    events = await _drain(_service(FakeLLM()), turn)
+
+    assert events[0][1]["prompt"] == "chat-no-retrieval@v1"
+
+
+@pytest.mark.asyncio
+async def test_a_clarify_turn_declares_no_prompt() -> None:
+    """CLARIFY không gọi model — khai một prompt ở đây là khai một biến số
+    không tham gia vào câu trả lời."""
+    turn = _turn(plan=_plan(route="clarify", reason="mơ hồ"), contexts=[])
+    events = await _drain(_service(FakeLLM()), turn)
+
+    assert events[0][1]["prompt"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_cache_replay_still_declares_the_prompt() -> None:
+    """Namespace cache đã ghim version prompt, nên bản phát lại chắc chắn sinh
+    dưới đúng prompt đang khai — meta được phép nói thế."""
+    events = await _drain(_service(FakeLLM()), _cached_turn())
+
+    assert events[0][1]["prompt"] == "chat-system@v1"
+
+
+class TestCacheNamespace:
+    def test_the_namespace_carries_the_prompt_version(self) -> None:
+        """Một câu trả lời sinh dưới `chat-system@v1` KHÔNG phải câu trả lời
+        của `chat-system@v2`: đổi prompt phải invalidate cache như đổi bundle,
+        và cách rẻ nhất là cùng cơ chế — version nằm trong khoá."""
+        assert cache_namespace("0.2.0") == "0.2.0+chat-system@v1"
+
+    @pytest.mark.asyncio
+    async def test_store_writes_into_the_prompt_scoped_namespace(self) -> None:
+        service = _service(FakeLLM(deltas=("Đáp án.",)))
+        cache = RecordingCache()
+        service.cache = cache  # type: ignore[assignment]
+
+        await _drain(service, _turn(cache_vector=np.ones(4, dtype=np.float32)))
+        await asyncio.sleep(0)
+
+        assert cache.stored[0]["bundle"] == "0.2.0+chat-system@v1"

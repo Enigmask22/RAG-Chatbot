@@ -14,6 +14,7 @@ import pytest
 from rag_core.generation import (
     MARKER,
     CitationHoldback,
+    CitationReport,
     split_citation_block,
     verify_citations,
 )
@@ -127,7 +128,7 @@ class TestSplitCitationBlock:
 # ---------------------------------------------------------------------------
 
 
-def _verify(*claims: str):
+def _verify(*claims: str) -> CitationReport:
     parsed = split_citation_block("X [1].\n" + _block(*claims))
     assert parsed.block == "ok", parsed.error
     return verify_citations(parsed, CHUNKS)

@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (5) (cuối file)** — `W4-10` xong, `W4` **10/13**. Semantic cache: phép đo giết ngưỡng 0,95 của plan — hai phân bố paraphrase/bẫy chồng nhau, không ngưỡng nào tách được → 0,96 + hàng rào chữ số + namespace theo bundle. 100 query Zipf: hit 77/100, bẫy 0/10. Tiêm 6 lỗi: S6 xanh chỉ ra ca `finish_reason="length"` → bịt → 6/6 đỏ. **2059 test xanh.**
+> **Phiên mới nhất: 2026-09-04 (6) (cuối file)** — `W4-11` xong, `W4` **11/13**. Prompt registry: loader từ chối nội dung chưa stamp (cơ chế, không phải quy ước); 3 prompt serving migrate giữ nguyên byte; namespace cache thêm version prompt; meta khai `prompt`. Tiêm 6: M2 xanh (test tự chiếu qua hàm băm) → ghim hợp đồng byte → 6/6. Đính chính 10 lỗi ruff/mypy sót từ phiên trước. **2084 test xanh.**
+>
+> Phiên trước: **2026-09-04 (5)** — `W4-10` xong, `W4` **10/13**. Semantic cache: phép đo giết ngưỡng 0,95 của plan — hai phân bố paraphrase/bẫy chồng nhau, không ngưỡng nào tách được → 0,96 + hàng rào chữ số + namespace theo bundle. 100 query Zipf: hit 77/100, bẫy 0/10. Tiêm 6 lỗi: S6 xanh chỉ ra ca `finish_reason="length"` → bịt → 6/6 đỏ. **2059 test xanh.**
 >
 > Phiên trước: **2026-09-04 (4)** — `W4-09` xong, `W4` **9/13**. Structured output + citation verification: khung SSE `citations` với `verified` từng quote; lần chạy thật thứ ba cho ngay một **citation lai ghép** (lời văn chunk này, gán chunk kia) bị bắt đúng. Tiêm 8 lỗi / 8 đỏ. **2026 test xanh.**
 >
@@ -3298,3 +3300,36 @@ cache vĩnh viễn) → thêm test → 6/6.
 
 **Việc tiếp theo**: `W4-11` (prompt registry — giờ có HAI prompt hằng số +
 một mẫu block CITATIONS chờ nó) → `W4-12` (guardrails) → `W4-13` → `G4`.
+
+
+---
+
+## Phiên 2026-09-04 (6) — `W4-11` Prompt registry
+
+**Đã làm**: YAML mỗi prompt trong `packages/rag_core/generation/prompts/`
+(version + sha256 của template + history); loader (`rag_core/generation/
+prompts.py`) tính lại hash, từ chối nạp khi lệch — "đổi prompt = tăng version"
+do máy thi hành, đường sửa duy nhất là `scripts/prompt_stamp.py` (tự bump +
+đẩy history). Ba prompt serving migrate GIỮ NGUYÊN BYTE (round-trip `==` trước
+commit); hai prompt contextual `W3-03` cố ý không migrate (đã băm vào
+fingerprint, $5,47 ngữ cảnh). Hệ quả kéo theo: `cache_namespace()` =
+`{bundle}+chat-system@v1` (đổi prompt invalidate cache như đổi bundle), khung
+`meta` thêm `"prompt"` theo route, `Prompt.component()` điền ô `prompt.hash`
+của bundle schema. Log khởi động khai cả ba prompt (evidence DoD trong report
+§4). Tiêm 6 lỗi: M2 (strip trước khi băm) xanh cả với test ghim literal —
+mọi test khác so hash qua chính hàm bị tiêm; ghim hợp đồng
+`sha256_of("a") != sha256_of(" a ")` → 6/6 đỏ.
+
+**Đính chính phiên (4)/(5)**: "ruff/mypy sạch" sót 7 lỗi ruff + 3 lỗi mypy ở
+file test `W4-09`/`W4-10` vì lệnh kiểm chạy trên scope hẹp. Đã sửa (fixture
+sang `tests/integration/conftest.py`, cast redis-py sync, annotation). Từ giờ:
+`uv run ruff check .` + `uv run mypy` KHÔNG tham số.
+
+**Chú ý**: hai file có sửa tay của người dùng đang nằm ngoài commit này
+(`plans/2026-08-14-rag-upgrade-proposal.md` — format bảng markdown;
+`tests/unit/test_corpus_manifest.py` — đổi một string trong test provenance).
+CHECKLIST.md và reports/README.md cũng đã bị formatter căn cột bảng — giữ nguyên.
+
+**Việc tiếp theo**: `W4-12` (guardrails — bộ 10 payload injection trong tài
+liệu, PII redaction ở log; cặp với `TD-46` lịch sử hội thoại là mặt injection
+thứ hai) → `W4-13` (Dockerfile + compose + smoke e2e; dọn key store) → `G4`.

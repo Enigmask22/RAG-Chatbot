@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI
 
 from rag_core.bundle import latest_bundle
+from rag_core.generation import default_registry
 from rag_core.llm import (
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_GLM_MODEL,
@@ -340,6 +341,12 @@ def create_app(
     (`W4-02` §1)."""
     resolved = settings or get_settings()
     configure_logging(resolved.log_level)
+    # `W4-11`: mỗi lần khởi động khai rõ prompt nào đang phục vụ — DoD "runtime
+    # log rõ prompt version". Prompt hỏng đã chết từ lúc import `chat.py` (fail
+    # fast có chủ đích, xem docstring `_PROMPTS` bên đó), nên tới đây chỉ còn
+    # việc nói to.
+    for prompt in default_registry().all():
+        logger.info("prompt registry: %s (sha256 %s…)", prompt.spec, prompt.sha256[:12])
 
     registry = BundleRegistry(
         root=resolved.bundle_root,
