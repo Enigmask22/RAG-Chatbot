@@ -93,6 +93,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple
         yaml.safe_dump(
             {
                 "name": name,
+                "tenant_id": "test",
                 "collection": name.replace("-", "_"),
                 "manifest_path": str(tmp_path / "manifest.csv"),
                 "corpus_dir": str(corpus),

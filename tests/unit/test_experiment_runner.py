@@ -69,7 +69,7 @@ def _index_yaml(directory: Path, name: str, *, chunk_size: int = 1000) -> Path:
     """Config index tối thiểu — đủ để `load_index_config` tính `fingerprint`."""
     path = directory / f"{name}.yaml"
     path.write_text(
-        yaml.safe_dump({"name": name, "chunking": {"chunk_size": chunk_size}}),
+        yaml.safe_dump({"name": name, "tenant_id": "test", "chunking": {"chunk_size": chunk_size}}),
         encoding="utf-8",
     )
     return path

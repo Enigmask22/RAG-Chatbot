@@ -11,10 +11,14 @@ upsert **đầu tiên** — tức sau khi đã nạp 2,2GB trọng số và chun
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from rag_core.embedding import HashingEmbeddingProvider
 from rag_core.retrieval import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME, schema_problems
+from rag_core.retrieval.qdrant_store import QdrantDenseRetriever
+from rag_core.schemas import Chunk
 
 
 def _problems(
@@ -185,3 +189,54 @@ class TestHashingProviderSparse:
     def test_rejects_tiny_dimension_still(self) -> None:
         with pytest.raises(ValueError, match="dimension quá nhỏ"):
             HashingEmbeddingProvider(dimension=4)
+
+
+class TestTenantOnEveryPoint:
+    """`TD-40` — `_payload` là chỗ duy nhất biết field nào được làm phẳng.
+
+    Thuần, không chạm Qdrant: mọi ca kiểm được trong `make test`. Phần "nó có
+    thật sự tới Qdrant không" nằm ở `tests/integration/test_metadata_filter.py`.
+    """
+
+    @staticmethod
+    def _store(tenant: str | None) -> QdrantDenseRetriever:
+        return QdrantDenseRetriever(
+            HashingEmbeddingProvider(dimension=8), collection="c", tenant_id=tenant
+        )
+
+    @staticmethod
+    def _chunk(**extra: str) -> Chunk:
+        return Chunk(chunk_id="d::0", doc_id="d", content="nội dung", chunk_index=0, extra=extra)
+
+    def test_the_store_tenant_lands_on_every_point(self) -> None:
+        assert self._store("acme")._payload(self._chunk())["tenant_id"] == "acme"
+
+    def test_a_store_without_a_tenant_writes_no_tenant_field(self) -> None:
+        """Hành vi cũ giữ nguyên — index đo đạc chạy ngoài đường serving vẫn dựng được.
+
+        ⚠️ Và đó chính là hình dạng của `TD-40`: point không có field này **vô
+        hình** với mọi request đã xác thực, không báo lỗi ở đâu. Chỗ chặn là
+        `IndexConfig.tenant_id` bắt buộc, không phải chỗ này.
+        """
+        assert "tenant_id" not in self._store(None)._payload(self._chunk())
+
+    def test_a_chunk_can_carry_its_own_tenant_when_the_store_has_none(self) -> None:
+        assert self._store(None)._payload(self._chunk(tenant_id="t1"))["tenant_id"] == "t1"
+
+    def test_the_store_wins_when_the_chunk_disagrees(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """⭐ Một field có **hai** nguồn sự thật là chỗ tenant sai xuất hiện lúc
+        không ai nhìn. Store được dựng từ config sở hữu collection, nên một chunk
+        khai khác là bug ở tầng gọi — và nó phải để lại dấu vết."""
+        with caplog.at_level(logging.WARNING):
+            payload = self._store("acme")._payload(self._chunk(tenant_id="globex"))
+
+        assert payload["tenant_id"] == "acme"
+        assert "globex" in caplog.text and "acme" in caplog.text
+
+    def test_the_tenant_is_not_part_of_the_retriever_name(self) -> None:
+        """`name` là chuỗi "mọi thứ làm đổi con số" (`TD-38`); tenant quyết định
+        *ai đọc được*, không phải kết quả của một lần eval. Đưa nó vào đó sẽ làm
+        mọi bundle đã ký hỏng chữ ký vì một lý do không liên quan."""
+        assert self._store("acme").name == self._store("globex").name

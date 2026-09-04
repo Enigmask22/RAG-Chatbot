@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _config(**kwargs: object) -> IndexConfig:
-    base: dict[str, object] = {"name": "t", "embedding_model": "hashing:64"}
+    base: dict[str, object] = {"name": "t", "tenant_id": "t", "embedding_model": "hashing:64"}
     base.update(kwargs)
     return IndexConfig.model_validate(base)
 
@@ -121,6 +121,7 @@ class TestLoadYaml:
             yaml.safe_dump(
                 {
                     "name": "x",
+                    "tenant_id": "t",
                     "embedding_model": "hashing:64",
                     "chunking": {"strategy": "fixed", "chunk_size": 800},
                 }
@@ -134,7 +135,9 @@ class TestLoadYaml:
     def test_overrides_skip_none(self, tmp_path: Path) -> None:
         """CLI truyền `None` cho cờ không đặt — không được ghi đè giá trị trong file."""
         path = tmp_path / "c.yaml"
-        path.write_text(yaml.safe_dump({"name": "x", "collection": "giu_nguyen"}), "utf-8")
+        path.write_text(
+            yaml.safe_dump({"name": "x", "tenant_id": "t", "collection": "giu_nguyen"}), "utf-8"
+        )
         config = load_index_config(path, collection=None, max_documents=7)
         assert config.collection == "giu_nguyen"
         assert config.max_documents == 7
@@ -167,3 +170,69 @@ class TestShippedConfigs:
         """
         config = load_index_config(REPO_ROOT / "configs" / "indexing" / "baseline.yaml")
         assert config.chunking.neighbor_context_chars == 100
+
+
+class TestTenant:
+    """`TD-40` — mọi point phải có chủ, và việc quên phải nổ chứ không im.
+
+    Món nợ này không phải một bug trong mã: `W2-06` đã ghi và ghim đúng hành vi
+    "point thiếu `tenant_id` không khớp filter tenant nào". Nó là một **cấu hình
+    thiếu** đã sống ba tuần, và nó chỉ lộ ra khi cả ba tầng cùng chạy một lần ở
+    `W4-06`. Nhóm test này biến "phải nhớ" thành "không quên được".
+    """
+
+    def test_a_config_without_a_tenant_cannot_be_built(self) -> None:
+        with pytest.raises(ValidationError, match="tenant_id"):
+            IndexConfig.model_validate({"name": "t", "embedding_model": "hashing:64"})
+
+    def test_there_is_no_default_tenant(self) -> None:
+        """⭐ Một mặc định đóng lỗ theo **hướng sai**.
+
+        Quên tenant hiện tại nghĩa là "không ai đọc được" — an toàn và ồn ào.
+        Với mặc định `"public"` nó thành "tài liệu riêng của khách hàng nằm
+        trong kho công khai" — im lặng, và không thu hồi được.
+        """
+        assert IndexConfig.model_fields["tenant_id"].is_required()
+
+    def test_the_tenant_is_not_part_of_the_fingerprint(self) -> None:
+        """Nó là field payload, không chạm vector nào.
+
+        Đưa nó vào `fingerprint` sẽ làm mọi bundle đã ký hỏng chữ ký vì một lý
+        do không liên quan tới chất lượng truy hồi — và buộc build lại 15.814
+        chunk để đổi đúng một chuỗi trong payload.
+        """
+        assert _config(tenant_id="a").fingerprint == _config(tenant_id="b").fingerprint
+        assert (
+            _config(tenant_id="a").chunking_fingerprint
+            == _config(tenant_id="b").chunking_fingerprint
+        )
+
+    @pytest.mark.parametrize("bad", ["", "có dấu", "a b", "x" * 65, "a/b"])
+    def test_a_tenant_that_would_not_survive_a_payload_filter_is_refused(self, bad: str) -> None:
+        """Khớp `String(64)` của `serving/db/models.py` và `MatchValue` của Qdrant.
+
+        Một tenant chỉ khác nhau ở khoảng trắng hoặc dài quá cột DB là chỗ mà
+        hai tầng cùng "đúng" mà không khớp nhau.
+        """
+        with pytest.raises(ValidationError):
+            _config(tenant_id=bad)
+
+    def test_the_tenant_reaches_the_store_that_build_retriever_makes(self) -> None:
+        """Dòng nối duy nhất giữa config và payload.
+
+        Không có test này thì `tenant_id` bắt buộc trong config vẫn đúng, mọi
+        test `_payload` vẫn xanh, và index dựng ra vẫn không có tenant — tức
+        `TD-40` quay lại nguyên vẹn qua một chỗ không ai nhìn.
+        """
+        config = _config(tenant_id="acme")
+        store = config.build_retriever(config.build_embeddings(), url="http://127.0.0.1:6333")
+
+        assert store.tenant_id == "acme"
+
+    def test_every_shipped_index_config_declares_a_tenant(self) -> None:
+        """⚠️ Phép kiểm phủ định phải kèm bằng chứng nó nhìn thấy gì (`W3-04`)."""
+        configs = sorted(Path("configs/indexing").glob("*.yaml"))
+
+        assert len(configs) >= 8, f"chỉ thấy {len(configs)} config — glob hỏng?"
+        for path in configs:
+            assert load_index_config(path).tenant_id

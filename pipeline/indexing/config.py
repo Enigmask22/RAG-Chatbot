@@ -72,6 +72,32 @@ class IndexConfig(BaseModel):
 
     collection: str = Field(default="", description="Rỗng thì suy ra từ `name`")
 
+    tenant_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.\-]+$")
+    """⭐⭐ Chủ sở hữu của mọi point mà lần build này ghi ra. `TD-40`.
+
+    **Bắt buộc, không có mặc định**, và đó là điểm chính. `W4-04` áp
+    `tenant_filter()` lên **mọi** request, còn Qdrant **không khớp** point thiếu
+    field này — nên một index dựng mà quên tenant là một index **vô hình với mọi
+    người dùng đã xác thực**. Nó không báo lỗi ở đâu cả: build xong, `/ready`
+    xanh, `POST /chat` trả `sources: []`, và triệu chứng đọc được là *"hệ thống
+    không tìm thấy gì"*.
+
+    Đó đúng là chuyện đã xảy ra: 15.814 chunk của `rag_bgem3_ctx` được dựng qua
+    ba tuần mà không có tenant nào, và nó chỉ lộ ra ở lần chạy thật đầu tiên của
+    `W4-06` — khi cả ba tầng (`rag_core` filter → HTTP tenant → payload Qdrant)
+    cùng chạy một lần.
+
+    ⚠️ Một **mặc định** ở đây sẽ đóng lỗ theo hướng sai. Quên tenant thì lỗi
+    hiện tại là "không ai đọc được" (an toàn, ồn ào); với mặc định `"public"` nó
+    thành "tài liệu riêng của khách hàng nằm trong kho công khai" (im lặng, và
+    không thu hồi được). Bắt phải khai là cách duy nhất giữ hướng hỏng đúng
+    chiều.
+
+    ⚠️ **Không** nằm trong `fingerprint`: nó là một field payload, không chạm
+    vector nào — đúng lý lẽ đã cho phép `W2-06` backfill `published_at` mà mọi
+    con số eval từ `W2-01` đến `W2-05` vẫn đúng nguyên. Có test ghim.
+    """
+
     # ------------------------------------------------------------ nguồn
     manifest_path: Path = Path("data/corpus_manifest.csv")
     corpus_dir: Path = Path("data/corpus")
@@ -204,6 +230,7 @@ class IndexConfig(BaseModel):
             collection=self.collection_name,
             url=url,
             api_key=api_key,
+            tenant_id=self.tenant_id,
         )
 
 

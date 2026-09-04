@@ -49,7 +49,7 @@ def write_contexts(path: Path, *, n: int = 4, cfg: str = FINGERPRINT) -> Path:
 def config(tmp_path: Path, **contextual: object) -> IndexConfig:
     base: dict[str, object] = {"enabled": True, "contexts_path": tmp_path / "contexts.jsonl"}
     base.update(contextual)
-    return IndexConfig(name="t", contextual=base)  # type: ignore[arg-type]
+    return IndexConfig(name="t", tenant_id="t", contextual=base)  # type: ignore[arg-type]
 
 
 # --------------------------------------------------------------------------
@@ -59,8 +59,8 @@ def config(tmp_path: Path, **contextual: object) -> IndexConfig:
 
 def test_enabling_contextual_changes_the_vector_fingerprint() -> None:
     """Bật là đổi mọi vector, nên state cũ phải bị từ chối — `--recreate` mới chạy được."""
-    off = IndexConfig(name="t")
-    on = IndexConfig(name="t", contextual={"enabled": True})  # type: ignore[arg-type]
+    off = IndexConfig(name="t", tenant_id="t")
+    on = IndexConfig(name="t", tenant_id="t", contextual={"enabled": True})  # type: ignore[arg-type]
     assert off.fingerprint != on.fingerprint
 
 
@@ -70,28 +70,30 @@ def test_enabling_contextual_does_NOT_change_the_chunking_fingerprint() -> None:
     Nếu dùng chung một vân tay thì bật Contextual Retrieval sẽ làm chính artifact
     ngữ cảnh trở thành "sai vân tay" — tức bật lên là tự vô hiệu hoá thứ vừa bật.
     """
-    off = IndexConfig(name="t")
-    on = IndexConfig(name="t", contextual={"enabled": True})  # type: ignore[arg-type]
+    off = IndexConfig(name="t", tenant_id="t")
+    on = IndexConfig(name="t", tenant_id="t", contextual={"enabled": True})  # type: ignore[arg-type]
     assert off.chunking_fingerprint == on.chunking_fingerprint
 
 
 def test_changing_chunk_size_changes_the_chunking_fingerprint() -> None:
-    a = IndexConfig(name="t", chunking={"chunk_size": 1000})  # type: ignore[arg-type]
-    b = IndexConfig(name="t", chunking={"chunk_size": 550})  # type: ignore[arg-type]
+    a = IndexConfig(name="t", tenant_id="t", chunking={"chunk_size": 1000})  # type: ignore[arg-type]
+    b = IndexConfig(name="t", tenant_id="t", chunking={"chunk_size": 550})  # type: ignore[arg-type]
     assert a.chunking_fingerprint != b.chunking_fingerprint
 
 
 def test_embedding_model_is_in_the_chunking_fingerprint() -> None:
     """`HybridChunker` mượn tokenizer của embedding model để đo kích thước."""
-    a = IndexConfig(name="t", embedding_model="BAAI/bge-m3")
-    b = IndexConfig(name="t", embedding_model="bkai-foundation-models/vietnamese-bi-encoder")
+    a = IndexConfig(name="t", tenant_id="t", embedding_model="BAAI/bge-m3")
+    b = IndexConfig(
+        name="t", tenant_id="t", embedding_model="bkai-foundation-models/vietnamese-bi-encoder"
+    )
     assert a.chunking_fingerprint != b.chunking_fingerprint
 
 
 def test_device_is_not_in_the_chunking_fingerprint() -> None:
     """Chạy trên CPU hay GPU không đổi bộ chunk — cùng lý lẽ với `fingerprint`."""
-    a = IndexConfig(name="t", embedding_device="cpu")
-    b = IndexConfig(name="t", embedding_device="cuda")
+    a = IndexConfig(name="t", tenant_id="t", embedding_device="cpu")
+    b = IndexConfig(name="t", tenant_id="t", embedding_device="cuda")
     assert a.chunking_fingerprint == b.chunking_fingerprint
 
 
@@ -106,7 +108,7 @@ def test_disabled_returns_none_not_an_empty_dict() -> None:
     Nếu tắt cũng trả `{}` thì `if contexts:` ở chỗ gọi sẽ đối xử "tắt" giống
     "bật nhưng không nạp được gì", và cái sau phải là lỗi.
     """
-    assert _load_contexts(IndexConfig(name="t")) is None
+    assert _load_contexts(IndexConfig(name="t", tenant_id="t")) is None
 
 
 def test_enabled_without_the_artifact_fails_loudly(tmp_path: Path) -> None:
@@ -163,17 +165,17 @@ def test_coverage_below_the_threshold_stops_the_build() -> None:
     enrich = EnrichStats(n_chunks=1000, n_enriched=800, n_missing=200)
     enrich.missing_chunk_ids = [f"doc::{i:05d}" for i in range(20)]
     with pytest.raises(RuntimeError, match="ctx-coverage"):
-        _check_coverage(IndexConfig(name="t", contextual={"enabled": True}), enrich)  # type: ignore[arg-type]
+        _check_coverage(IndexConfig(name="t", tenant_id="t", contextual={"enabled": True}), enrich)  # type: ignore[arg-type]
 
 
 def test_coverage_at_the_threshold_passes() -> None:
     enrich = EnrichStats(n_chunks=100, n_enriched=95, n_missing=5)
-    _check_coverage(IndexConfig(name="t", contextual={"enabled": True}), enrich)  # type: ignore[arg-type]
+    _check_coverage(IndexConfig(name="t", tenant_id="t", contextual={"enabled": True}), enrich)  # type: ignore[arg-type]
 
 
 def test_the_threshold_is_configurable() -> None:
     enrich = EnrichStats(n_chunks=100, n_enriched=80, n_missing=20)
-    cfg = IndexConfig(name="t", contextual={"enabled": True, "min_coverage": 0.5})  # type: ignore[arg-type]
+    cfg = IndexConfig(name="t", tenant_id="t", contextual={"enabled": True, "min_coverage": 0.5})  # type: ignore[arg-type]
     _check_coverage(cfg, enrich)
 
 

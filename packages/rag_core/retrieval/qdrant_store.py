@@ -187,10 +187,23 @@ class QdrantDenseRetriever(Retriever):
         api_key: str | None = None,
         client: QdrantClient | None = None,
         timeout: float = 30.0,
+        tenant_id: str | None = None,
     ) -> None:
         self.embeddings = embeddings
         self.collection = collection
         self.name = f"qdrant-dense:{collection}"
+        self.tenant_id = tenant_id
+        """Chủ sở hữu của mọi point store này ghi ra (`TD-40`).
+
+        ⚠️ **Không** vào `name`: `name` là chuỗi "mọi thứ làm đổi con số"
+        (`TD-38`), và tenant không đổi con số của một lần eval — nó quyết định
+        *ai đọc được*. Đưa nó vào `name` sẽ làm mọi bundle đã ký hỏng chữ ký vì
+        một lý do không liên quan tới chất lượng truy hồi.
+
+        `None` = không ghi `tenant_id`, tức point **vô hình với mọi request đã
+        xác thực** (`W4-04` luôn lọc theo tenant). Chỉ dùng cho index đo đạc
+        chạy hoàn toàn ngoài đường serving.
+        """
         self._client = client
         self._url = url
         self._api_key = api_key
@@ -553,8 +566,7 @@ class QdrantDenseRetriever(Retriever):
             written += len(points)
         return UpsertStats(written=written, embedded=embedded, reused=len(borrowed))
 
-    @staticmethod
-    def _payload(chunk: Chunk) -> dict[str, Any]:
+    def _payload(self, chunk: Chunk) -> dict[str, Any]:
         # Lưu nguyên chunk để dựng lại được object đầy đủ lúc truy hồi, cộng vài
         # field phẳng ở cấp trên cùng để Qdrant lọc được mà không cần nested path.
         payload: dict[str, Any] = {"chunk": chunk.model_dump(mode="json")}
@@ -570,8 +582,23 @@ class QdrantDenseRetriever(Retriever):
                 # và khi đó `DatetimeRange` bỏ qua point đó *im lặng* thay vì để
                 # nó rơi vào nhóm "không có ngày" mà người gọi kiểm được.
                 payload["published_at"] = chunk.metadata.published_at.isoformat()
-        if "tenant_id" in chunk.extra:
-            payload["tenant_id"] = chunk.extra["tenant_id"]
+        # ⭐ Tenant của **store** thắng tenant trong `chunk.extra`, và trường hợp
+        # hai bên lệch nhau được ghi log chứ không im lặng: store được dựng từ
+        # config sở hữu collection, nên một chunk khai khác là một bug ở tầng
+        # gọi, không phải một ý định. Một field có hai nguồn sự thật là chỗ mà
+        # tenant sai sẽ xuất hiện lúc không ai nhìn.
+        claimed = chunk.extra.get("tenant_id")
+        if self.tenant_id is not None:
+            if claimed is not None and claimed != self.tenant_id:
+                logger.warning(
+                    "chunk %s khai tenant %r nhưng store ghi %r — dùng tenant của store",
+                    chunk.chunk_id,
+                    claimed,
+                    self.tenant_id,
+                )
+            payload["tenant_id"] = self.tenant_id
+        elif claimed is not None:
+            payload["tenant_id"] = claimed
         return payload
 
     def fetch_doc_chunks(

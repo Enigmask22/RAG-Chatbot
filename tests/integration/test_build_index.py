@@ -89,6 +89,7 @@ def _store(collection: str) -> QdrantDenseRetriever:
 def _config(root: Path, collection: str, **overrides: object) -> IndexConfig:
     base: dict[str, object] = {
         "name": collection,
+        "tenant_id": "test",
         "collection": collection,
         "manifest_path": root / "manifest.csv",
         "corpus_dir": root,

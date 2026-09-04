@@ -29,6 +29,7 @@ def make_config(**overrides: Any) -> IndexConfig:
     base: dict[str, Any] = {
         "name": "bgem3-contextual",
         "collection": "rag_bgem3_ctx",
+        "tenant_id": "public",
         "chunking": {"strategy": "hybrid", "chunk_size": 1000, "chunk_overlap": 100},
         "embedding_model": "BAAI/bge-m3",
         "contextual": {"enabled": True},

@@ -27,6 +27,11 @@
 name: bgem3
 collection: rag_bgem3
 
+# `TD-40`: bắt buộc, không có mặc định. Point thiếu `tenant_id` không khớp
+# `tenant_filter()` của `W4-04`, tức index dựng xong là vô hình với mọi người
+# dùng đã xác thực — và nó không báo lỗi ở đâu cả.
+tenant_id: public
+
 manifest_path: data/corpus_manifest.csv
 corpus_dir: data/corpus
 

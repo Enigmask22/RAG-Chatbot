@@ -334,3 +334,68 @@ class _OrderReranker:
 
     def score(self, query: str, texts: Any) -> list[float]:
         return [float(len(texts) - i) for i in range(len(texts))]
+
+
+class TestTenantOwnershipAtWriteTime:
+    """`TD-40` — index dựng mà quên tenant là index **vô hình**, và đường vá nó.
+
+    Phần còn lại của file này gán tenant qua `chunk.extra` từng chunk — cách
+    một corpus multi-tenant dùng. Nhóm này kiểm đường mà `build_index` thật sự
+    đi: **một** tenant cho cả lần build, đến từ `IndexConfig`.
+    """
+
+    @staticmethod
+    def _fresh(tenant: str | None) -> QdrantDenseRetriever:
+        return QdrantDenseRetriever(
+            HashingEmbeddingProvider(dimension=256, sparse=True),
+            collection=f"test_tenant_{uuid.uuid4().hex[:8]}",
+            url=QDRANT_URL,
+            tenant_id=tenant,
+        )
+
+    def test_a_store_tenant_reaches_qdrant_and_survives_a_filter(self) -> None:
+        store = self._fresh("t9")
+        store.ensure_collection(recreate=True)
+        try:
+            store.upsert(CHUNKS)
+
+            assert _ids(store.retrieve(_QUERY, top_k=9, filters={"tenant_id": "t9"}))
+            assert not _ids(store.retrieve(_QUERY, top_k=9, filters={"tenant_id": "t1"}))
+        finally:
+            store.client.delete_collection(store.collection)
+
+    def test_a_tenantless_index_is_invisible_and_backfill_is_the_way_out(self) -> None:
+        """⭐⭐ Đúng chuyện đã xảy ra với 15.814 chunk của `rag_bgem3_ctx`.
+
+        Ghi bằng store không tenant ⇒ mọi truy vấn có filter trả **rỗng**, trong
+        khi truy vấn không filter vẫn đầy đủ — tức index trông hoàn toàn khoẻ
+        mạnh ở mọi phép đo offline, và trống rỗng ở mọi request đã xác thực.
+
+        Và đường vá **không** phải build lại: `backfill_flat_payload` dựng lại
+        payload phẳng từ object `chunk` lồng bên trong, không chạm vector nào —
+        nên nó không thể làm sai một con số eval nào (`W2-06`).
+        """
+        collection = f"test_tenant_{uuid.uuid4().hex[:8]}"
+        embeddings = HashingEmbeddingProvider(dimension=256, sparse=True)
+        blind = QdrantDenseRetriever(embeddings, collection=collection, url=QDRANT_URL)
+        blind.ensure_collection(recreate=True)
+        try:
+            # `CHUNKS` mang sẵn `extra["tenant_id"]` cho t1/t2; bỏ đi để dựng lại
+            # đúng hình dạng của một corpus chưa bao giờ biết tới tenant.
+            blind.upsert([c.model_copy(update={"extra": {}}) for c in CHUNKS])
+
+            assert _ids(blind.retrieve(_QUERY, top_k=9)), "không filter thì index trông khoẻ"
+            assert not _ids(blind.retrieve(_QUERY, top_k=9, filters={"tenant_id": "public"}))
+
+            fixed = QdrantDenseRetriever(
+                embeddings, collection=collection, url=QDRANT_URL, tenant_id="public"
+            )
+            updated = fixed.backfill_flat_payload()
+
+            assert updated == len(CHUNKS)
+            assert _ids(fixed.retrieve(_QUERY, top_k=9, filters={"tenant_id": "public"}))
+            # Chạy lần hai là no-op — nó nằm trong đường build, nên phải gọi
+            # được nhiều lần mà không ghi thừa.
+            assert fixed.backfill_flat_payload() == 0
+        finally:
+            blind.client.delete_collection(collection)

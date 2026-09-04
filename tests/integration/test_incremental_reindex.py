@@ -165,6 +165,7 @@ def _config(root: Path, collection: str) -> IndexConfig:
     return IndexConfig.model_validate(
         {
             "name": collection,
+            "tenant_id": "test",
             "collection": collection,
             "manifest_path": root / "manifest.csv",
             "corpus_dir": root,
