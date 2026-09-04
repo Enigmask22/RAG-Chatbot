@@ -53,6 +53,13 @@ Bảng này là chỗ để trả lời "hạng mục đó đã làm những gì
 | `TD-22` Ghim parse | [`tasks/td-22-parse-pin.md`](tasks/td-22-parse-pin.md) | — | — | `td-22-parse-pin.json` | Manifest ghim `text_sha256` + `parse_fingerprint`; ⭐⭐ vân tay `W3-01` ghim **tên gói ô dù** (`export_to_markdown` nằm ở `docling-core`, thả tự do `>=2.91,<3.0`) và **trọng số bố cục tải theo nhánh `main`** (`TD-27`); chép nguyên byte sang `.md` → sha256 trùng khít, **−21,6% văn bản** |
 | `W3-05` Parent-child | [`tasks/w3-05-parent-child.md`](tasks/w3-05-parent-child.md) | — | — | `w3-05-parent-child-pc{256,128}-k{3,5,10,20}.json`, `index-pc256.json`, `index-pc128.json` | **Parent không phải một point** (là *tập* các child, nên 0 thay đổi payload/filter/backfill); một **Protocol khớp với method KHÔNG tồn tại** mà 27 test vẫn xanh; và **độ nở ngữ cảnh là chỉ số đánh lừa** — chia đôi child làm nó gấp đôi trong khi prompt không đổi (`TD-26`) |
 | `W3-06` Token sizing | [`tasks/w3-06-token-sizing.md`](tasks/w3-06-token-sizing.md) | — | — | — | DoD **đã đạt sẵn** với BGE-M3 (0/15.814, dư 11,2×); giá trị thật là **san bằng kích thước chunk giữa hai ngôn ngữ** (PhoBERT −22,3% → +2,4%), và **ký tự không phải đơn vị mang đi được** (`TD-25`) |
+| `W4-01` RagBundle | [`tasks/w4-01-rag-bundle.md`](tasks/w4-01-rag-bundle.md) | — | — | — | Artifact có version + checksum nối hai plane; builder **từ chối đóng gói chéo** (eval của index này + config của index kia) |
+| `W4-02` hot-swap bundle | [`tasks/w4-02-bundle-reload.md`](tasks/w4-02-bundle-reload.md) | — | — | — | Đổi bundle không restart; ảnh chụp **một lần** cho cả lượt, rollback một bước. Đo thật ở `TD-37`: 0.2.0 → 0.1.0 hết **451 ms** |
+| `W4-03` khung FastAPI | [`tasks/w4-03-fastapi-skeleton.md`](tasks/w4-03-fastapi-skeleton.md) | — | — | — | `/health` vs `/ready` tách vai; ⭐ lần chạy **thật** tìm ra lỗi mà 45 test không thấy, và `test_a_hung_dependency_does_not_hang_ready` đặt đồng hồ **sai chỗ** |
+| `W4-04` auth + hạn mức | [`tasks/w4-04-auth-ratelimit.md`](tasks/w4-04-auth-ratelimit.md) | — | — | — | Middleware chứ không `Depends` (quên = **chặn**, không phải mở); `tenant_filter()` **từ chối** filter trỏ sang tenant khác. Hạn mức đếm trong tiến trình (`TD-39`) |
+| `W4-05` Postgres + RLS | [`tasks/w4-05-postgres-alembic.md`](tasks/w4-05-postgres-alembic.md) | — | — | — | ⭐⭐ **`FORCE ROW LEVEL SECURITY`**: chủ bảng được miễn policy, nên `ENABLE` một mình là trang trí trong khi `pg_tables.rowsecurity` vẫn báo `true` |
+| `W4-06` `POST /chat` SSE | [`tasks/w4-06-chat-sse.md`](tasks/w4-06-chat-sse.md) | — | — | — | ⭐⭐ Đường phân giới "còn trả được HTTP status" vs "chỉ còn khung SSE" là một đường **thật** trong mã; lần chạy thật đầu trả **0 ký tự** (1024/1024 token vào chuỗi suy luận) và tìm ra `TD-40` |
+| `W4-07` hiểu câu hỏi | [`tasks/w4-07-query-understanding.md`](tasks/w4-07-query-understanding.md) | — | — | `w4-07-language-directive.json`, `w4-07-real-run.json` | ⭐⭐ Chỉ thị ngôn ngữ **8/8 → 0/8** (tỉ lệ nền là *tất cả*); ⭐⭐ tiêm lỗi phơi ra `"thầy cô"`/`"chị em"` bị xếp là chào hỏi ⇒ **không truy hồi**; ⭐⭐ lần chạy thật **đảo ngược** quyết định "model xem câu gốc". 27 case gán nhãn tay, chỉ **7 held-out (6/7)** là bằng chứng |
 | — (hành chính) | [`tasks/rename-workspace.md`](tasks/rename-workspace.md) | — | — | — | Đổi tên repo → `RAG-Chatbot` |
 
 ### Cách đọc tên một lần chạy
@@ -110,6 +117,12 @@ Mặc định trong code cũng trỏ vào đây: `retrieval_eval.py --out-dir` v
 ---
 
 ## Chỗ còn hổng — đọc trước khi tin một con số
+
+⚠️ **Bảng trên thiếu toàn bộ `W4` cho tới 2026-09-04.** Bảy hạng mục `W4-01`…`W4-07`
+có báo cáo đầy đủ trong `tasks/` từ 03/09 nhưng không có hàng nào ở đây, nên ai vào
+bản đồ này để review đường serving sẽ kết luận là nó chưa được làm. Đã bổ sung cùng
+lượt với `W4-07`. Bài học nhỏ và lặp lại được: **một bản đồ không được cập nhật cùng
+lúc với thứ nó chỉ đường thì nó nói dối theo hướng khó phát hiện nhất** — im lặng.
 
 **✅ `probes/w2-05-rerank-probe.json` — chạy lại 2026-08-21, khớp.** File này từng
 không tồn tại: `make rerank-probe` ghi ra đường dẫn đó, nhưng ở `W2-05` tôi chạy

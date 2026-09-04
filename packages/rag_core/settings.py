@@ -136,6 +136,23 @@ class Settings(BaseSettings):
     chat_top_k: int = Field(default=5, ge=1, le=50)
     chat_max_tokens: int = Field(default=1024, ge=1)
 
+    # ------------------------------------------------- Query understanding (W4-07)
+    chat_rewrite: bool = True
+    """Bật/tắt **viết lại câu hỏi đa lượt** — và chỉ nó.
+
+    Đây là việc duy nhất trong `W4-07` tốn tiền và cộng vào TTFB, nên nó là việc
+    duy nhất có công tắc. Định tuyến (`NO_RETRIEVAL`/`CLARIFY`) và phát hiện ngôn
+    ngữ là luật thuần, tất định, miễn phí — cho chúng một công tắc chỉ tạo thêm
+    một cấu hình mà ở đó hệ thống chạy tệ hơn không vì lý do nào.
+
+    Tắt nó **không** làm hỏng lượt follow-up: câu gốc vẫn đi truy hồi, đúng hành
+    vi của `W4-06`.
+    """
+
+    chat_rewrite_timeout_s: float = Field(default=6.0, gt=0.0, le=30.0)
+    """Bước viết lại nằm **trước** truy hồi, nên nó cộng thẳng vào TTFB. Quá hạn
+    thì lượt đi tiếp bằng câu gốc — mất một cải thiện, không mất câu trả lời."""
+
     # ------------------------------------------------------------ Model
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"
     embedding_device: str = "auto"

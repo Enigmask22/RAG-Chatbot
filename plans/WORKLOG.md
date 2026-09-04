@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-08-22 (10) (cuối file)** — `W3-08` xong, `W3` **7/9**, `G3` **2/3**. API điều khiển ingestion + worker arq (`pipeline/ingest/`). ✅ `POST` **p50 3,47 ms · p95 4,26 ms**, dư **47×** so với trần 200 ms — nhanh vì endpoint không làm gì, và có test **tiến trình con** ghim rằng import app không kéo theo torch. ⭐⭐ **`max_tries` KHÔNG thử lại `Exception` thường**: arq chỉ thử lại `Retry`/`RetryJob`/`CancelledError` (`arq/worker.py:613-633`) — tôi viết test để chứng minh nó hoạt động, test đỏ, và hoá ra mặc định của arq đúng; phân loại lỗi chuyển vào `is_transient`. ⚠️⚠️ **`doc_ids` suýt thành endpoint XOÁ index** — `build_index` gỡ mọi tài liệu không thấy trong lượt chạy, nên diễn đạt "index lại tài liệu này" bằng bộ lọc corpus sẽ xoá 59 tài liệu kia và trả 200. ⚠️ Ba lỗi test đều hỏng không giống nguyên nhân (`Annotated` trong hàm → 422 query param; hàng đợi Redis dùng chung; thứ tự fixture). 💡 Và `-q` tôi gõ suốt nhiều phiên thành `-qq`, tắt hẳn dòng tổng kết — `pyproject.toml` đã cảnh báo từ `W2-05`.
+> **Phiên mới nhất: 2026-09-04 (cuối file)** — `W4-07` xong, `W4` **7/13**. Hiểu câu hỏi trước khi truy hồi. ⭐⭐ Chỉ thị ngôn ngữ **8/8 → 0/8**; ⭐⭐ tiêm lỗi phơi ra `"thầy cô"` bị xếp là chào hỏi ⇒ không truy hồi; ⭐⭐ lần chạy thật đảo ngược một quyết định thiết kế. ⚠️ File này có lỗ hổng 03/09 → 04/09 — xem changelog `CHECKLIST.md`.
+>
+> Phiên trước: **2026-08-22 (10)** — `W3-08` xong, `W3` **7/9**, `G3` **2/3**. API điều khiển ingestion + worker arq (`pipeline/ingest/`). ✅ `POST` **p50 3,47 ms · p95 4,26 ms**, dư **47×** so với trần 200 ms — nhanh vì endpoint không làm gì, và có test **tiến trình con** ghim rằng import app không kéo theo torch. ⭐⭐ **`max_tries` KHÔNG thử lại `Exception` thường**: arq chỉ thử lại `Retry`/`RetryJob`/`CancelledError` (`arq/worker.py:613-633`) — tôi viết test để chứng minh nó hoạt động, test đỏ, và hoá ra mặc định của arq đúng; phân loại lỗi chuyển vào `is_transient`. ⚠️⚠️ **`doc_ids` suýt thành endpoint XOÁ index** — `build_index` gỡ mọi tài liệu không thấy trong lượt chạy, nên diễn đạt "index lại tài liệu này" bằng bộ lọc corpus sẽ xoá 59 tài liệu kia và trả 200. ⚠️ Ba lỗi test đều hỏng không giống nguyên nhân (`Annotated` trong hàm → 422 query param; hàng đợi Redis dùng chung; thứ tự fixture). 💡 Và `-q` tôi gõ suốt nhiều phiên thành `-qq`, tắt hẳn dòng tổng kết — `pyproject.toml` đã cảnh báo từ `W2-05`.
 >
 > Phiên trước: **2026-08-22 (9)** — `W3-07` xong, `W3` **6/9**, và `G3` được một tiêu chí. Re-index tăng dần ở mức **chunk**: nhớ `content_hash` từng chunk, mượn lại vector của point cũ. ⭐ Corpus thật, sửa một dòng ở tài liệu 1.082 chunk → embed lại **6** chunk, nhanh hơn **179,3×** → `G3` "reprocess ≥ 10×" **ĐẠT**. ⭐ **Không dựng cache vector — Qdrant đã là cache**; chỉ thiếu đường đọc lại (`fetch_vectors`). ⭐⭐ Ca tổng hợp cho 2,0% mượn lại còn corpus thật cho 99,4%; chênh lệch ấy nghĩa là chưa hiểu cơ chế, và chỗ hoà giải là phát hiện: `separators` có **thứ tự ưu tiên** nên mỗi `
 
@@ -3132,3 +3134,56 @@ uv run pytest tests/unit/test_contextualize_backends.py
 
 Việc tiếp theo: nối `apply_contexts` vào `build_index` (chưa làm), rồi `W3-09`.
 Song song, `W4` vẫn là đường găng.
+
+
+---
+
+## 2026-09-04 · `W4-07` — hiểu câu hỏi trước khi truy hồi
+
+> ⚠️ **File này có một lỗ hổng 03/09 → 04/09.** Từ `W3-04` tới `W4-06` + `TD-32`,
+> `TD-35`…`TD-40` không có phiên nào ghi ở đây. Bản ghi đầy đủ của chúng nằm ở
+> bảng changelog cuối [`CHECKLIST.md`](CHECKLIST.md) và ở `reports/tasks/`; tôi
+> **không** dựng lại chúng ở đây vì viết lại nhật ký sau khi việc đã xong là viết
+> văn, không phải ghi chép.
+
+### Đã xong
+
+`serving/core/understanding.py` (mới) + nối vào `ChatService`, `app.py`, migration
+`0003`. Ba việc: định tuyến `NO_RETRIEVAL`/`CLARIFY`/`RETRIEVE` (luật thuần), viết
+lại câu hỏi đa lượt (một lượt LLM, **chỉ khi** cần), phát hiện ngôn ngữ.
+
+Ba phát hiện, và cả ba đến từ chỗ khác nhau:
+
+1. **Đo A/B** — chỉ thị ngôn ngữ tường minh đưa tỉ lệ trả lời sai ngôn ngữ từ
+   **8/8 xuống 0/8**. Tỉ lệ nền là *tất cả*, không phải *thỉnh thoảng*.
+2. **Tiêm lỗi** — một phép tiêm **không đỏ** dẫn tới việc phát hiện `"thầy cô"`,
+   `"chị em"` bị xếp là chào hỏi và **không được truy hồi**.
+3. **Chạy thật** — model từ chối trả lời `"cái đó thì sao?"` dù truy hồi ra đúng
+   chunk, đảo ngược quyết định "model xem câu gốc".
+
+**1954 test xanh, 3 skip.** Chi phí API $0,0125. 6 nợ mới `TD-41`…`TD-46`.
+
+Cũng trong phiên này: bổ sung **7 hàng `W4`** còn thiếu vào bản đồ
+[`reports/README.md`](reports/README.md) — chúng có báo cáo đầy đủ từ 03/09 nhưng
+không có hàng nào, nên ai vào bản đồ để review đường serving sẽ kết luận là nó
+chưa được làm.
+
+### Trạng thái
+
+`W4` **7/13**. Còn `W4-08`…`W4-13`, và `G4`.
+
+### Lệnh để tiếp tục
+
+```bash
+docker compose up -d                       # postgres + qdrant + redis
+uv run pytest tests/unit/test_query_understanding.py -q
+make serve                                 # rồi POST /chat để xem khung meta
+```
+
+Việc tiếp theo: **`W4-08`** (LLM Router: DeepSeek → OpenRouter slug ghim →
+circuit breaker + budget cap). Nó có sẵn hai chỗ cắm không phải sửa gì:
+`ChatService.llm` khai `StreamingLLM` và `QueryUnderstanding.llm` khai
+`LLMProvider` — cả hai là Protocol.
+
+⚠️ Quy tắc cứng #1 áp thẳng vào `W4-08`: **không** dùng OpenRouter preset
+(`@preset/...`), luôn ghim slug tường minh và log model **thực tế** đã phục vụ.

@@ -159,10 +159,32 @@ class Message(Base, _Tenanted):
     đúng hạng mục này.
     """
 
+    route: Mapped[str | None] = mapped_column(String(16))
+    """Nhánh mà `W4-07` đã chọn: `retrieve`, `no_retrieval`, `clarify`.
+
+    Trên message của **người dùng**. Đây là cột trả lời được câu hỏi vận hành duy
+    nhất mà bộ phân loại ấy đặt ra: *"bao nhiêu phần trăm lượt bị bỏ truy hồi, và
+    tỉ lệ đó có đang trôi không?"* Nó không đo được ở chỗ nào khác, vì một lượt
+    `no_retrieval` trông y hệt một lượt truy hồi không ra gì.
+    """
+
+    rewritten_query: Mapped[str | None] = mapped_column(Text)
+    """Chuỗi **thật sự đưa vào truy hồi**, khi nó khác `content` — `W4-07`.
+
+    ⚠️ Không có cột này thì một lượt đã viết lại là không giải thích nổi: người
+    vận hành đọc `content` = "cái đó thì sao?" bên cạnh `citations` nói về di cư
+    lao động, và không có gì trên đường đi nối hai thứ ấy lại. `NULL` nghĩa là
+    truy hồi chạy đúng bằng `content`.
+    """
+
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
     __table_args__ = (
         CheckConstraint("role IN ('user', 'assistant', 'system')", name="ck_message_role"),
+        CheckConstraint(
+            "route IS NULL OR route IN ('retrieve', 'no_retrieval', 'clarify')",
+            name="ck_message_route",
+        ),
         # Đúng thứ tự mà đường đọc lịch sử cần: một hội thoại của một tenant, theo
         # thời gian. Thiếu index này thì mỗi lần mở hội thoại là một seq scan trên
         # toàn bộ bảng message của mọi khách hàng.

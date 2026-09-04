@@ -38,7 +38,7 @@ from rag_core.llm import (
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_GLM_MODEL,
     MIN_REASONING,
-    StreamingLLM,
+    OpenAICompatProvider,
     build_deepseek_provider,
     build_glm_provider,
 )
@@ -53,6 +53,7 @@ from serving.core.probes import Check, ReadinessProbes
 from serving.core.ratelimit import RateLimiter
 from serving.core.registry import BundleRegistry, RuntimeBuilder
 from serving.core.runtime import QdrantRuntimeBuilder
+from serving.core.understanding import QueryUnderstanding
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -139,7 +140,7 @@ def _postgres_check() -> Check:
     return check
 
 
-def build_llm(settings: Settings) -> StreamingLLM | None:
+def build_llm(settings: Settings) -> OpenAICompatProvider | None:
     """Nguồn sinh text của `POST /chat` — `W4-06`.
 
     ⭐ Trả `None` thay vì ném khi thiếu key. Cùng lý lẽ với việc bundle nạp lỗi
@@ -147,6 +148,13 @@ def build_llm(settings: Settings) -> StreamingLLM | None:
     có `/ready` nào để hỏi vì sao, và ở đây còn tệ hơn vì `/health`, `/ready`,
     `/admin/bundle` đều còn dùng được bình thường mà không cần LLM. Thiếu key
     làm hỏng đúng **một** endpoint, nên nó phải hỏng đúng một endpoint.
+
+    ⭐ Kiểu trả về là lớp **cụ thể**, không phải `StreamingLLM`, và đó là chỗ
+    đúng để hẹp lại: `W4-07` cần cùng client này ở giao diện *không* stream
+    (`LLMProvider.complete`) để viết lại câu hỏi. Một client, một pool kết nối,
+    một model — và điểm hẹp nằm ở factory, nơi kiểu cụ thể vốn đã biết, chứ
+    không lan vào `ChatService` hay `QueryUnderstanding` (cả hai vẫn khai
+    Protocol, nên router của `W4-08` vẫn cắm vào được).
     """
     if settings.chat_provider == "none":
         return None
@@ -170,6 +178,20 @@ def build_llm(settings: Settings) -> StreamingLLM | None:
         settings.chat_model or DEFAULT_GLM_MODEL,
         api_key=key.get_secret_value(),
         base_url=settings.glm_base_url,
+    )
+
+
+def build_understanding(settings: Settings, llm: OpenAICompatProvider | None) -> QueryUnderstanding:
+    """Bước hiểu câu hỏi của `W4-07`, dùng **chung** client với đường sinh.
+
+    ⚠️ `chat_rewrite=false` tắt **đúng một** trong ba việc: viết lại đa lượt, thứ
+    duy nhất tốn tiền và tốn TTFB. Định tuyến và phát hiện ngôn ngữ là luật
+    thuần, không có lý do nào để tắt và không có công tắc nào tắt chúng.
+    """
+    return QueryUnderstanding(
+        llm=llm if settings.chat_rewrite else None,
+        timeout_s=settings.chat_rewrite_timeout_s,
+        extra_body=MIN_REASONING.get(settings.chat_provider),
     )
 
 
@@ -256,14 +278,16 @@ def create_app(
     )
     api.state.registry = registry
     api.state.probes = probe_factory(registry)
+    llm = build_llm(resolved)
     api.state.chat = ChatService(
         registry=registry,
         sessions=build_sessions(),
-        llm=build_llm(resolved),
+        llm=llm,
         top_k=resolved.chat_top_k,
         max_tokens=resolved.chat_max_tokens,
         # Bảng đo được ở `W3-04`, dùng lại nguyên vẹn — xem `ChatService.extra_body`.
         extra_body=MIN_REASONING.get(resolved.chat_provider),
+        understanding=build_understanding(resolved, llm),
     )
     # ⚠️ **Thứ tự quan trọng và nó ngược trực giác.** `add_middleware` *chèn lên
     # đầu*, nên cái thêm **sau** nằm **ngoài**. Auth phải thêm trước để

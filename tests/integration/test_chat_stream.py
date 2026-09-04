@@ -563,3 +563,198 @@ def _wait_history_len(client: httpx.Client, base: str, conv: str, want: int) -> 
             return
         time.sleep(0.05)
     raise AssertionError(f"hội thoại không đạt {want} message sau 10 s")
+
+
+# ---------------------------------------------------------------------------
+# `W4-07` — hiểu câu hỏi, trên đường thật
+# ---------------------------------------------------------------------------
+
+
+def test_a_greeting_reaches_the_model_without_reaching_qdrant(server: str) -> None:
+    """DoD: `"hello"` không gọi retrieval.
+
+    ⭐ Đo bằng khung `sources` **rỗng**, không bằng một cờ nội bộ: đó là thứ duy
+    nhất một client thấy được, và nó cũng là thứ chứng minh không có chunk nào
+    bị nhét vào prompt. Model vẫn được gọi — một lời chào vẫn phải được chào lại.
+    """
+    with httpx.Client(timeout=30.0) as client:
+        _, frames = _chat(client, server, "hello")
+    kinds = {name: data for _, name, data in frames}
+    assert kinds["meta"]["route"] == "no_retrieval"
+    assert kinds["meta"]["language"] == "en"
+    assert kinds["sources"]["sources"] == []
+    assert kinds["done"]["finish_reason"] == "stop"
+    assert "".join(d["text"] for _, n, d in frames if n == "delta")
+
+
+def test_a_question_with_nothing_to_retrieve_never_reaches_the_model(server: str) -> None:
+    """⭐⭐ Nhánh `CLARIFY` — nhánh duy nhất trả lời mà **không** gọi model nào.
+
+    Bằng chứng là `model: null` trong khung `done`: LLM giả của bộ test luôn
+    khai `scripted-model-served`, nên chuỗi ấy vắng mặt chỉ có một cách xảy ra.
+    """
+    with httpx.Client(timeout=30.0) as client:
+        _, frames = _chat(client, server, "cái đó thì sao?")
+        conv = next(d for _, n, d in frames if n == "meta")["conversation_id"]
+        messages = _wait_for_assistant(client, server, conv)
+
+    kinds = {name: data for _, name, data in frames}
+    assert kinds["meta"]["route"] == "clarify"
+    assert kinds["done"]["finish_reason"] == "clarify"
+    assert kinds["done"]["model"] is None
+    assert kinds["done"]["usage"] == {}
+    assert kinds["sources"]["sources"] == []
+
+    answer = "".join(d["text"] for _, n, d in frames if n == "delta")
+    assert answer.startswith("Câu hỏi chưa đủ rõ")
+    # Vẫn là một lượt thật: nó nằm trong lịch sử, với đủ nguồn gốc.
+    assert messages[1]["content"] == answer
+    assert messages[1]["finish_reason"] == "clarify"
+    assert messages[0]["route"] == "clarify"
+
+
+def test_the_same_question_after_a_first_turn_is_rewritten_before_retrieval(
+    database: Engine, workspace: Path
+) -> None:
+    """⭐⭐ DoD: `"cái đó thì sao?"` thành một câu độc lập — và nó phải đi tới **Qdrant**.
+
+    `meta.question` một mình không chứng minh được điều đó: nó chỉ nói kế hoạch
+    ghi gì. Bằng chứng nằm ở mode `echo_prompt`, chỗ LLM giả đọc ngược lại lượt
+    người dùng cuối cùng — trong đó khối NGỮ CẢNH do `SlowRetriever` dựng chứa
+    **nguyên văn** chuỗi truy vấn nó nhận được.
+
+    Cùng lúc đó, phép kiểm thứ hai chạy: câu hỏi đưa cho model vẫn là câu **gốc**.
+    Truy hồi cần một chuỗi tự đủ nghĩa; model thì đã có lịch sử ở ngay trên và
+    cần thấy đúng thứ người dùng vừa gõ.
+    """
+    rewritten = "Báo cáo WDR 2023 nói gì về di cư lao động?"
+    proc, base = _serve(
+        workspace,
+        CHAT_TEST_MODE="echo_prompt",
+        CHAT_TEST_DELTA_MS="1",
+        CHAT_TEST_REWRITE=rewritten,
+    )
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            _, first = _chat(client, base, "WDR 2023 nói gì về di cư?")
+            conv = first[0][2]["conversation_id"]
+            _wait_for_assistant(client, base, conv)
+            _, second = _chat(client, base, "cái đó thì sao?", conversation_id=conv)
+            _wait_history_len(client, base, conv, 4)
+            messages = client.get(f"{base}/conversations/{conv}", headers=_headers()).json()[
+                "messages"
+            ]
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    meta = next(d for _, n, d in second if n == "meta")
+    assert meta["rewritten"] is True
+    assert meta["question"] == rewritten
+
+    echoed = "".join(d["text"] for _, n, d in second if n == "delta")
+    assert f"nói về {rewritten}" in echoed, "truy hồi chạy bằng câu gốc, không phải câu viết lại"
+    assert "CÂU HỎI: cái đó thì sao?" in echoed, "model phải thấy câu người dùng đã gõ"
+    assert f'(Hiểu đầy đủ theo hội thoại: "{rewritten}")' in echoed, (
+        "model cũng phải thấy bản đã giải nghĩa — nếu không nó từ chối trả lời chuỗi mơ hồ"
+    )
+
+    # Và cả hai chuỗi được lưu lại, tách bạch — xem migration `0003`.
+    assert messages[2]["content"] == "cái đó thì sao?"
+    assert messages[2]["rewritten_query"] == rewritten
+    assert messages[2]["route"] == "retrieve"
+
+
+def test_a_self_contained_question_is_not_rewritten_even_with_history(
+    database: Engine, workspace: Path
+) -> None:
+    """Ngược lại thì mỗi lượt từ thứ hai trở đi tốn thêm một lượt gọi LLM — và
+    bộ viết lại ở đây trả một chuỗi cố định, nên nếu nó chạy thì nó sẽ **thay**
+    câu hỏi thật bằng chuỗi ấy."""
+    proc, base = _serve(
+        workspace,
+        CHAT_TEST_MODE="echo_prompt",
+        CHAT_TEST_DELTA_MS="1",
+        CHAT_TEST_REWRITE="CÂU BỊ THAY",
+    )
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            _, first = _chat(client, base, "lượt một nói về nghèo đói")
+            conv = first[0][2]["conversation_id"]
+            _wait_for_assistant(client, base, conv)
+            _, second = _chat(
+                client,
+                base,
+                "Chi tiêu công cho giáo dục của Indonesia là bao nhiêu?",
+                conversation_id=conv,
+            )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    meta = next(d for _, n, d in second if n == "meta")
+    assert meta["rewritten"] is False
+    echoed = "".join(d["text"] for _, n, d in second if n == "delta")
+    assert "CÂU BỊ THAY" not in echoed
+
+
+def test_the_answer_language_is_measured_not_only_requested(
+    database: Engine, workspace: Path
+) -> None:
+    """⭐⭐ Chỉ dẫn ngôn ngữ vẫn chỉ là chỉ dẫn — nhưng từ đây nó **đếm được**.
+
+    LLM giả luôn trả lời tiếng Việt. Hỏi bằng tiếng Anh thì chỉ thị `"Answer in
+    English."` có mặt trong prompt (kiểm bằng `echo_prompt`), model vẫn phớt lờ
+    nó, và `done.language_mismatch` phải là `true`.
+
+    Đó chính là ca đã xảy ra ở lần chạy thật của `W4-06`, chỉ khác một điều: khi
+    ấy không có gì ghi lại rằng nó đã xảy ra.
+    """
+    proc, base = _serve(workspace, CHAT_TEST_MODE="ok", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            _, english = _chat(client, base, "What is the extreme poverty line?")
+            _, vietnamese = _chat(client, base, "Ngưỡng nghèo cùng cực là bao nhiêu?")
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    en_done = next(d for _, n, d in english if n == "done")
+    vi_done = next(d for _, n, d in vietnamese if n == "done")
+    assert next(d for _, n, d in english if n == "meta")["language"] == "en"
+    assert en_done["language_mismatch"] is True, "hỏi tiếng Anh, đáp tiếng Việt — phải bị ghi lại"
+    assert vi_done["language_mismatch"] is False
+
+
+def test_the_language_directive_reaches_the_prompt(database: Engine, workspace: Path) -> None:
+    proc, base = _serve(workspace, CHAT_TEST_MODE="echo_prompt", CHAT_TEST_DELTA_MS="1")
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            _, english = _chat(client, base, "What is the extreme poverty line?")
+            _, unknown = _chat(client, base, "GDP per capita?")
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    assert "Answer in English." in "".join(d["text"] for _, n, d in english if n == "delta")
+    echoed = "".join(d["text"] for _, n, d in unknown if n == "delta")
+    # ⭐ Không phát hiện được ngôn ngữ ⇒ **không** chỉ thị nào cả. Đoán ở đây là
+    # cách ép một người đang gõ tiếng Việt không dấu phải đọc câu trả lời tiếng Anh.
+    assert "Answer in English." not in echoed
+    assert "Trả lời bằng tiếng Việt." not in echoed
+
+
+def test_a_cross_tenant_filter_is_still_403_on_a_turn_that_never_retrieves(server: str) -> None:
+    """⚠️ `tenant_filter()` **từ chối**, nó không chỉ thu hẹp.
+
+    Bỏ nó ở nhánh `no_retrieval` thì cùng một request nhận `403` hay `200` tuỳ
+    theo người dùng có chào hỏi hay không — tức hành vi bảo mật phụ thuộc vào bộ
+    phân loại câu hỏi, và nó thành một chỗ dò xem tenant nào tồn tại.
+    """
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(
+            f"{server}/chat",
+            json={"message": "hello", "filters": {"tenant_id": "globex"}},
+            headers=_headers(),
+        )
+    assert response.status_code == 403

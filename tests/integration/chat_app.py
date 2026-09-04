@@ -27,19 +27,22 @@ from typing import Any
 from fastapi import FastAPI
 
 from rag_core.bundle import RagBundle
-from rag_core.llm import ChatMessage, LLMChunk, LLMError, LLMResponse
+from rag_core.llm import ChatMessage, LLMChunk, LLMError, LLMProvider, LLMResponse
 from rag_core.retrieval.filters import FilterSpec
 from rag_core.schemas import Chunk, DocumentMetadata, RetrievedChunk, TokenUsage
 from rag_core.settings import Settings
 from serving.api.app import create_app
 from serving.core.probes import ReadinessProbes
 from serving.core.registry import BundleRegistry
+from serving.core.understanding import QueryUnderstanding
 
 ENV_BUNDLES = "CHAT_TEST_BUNDLES"
 ENV_KEYS = "CHAT_TEST_KEYS"
 ENV_DELTA_MS = "CHAT_TEST_DELTA_MS"
 ENV_RETRIEVAL_MS = "CHAT_TEST_RETRIEVAL_MS"
 ENV_MODE = "CHAT_TEST_MODE"
+ENV_REWRITE = "CHAT_TEST_REWRITE"
+"""Chuỗi mà bộ viết lại của `W4-07` trả về. Không đặt = không cấu hình bộ viết lại."""
 
 
 @dataclass
@@ -100,7 +103,13 @@ class ScriptedLLM:
         delay = float(os.environ.get(ENV_DELTA_MS, "120")) / 1000.0
         mode = os.environ.get(ENV_MODE, "ok")
         pieces = ["Theo ", "tài liệu ", "[1], ", "câu trả lời ", "là vậy."]
-        if mode == "echo_history":
+        if mode == "echo_prompt":
+            # ⭐ Cửa sổ duy nhất nhìn được vào prompt thật từ tiến trình test.
+            # Nó chứng minh cùng lúc ba thứ của `W4-07`: chuỗi nào đã đi vào
+            # truy hồi (nằm trong khối NGỮ CẢNH mà `SlowRetriever` chép lại),
+            # model được cho xem câu hỏi **gốc**, và chỉ thị ngôn ngữ có ở cuối.
+            pieces = [messages[-1].content]
+        elif mode == "echo_history":
             # Đọc ngược lại đúng phần lịch sử mà `ChatService` đã đưa vào prompt.
             # Không có đường nào khác: LLM sống trong tiến trình con, nên thứ duy
             # nhất test nhìn thấy là dòng token nó trả về.
@@ -126,6 +135,39 @@ class ScriptedLLM:
         )
 
 
+class ScriptedRewriter(LLMProvider):
+    """Bộ viết lại câu hỏi của `W4-07`, chạy trong tiến trình con.
+
+    Trả một chuỗi cố định đọc từ môi trường: test cần biết **chính xác** chuỗi
+    nào lẽ ra phải đi vào truy hồi, và một bộ viết lại "thông minh" ở đây sẽ
+    biến phép kiểm thành một phép đoán.
+    """
+
+    name = "scripted-rewriter"
+
+    def __init__(self) -> None:
+        self.model = "scripted-rewriter-model"
+
+    def complete(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
+        seed: int | None = None,
+        extra_body: Any = None,
+    ) -> LLMResponse:
+        text = os.environ.get(ENV_REWRITE, "")
+        return LLMResponse(
+            text=text,
+            model=self.model,
+            model_requested=self.model,
+            usage=TokenUsage(prompt_tokens=90, completion_tokens=10, cost_usd=0.00003),
+            finish_reason="stop",
+        )
+
+
 def _build(bundle: RagBundle) -> tuple[Any, None]:
     return SlowRetriever(), None
 
@@ -145,6 +187,8 @@ def make() -> FastAPI:
     )
     app = create_app(settings=settings, build_runtime=_build, probe_factory=_probes)
     app.state.chat.llm = ScriptedLLM()
+    if ENV_REWRITE in os.environ:
+        app.state.chat.understanding = QueryUnderstanding(llm=ScriptedRewriter())
     return app
 
 
