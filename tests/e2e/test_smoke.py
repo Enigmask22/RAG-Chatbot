@@ -24,6 +24,7 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -219,3 +220,47 @@ def test_chat_history_survives_a_compose_restart(client: httpx.Client) -> None:
     assert history.status_code == 200, history.text
     roles = [m["role"] for m in history.json()["messages"]]
     assert roles[:2] == ["user", "assistant"], roles
+
+
+def test_the_container_runs_the_versions_the_lockfile_pins() -> None:
+    """⭐⭐ `runtime_drift: null` **không** đủ để nói "đúng hệ thống đã đo".
+
+    Phép kiểm danh tính bundle (`TD-38`) soi tên model, thiết bị, dtype,
+    max_length — nhưng không soi phiên bản thư viện. `W5-01` đo được image trôi
+    lên `transformers 5.16.1 / sentence-transformers 6.0.1 / torch 2.14.0` trong
+    khi lock ghim `5.15.0 / 5.7.0 / 2.13.0`, và suốt lúc đó `/admin/bundle` vẫn
+    báo `runtime_drift: null`. Hậu quả: cross-encoder nạp ra dtype trộn, **mọi**
+    request có truy hồi trả 503.
+
+    Test này đọc lockfile và hỏi thẳng container. Nó là phép kiểm duy nhất trong
+    dự án nối được "cái đã đo" với "cái đang chạy" ở mức thư viện.
+    """
+    import tomllib
+
+    lock = tomllib.loads(Path("uv.lock").read_text(encoding="utf-8"))
+    locked: dict[str, set[str]] = {}
+    for package in lock.get("package", []):
+        locked.setdefault(package["name"], set()).add(package["version"])
+
+    probe = (
+        "import json, torch, transformers, sentence_transformers as st; "
+        "print(json.dumps({'torch': torch.__version__, "
+        "'transformers': transformers.__version__, "
+        "'sentence-transformers': st.__version__}))"
+    )
+    result = subprocess.run(
+        [*COMPOSE, "exec", "-T", "api", "python", "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    running = json.loads(result.stdout.strip().splitlines()[-1])
+
+    for name, version in running.items():
+        # `torch` báo `2.13.0+cu126`; lock ghi cả `2.13.0` lẫn `2.13.0+cu126`.
+        # So phần trước dấu `+` là đủ và không phụ thuộc index nào phục vụ wheel.
+        base = version.split("+")[0]
+        assert base in {v.split("+")[0] for v in locked[name]}, (
+            f"container chạy {name} {version} nhưng uv.lock ghim "
+            f"{sorted(locked[name])} — image đã trôi khỏi môi trường đã đo"
+        )

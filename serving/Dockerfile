@@ -36,13 +36,35 @@
 # ---------------------------------------------------------------- builder ---
 FROM python:3.12-slim AS builder
 
-# `uv` thay pip: cùng resolver với môi trường dev, nên image không thể lệch
-# phiên bản so với `uv.lock` mà không ai thấy.
+# ⭐⭐ `uv sync --locked`, KHÔNG phải `uv pip install -r pyproject.toml`.
+#
+# Bản `W4-13` viết `-r pyproject.toml` và kèm một chú thích khẳng định image
+# "không thể lệch phiên bản so với `uv.lock`". Chú thích ấy **sai**, và `W5-01`
+# trả tiền để biết: `-r pyproject.toml` **giải lại** phụ thuộc từ đầu mỗi lần
+# build, còn `uv.lock` được COPY vào chỉ để làm khoá cache lớp. Bốn lần rebuild
+# trong vòng vài giờ đủ để image trôi khỏi môi trường đã đo:
+#
+#   lock / môi trường dev : transformers 5.15.0 · sentence-transformers 5.7.0 · torch 2.13.0
+#   image sau khi trôi    : transformers 5.16.1 · sentence-transformers 6.0.1  · torch 2.14.0
+#
+# Hậu quả không phải lý thuyết: cross-encoder nạp ra **dtype trộn** (embedding
+# fp16, `key.weight` fp32) và **mọi** request có truy hồi trả 503 —
+# `mat1 and mat2 must have the same dtype, but got Half and Float`.
+#
+# ⚠️ Và `GET /admin/bundle` vẫn báo `runtime_drift: null` suốt lúc đó. Phép kiểm
+# danh tính `TD-38` soi tên model / thiết bị / dtype / max_length — **không** soi
+# phiên bản thư viện. Nên artifact vẫn khai "đúng hệ thống đã đo" trong khi hệ
+# thống đã khác. → `TD-62`.
+#
+# `--locked` mạnh hơn `--frozen`: nó **đỏ** khi `uv.lock` không còn khớp
+# `pyproject.toml`, tức sửa dependency mà quên lock lại thì build hỏng thay vì
+# lặng lẽ resolve ra một thứ khác.
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PYTHON_DOWNLOADS=never
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /build
 
@@ -51,12 +73,12 @@ WORKDIR /build
 COPY pyproject.toml uv.lock README.md ./
 COPY packages/rag_core/__init__.py packages/rag_core/__init__.py
 
+# `--no-install-project`: gói ứng dụng không cài vào venv — mã nguồn tới qua
+# `COPY` + `PYTHONPATH` ở tầng runtime. Nguồn index `pytorch-cu126` đã khai
+# trong `[[tool.uv.index]]`, nên ở đây không cần `--extra-index-url`; và không
+# cần nghĩa là không lệch được với môi trường dev.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv venv /opt/venv \
-    && VIRTUAL_ENV=/opt/venv uv pip install \
-        --extra-index-url https://download.pytorch.org/whl/cu126 \
-        --index-strategy unsafe-best-match \
-        -r pyproject.toml \
+    uv sync --locked --no-install-project \
         --extra embeddings --extra qdrant --extra serving --extra llm
 
 # ---------------------------------------------------------------- runtime ---

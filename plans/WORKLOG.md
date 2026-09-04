@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-04 (9) (cuối file)** — `W5-03` xong, **`W5` 1/11**. Judge chấm **nhãn** (không bao giờ trả điểm), cache địa chỉ theo nội dung, trần chi phí kiểm trước. ⭐⭐ Đo được **`deepseek-reasoner` được phục vụ bởi `deepseek-v4-flash`** — plan bảo ghim nó, nhưng nó là con trỏ phía server, đúng thứ quy tắc cứng #1 cấm. ⭐⭐ **Suy luận bật không mua thêm một phán quyết đúng nào**: 12/12 ở cả ba nhánh, nhưng nhánh tắt có 0/36 phán quyết hỏng, rẻ 5,4×, nhanh 2,5× — và 5/5 lời gọi hỏng đều cụt đúng ở `max_tokens`. ⭐⭐ **Cache là thứ duy nhất làm eval tái lập được** (`TD-41`: `temp=0` không tất định); lần 2 **$0 / 0,01 s**. Tiêm 13/14 đỏ, J2 sống sót vì là mã chết → gỡ. ⭐ `NEW-07`: dashboard tự kiểm sau **bốn** lần cùng một lỗi sổ sách. **2185 test xanh.**
+> **Phiên mới nhất: 2026-09-04 (10) (cuối file)** — `W5-01` + `W5-02` xong, **`W5` 3/11**. ⭐⭐ Harness eval tìm ra **hai lỗi production** trước khi in được con số nào: image trôi khỏi `uv.lock` (mọi request truy hồi trả 503, mà `runtime_drift` vẫn báo `null`) và **hai người dùng hỏi cùng lúc là đủ để hỏng** (`Already borrowed`; `W4-13` không thấy vì mọi phép đo ở đó tuần tự). ⭐⭐ Phép đo suýt sai: `uncited_grounding = 0,427` sắp thành "22% nội dung không có căn cứ" — đọc ví dụ thì gần hết là câu meta; rubric v2 đưa nó lên **0,856**. faithfulness **0,9877** ✅ · refusal **0,9091** ✅ · citation accuracy cấp quote **0,8308** ❌. Tái lập ở **$0**. **2241 test xanh** (+8 e2e).
+>
+> Phiên trước: **2026-09-04 (9)** — `W5-03` xong, **`W5` 1/11**. Judge chấm **nhãn** (không bao giờ trả điểm), cache địa chỉ theo nội dung, trần chi phí kiểm trước. ⭐⭐ Đo được **`deepseek-reasoner` được phục vụ bởi `deepseek-v4-flash`** — plan bảo ghim nó, nhưng nó là con trỏ phía server, đúng thứ quy tắc cứng #1 cấm. ⭐⭐ **Suy luận bật không mua thêm một phán quyết đúng nào**: 12/12 ở cả ba nhánh, nhưng nhánh tắt có 0/36 phán quyết hỏng, rẻ 5,4×, nhanh 2,5× — và 5/5 lời gọi hỏng đều cụt đúng ở `max_tokens`. ⭐⭐ **Cache là thứ duy nhất làm eval tái lập được** (`TD-41`: `temp=0` không tất định); lần 2 **$0 / 0,01 s**. Tiêm 13/14 đỏ, J2 sống sót vì là mã chết → gỡ. ⭐ `NEW-07`: dashboard tự kiểm sau **bốn** lần cùng một lỗi sổ sách. **2185 test xanh.**
 >
 > Phiên trước: **2026-09-04 (8)** — `W4-13` xong, **`W4` 13/13**, `G4` **2,5/3**. Image CUDA 7,35 GB giữ `runtime_drift: null`; e2e 7/7 qua container thật. ⭐⭐ **p95 end-to-end 5.312 ms vs ngân sách 3.500 — KHÔNG ĐẠT**, phần vượt là bộ sinh (truy hồi chỉ 18%). Ba lỗi chỉ lộ khi chạy container. Tiêm 4 vào hạ tầng: 4/4 đỏ (vòng đầu là kết quả giả). **2137 test xanh.**
 >
@@ -3530,3 +3532,87 @@ tách được tiền trả cho suy luận), `TD-61` (cache judge không version
 HTTP** với stack đang lên (đo đúng đường production: router, rewrite, hàng rào,
 xác minh citation), ghi ra artifact "answer run" bất biến; metric tất định chấm
 trên artifact ấy, judge chỉ chạm phần nó phải chạm.
+
+---
+
+## 2026-09-04 (10) — `W5-01` + `W5-02`: eval tầng sinh, và hai lỗi production nó tìm ra
+
+**Trạng thái**: `W5` **3/11** · 50 `[x]` backlog gốc + 7 `NEW` · **2241 test xanh** (+8 e2e),
+3 skip · `make lint` sạch · e2e 8/8.
+
+**⭐⭐ Harness tìm ra hai lỗi trước khi in được con số nào.** Cả hai làm `POST /chat`
+trả 503. Cả hai lọt qua 13 hạng mục `W4`.
+
+1. **Image trôi khỏi môi trường đã đo.** 5/6 câu đầu trả
+   `mat1 and mat2 must have the same dtype, got Half and Float`. Nguyên nhân:
+   `serving/Dockerfile` của `W4-13` cài bằng `uv pip install -r pyproject.toml`,
+   **giải lại** phụ thuộc mỗi lần build; `uv.lock` được COPY vào chỉ để làm khoá
+   cache lớp. Bốn lần rebuild (chính bộ tiêm lỗi của `W4-13`) đủ để
+   `sentence-transformers 5.7.0 → 6.0.1`, `transformers 5.15.0 → 5.16.1`,
+   `torch 2.13.0 → 2.14.0`.
+   ⚠️ **`runtime_drift` vẫn báo `null` suốt lúc đó** — `TD-38` soi model/device/
+   dtype/max_length, không soi thư viện → `TD-62`.
+   ⚠️ Và chú thích ngay trên dòng ấy, **do tôi viết ở `W4-13`**, khẳng định image
+   "không thể lệch phiên bản so với `uv.lock`". Một chú thích không kiểm được là
+   một lời hứa.
+   Sửa: `uv sync --locked`. Ghim bằng hai lớp — test tĩnh trên Dockerfile và một
+   test e2e hỏi thẳng container, **đã chứng minh đỏ** bằng cách sửa version trong
+   lock.
+
+2. **Hai người dùng hỏi cùng lúc là đủ để hỏng.** `RuntimeError: Already borrowed`
+   — 4/6 request với 3 luồng, **0/8 tuần tự**. Tokenizer "fast" là đối tượng Rust
+   dùng `RefCell` mà `sentence-transformers` sửa cấu hình ngay trong lời gọi.
+   `W4-13` không thấy vì **mọi phép đo ở đó tuần tự**.
+   ⚠️ Bản vá đầu **không đủ**: `BgeM3EmbeddingProvider` ghi đè `_encode` nên khoá
+   đặt ở lớp cha bị đi vòng hoàn toàn — trông như đang bảo vệ và không bảo vệ gì.
+   Sửa đúng: khoá theo **khoá cache của model**, `RLock`. 3 test hồi quy → `TD-63`.
+
+**⭐⭐ Phép đo suýt sai, và cái chặn nó là đọc 12 ví dụ.** Vòng chấm đầu cho
+`uncited_grounding = 0,427`; tôi đã định viết "22% nội dung không có căn cứ". Đọc
+ví dụ thật thì gần hết là câu **meta**: *"Dựa trên ngữ cảnh được cung cấp:"*,
+*"tôi không đủ thông tin để trả lời"* — model đang **tuân thủ luật 3** của
+`chat-system`, và judge chấm `NOT_FOUND` là đúng theo rubric v1.
+
+Rubric lên **v2** với nhãn `NO_CLAIM`:
+
+| | v1 | v2 |
+|---|---|---|
+| `faithfulness` | 0,9538 (n=433) | **0,9877** (n=407) |
+| `uncited_grounding` | 0,4270 (n=267) | **0,8560** (n=125) |
+
+Cùng hệ thống, cùng câu trả lời, **chênh 2×**. Con số là thuộc tính của cặp
+*(hệ thống, rubric)*. Và `prompt_sha256` nằm trong khoá cache judge nên đổi rubric
+**tự** vô hiệu hoá toàn bộ phán quyết cũ — cơ chế `W4-11`/`W5-03` lần đầu được thử
+ở chỗ nó sinh ra để phục vụ.
+
+**Kết quả**:
+
+| metric | giá trị | ngưỡng | |
+|---|---|---|---|
+| faithfulness (mệnh đề có trích nguồn) | **0,9877** (n=407) | ≥ 0,92 | ✅ |
+| overall groundedness (mọi mệnh đề thật) | **0,9568** (n=532) | — | |
+| refusal accuracy | **0,9091** (220/242) | ≥ 0,85 | ✅ |
+| citation accuracy — cấp quote | **0,8308** (n=396) | ≥ 0,85 | ❌ thiếu 0,019 |
+| citation accuracy — cấp mệnh đề | **0,9877** | ≥ 0,85 | ✅ |
+| misattribution | **0,0049** | — | |
+| answer relevancy | 0,7479 (bỏ `unanswerable`: 0,8565) | — | |
+
+**Quyết định thiết kế**: đo **qua HTTP** chứ không dựng lại đường sinh trong
+pipeline (đường sinh thật sống ở `serving/`, mà `pipeline` bị cấm import nó — và
+lỗi (1) vừa chứng minh họ lỗi "bản sao trôi khỏi bản thật" có thật); tách mệnh đề
+**bằng luật** để không thêm LLM thứ hai vào phép đo; chấm với **đúng nguồn đã
+trích** chứ không với hợp mọi chunk.
+
+**Tái lập ở $0**: `--frozen-cache` → 947 hits / 0 misses / $0,000000, cùng digest.
+
+**Tiêm lỗi 11/11 đỏ.** G1 sống sót vì là **mã chết**: phép kiểm `\d[.,]\d` không
+thể chạy — `_SENTENCE_END` đòi dấu chấm theo sau bởi khoảng trắng, phép kiểm đòi
+theo sau bởi chữ số. Cái thật sự bảo vệ `1.234.567` là `\s+` trong regex. Gỡ, như
+`J2` của `W5-03`.
+
+**Chi phí**: $0,967 (242 câu $0,259 + 947 phán quyết $0,508 + vòng rubric v1 bỏ đi).
+
+**Việc tiếp theo**: `W5-04` (judge calibration — 50 mẫu nhãn tay, Cohen's kappa,
+cross-check bằng judge khác họ qua OpenRouter). Tập 12 mẫu của `W5-03`
+(`data/eval/judge_gold_faithfulness.jsonl`) là hạt giống; 407 phán quyết
+faithfulness và 242 phán quyết relevancy của lần chạy này là quần thể để lấy mẫu.

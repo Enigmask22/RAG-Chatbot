@@ -12,6 +12,9 @@ from rag_core.embedding import (
     l2_normalize,
 )
 
+# Không xuất từ `rag_core.embedding.__init__` — import thẳng từ module con.
+from rag_core.embedding.huggingface import HuggingFaceEmbeddingProvider
+
 
 @pytest.fixture
 def provider() -> HashingEmbeddingProvider:
@@ -86,3 +89,57 @@ class TestHelpers:
     def test_provider_name_is_reproducible(self, provider: EmbeddingProvider) -> None:
         # `name` đi vào cache key và vào MLflow — phải đủ để tái lập.
         assert provider.name == "hashing-64d"
+
+
+class TestConcurrentEncodeIsSerialised:
+    """`W5-01`: cùng lỗ hổng với cross-encoder, cùng nguyên nhân.
+
+    Tokenizer "fast" là đối tượng Rust dùng `RefCell`; `sentence-transformers`
+    sửa cấu hình truncation/padding của nó ngay trong lời gọi. Đường serving
+    embed câu hỏi trong `asyncio.to_thread`, nên hai request đồng thời là đủ để
+    một trong hai nhận `RuntimeError: Already borrowed`.
+    """
+
+    def test_same_model_and_device_share_one_lock(self) -> None:
+        first = HuggingFaceEmbeddingProvider("mo-hinh/gia", device="cpu")
+        second = HuggingFaceEmbeddingProvider("mo-hinh/gia", device="cpu")
+        assert first is not second
+        assert first.lock is second.lock
+
+    def test_khac_model_thi_khac_khoa(self) -> None:
+        first = HuggingFaceEmbeddingProvider("mo-hinh/gia", device="cpu")
+        other = HuggingFaceEmbeddingProvider("mo-hinh/khac", device="cpu")
+        assert first.lock is not other.lock
+
+    def test_two_threads_never_enter_encode_together(self) -> None:
+        import threading
+        import time
+
+        inside = 0
+        overlaps = 0
+        guard = threading.Lock()
+
+        class SpyModel:
+            def encode(self, texts: list[str], **_: object) -> np.ndarray:
+                nonlocal inside, overlaps
+                with guard:
+                    inside += 1
+                    if inside > 1:
+                        overlaps += 1
+                time.sleep(0.01)
+                with guard:
+                    inside -= 1
+                return np.ones((len(texts), 4), dtype=np.float32)
+
+        provider = HuggingFaceEmbeddingProvider("mo-hinh/gia", device="cpu")
+        provider._model = SpyModel()  # type: ignore[assignment]
+
+        threads = [
+            threading.Thread(target=provider.embed_documents, args=(["a", "b"],)) for _ in range(6)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert overlaps == 0, f"{overlaps} lần hai luồng cùng ở trong `encode`"

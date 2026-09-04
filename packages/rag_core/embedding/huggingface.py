@@ -7,6 +7,7 @@ không phải lúc import module giữ `make test` ở mức vài giây.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
@@ -33,6 +34,32 @@ def resolve_device(device: str = "auto") -> str:
     if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
+
+
+#: Khoá tuần tự hoá theo **model đã nạp**, không theo instance.
+#:
+#: ⭐⭐ Tại sao cần: tokenizer "fast" của HuggingFace là một đối tượng Rust dùng
+#: `RefCell`, và `sentence-transformers` **đổi cấu hình truncation/padding của nó
+#: ngay trong lời gọi encode**. Hai luồng cùng gọi trên một tokenizer ⇒
+#: `RuntimeError: Already borrowed`. Đường serving đưa truy hồi vào
+#: `asyncio.to_thread`, nên **hai người dùng hỏi cùng lúc là đủ** — đo được ở
+#: `W5-01`: 4/6 request trả 503 khi chạy 3 luồng, 0/8 khi chạy tuần tự.
+#:
+#: Khoá đi theo **khoá cache của model** chứ không theo `self`: `_load_model` là
+#: `lru_cache`, nên hai instance khác nhau vẫn dùng CHUNG một model — một khoá
+#: gắn vào instance sẽ không bảo vệ được gì và trông như đã bảo vệ.
+#:
+#: ⚠️ Giá phải trả nói thẳng: các lời gọi bị **tuần tự hoá**. Đó là đánh đổi
+#: đúng ở đây — một GPU 8 GB không chạy song song hai lượt forward nhanh hơn
+#: chạy lần lượt, còn cách kia (mỗi luồng một tokenizer) nhân đôi VRAM để mua
+#: một thứ phần cứng không cho.
+@lru_cache(maxsize=4)
+def _model_lock(model_name: str, device: str) -> threading.RLock:
+    # `RLock` chứ không `Lock`: lớp con (`BgeM3EmbeddingProvider`) khoá ở
+    # `_forward`, còn lớp cha khoá ở `_encode`/`count_tokens` — một đường gọi
+    # lồng nhau về sau sẽ tự khoá chính nó, và một deadlock dưới tải là kiểu
+    # hỏng khó truy nhất trong cả file này.
+    return threading.RLock()
 
 
 @lru_cache(maxsize=4)
@@ -76,6 +103,11 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
         self._model: SentenceTransformer | None = None
 
     @property
+    def lock(self) -> threading.RLock:
+        """Cùng khoá cho mọi instance dùng chung một model đã nạp."""
+        return _model_lock(self.model_name, self.device)
+
+    @property
     def model(self) -> SentenceTransformer:
         if self._model is None:
             self._model = _load_model(self.model_name, self.device)
@@ -109,26 +141,28 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
         """
         if not texts:
             return []
-        encoded = self.model.tokenizer(
-            list(texts),
-            add_special_tokens=True,
-            truncation=False,
-            padding=False,
-            verbose=False,
-        )
+        with self.lock:
+            encoded = self.model.tokenizer(
+                list(texts),
+                add_special_tokens=True,
+                truncation=False,
+                padding=False,
+                verbose=False,
+            )
         return [len(ids) for ids in encoded["input_ids"]]
 
     def _encode(self, texts: Sequence[str]) -> FloatArray:
         if not texts:
             return np.zeros((0, self.dimension), dtype=np.float32)
-        vectors = self.model.encode(
-            list(texts),
-            batch_size=self.batch_size,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-            normalize_embeddings=False,
-            **self._model_kwargs,
-        )
+        with self.lock:
+            vectors = self.model.encode(
+                list(texts),
+                batch_size=self.batch_size,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+                normalize_embeddings=False,
+                **self._model_kwargs,
+            )
         matrix = cast(FloatArray, np.asarray(vectors, dtype=np.float32))
         return l2_normalize(matrix) if self.normalize else matrix
 

@@ -1,19 +1,24 @@
 id: judge-faithfulness
-version: 1
+version: 2
 description: "Chấm MỘT mệnh đề của câu trả lời so với NGỮ CẢNH đã trích dẫn (W5-03). Trả nhãn, không trả điểm."
-sha256: "e6e7e64a10765cab9a99160d8e523da7a93da6e5e6387c4926d1c0f9ba0a9ad5"
-history: []
+sha256: "44cb90505aa2bf032194ae8670ab3855b678ca69233cddb8092fd83bfd1b50ea"
+history:
+  - version: 1
+    sha256: "e6e7e64a10765cab9a99160d8e523da7a93da6e5e6387c4926d1c0f9ba0a9ad5"
 template: |-
   Bạn là giám khảo kiểm chứng. Nhiệm vụ: quyết định NGỮ CẢNH có chống đỡ được MỆNH ĐỀ hay không.
 
   Bạn KHÔNG được dùng kiến thức nền. Chỉ có NGỮ CẢNH dưới đây là bằng chứng hợp lệ. Một mệnh đề đúng ngoài đời nhưng không có trong ngữ cảnh vẫn là NOT_FOUND.
 
-  Ba nhãn, và ranh giới giữa chúng:
+  Bốn nhãn, và ranh giới giữa chúng:
   - SUPPORTED: ngữ cảnh nói đúng điều mệnh đề nói. Con số, đơn vị, mốc thời gian và chiều tăng/giảm phải khớp.
   - CONTRADICTED: ngữ cảnh nói điều ngược lại, hoặc nói một con số khác cho cùng đại lượng.
   - NOT_FOUND: ngữ cảnh không nói gì về điều này, hoặc chỉ nói một phần không đủ để kết luận.
+  - NO_CLAIM: câu này KHÔNG khẳng định điều gì về thế giới. Nó nói về chính cuộc trao đổi hoặc về chính ngữ cảnh: câu dẫn ("Dựa trên ngữ cảnh được cung cấp:"), đề mục, lời từ chối ("tôi không đủ thông tin để trả lời"), hay ghi chú về việc nguồn thiếu thông tin ("Các nguồn không nêu rõ…").
 
-  Phân biệt CONTRADICTED với NOT_FOUND là phần việc chính của bạn: "ngữ cảnh không nhắc tới" không phải là "ngữ cảnh bác bỏ".
+  Hai ranh giới là phần việc chính của bạn:
+  1. "ngữ cảnh không nhắc tới" (NOT_FOUND) không phải là "ngữ cảnh bác bỏ" (CONTRADICTED).
+  2. Một câu nói rằng ngữ cảnh THIẾU thông tin là NO_CLAIM, không phải NOT_FOUND. Nó không sai và cũng không đúng — nó không phải một mệnh đề để kiểm. Chấm nó là NOT_FOUND biến một lời từ chối trung thực thành một lỗi.
 
   Diễn đạt lại bằng từ khác vẫn là SUPPORTED. Làm tròn số một cách trung thực (7,09% viết thành "khoảng 7%") vẫn là SUPPORTED. Đổi đơn vị hay đổi năm thì không.
 
@@ -26,4 +31,4 @@ template: |-
   {{claim}}
 
   Trả về đúng một đối tượng JSON, không kèm chữ nào khác:
-  {"verdict": "SUPPORTED" | "CONTRADICTED" | "NOT_FOUND", "reason": "<một câu ngắn, tiếng Việt>"}
+  {"verdict": "SUPPORTED" | "CONTRADICTED" | "NOT_FOUND" | "NO_CLAIM", "reason": "<một câu ngắn, tiếng Việt>"}

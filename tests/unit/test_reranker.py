@@ -12,6 +12,7 @@ thật để hợp đồng được kiểm trên thứ thật sự được ph�
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -626,3 +627,70 @@ class TestBuildBranch:
         from rag_core.retrieval import SUPPORTED_MODES
 
         assert set(SUPPORTED_MODES) == set(RetrievalMode)
+
+
+class TestConcurrentCallsAreSerialised:
+    """`W5-01`: hai người dùng hỏi cùng lúc là đủ để hỏng, và nó đã hỏng thật.
+
+    Đường serving đưa truy hồi vào `asyncio.to_thread`, nên hai request đồng
+    thời gọi `score()` trên **cùng một** cross-encoder. Tokenizer "fast" của
+    HuggingFace là đối tượng Rust dùng `RefCell` mà `sentence-transformers` sửa
+    cấu hình ngay trong lời gọi ⇒ `RuntimeError: Already borrowed`.
+
+    Đo trên container thật trước khi sửa: **4/6 request trả 503** với 3 luồng,
+    **0/8** khi chạy tuần tự. `W4-13` không thấy vì mọi phép đo ở đó tuần tự.
+    """
+
+    def test_same_config_shares_one_lock(self) -> None:
+        """Khoá phải theo **model đã nạp**, không theo instance.
+
+        `_load_cross_encoder` là `lru_cache`, nên hai instance dùng chung một
+        model. Một khoá gắn vào `self` sẽ không bảo vệ gì mà trông như có.
+        """
+        first = CrossEncoderReranker(device="cpu", dtype=None)
+        second = CrossEncoderReranker(device="cpu", dtype=None)
+        assert first is not second
+        assert first.lock is second.lock
+
+    @pytest.mark.parametrize(
+        "kwargs", [{"max_length": 128}, {"model_name": "khac/model"}, {"batch_size": 8}]
+    )
+    def test_lock_follows_the_model_cache_key(self, kwargs: dict[str, Any]) -> None:
+        """`batch_size` **không** nằm trong khoá cache model, nên nó không được
+        tách khoá; `max_length` và `model_name` thì có."""
+        base = CrossEncoderReranker(device="cpu", dtype=None)
+        other = CrossEncoderReranker(device="cpu", dtype=None, **kwargs)
+        shares = "batch_size" in kwargs
+        assert (base.lock is other.lock) is shares
+
+    def test_two_threads_never_enter_predict_together(self) -> None:
+        import threading
+
+        inside = 0
+        overlaps = 0
+        guard = threading.Lock()
+
+        class SpyModel:
+            def predict(self, pairs: Sequence[Any], **_: Any) -> list[float]:
+                nonlocal inside, overlaps
+                with guard:
+                    inside += 1
+                    if inside > 1:
+                        overlaps += 1
+                time.sleep(0.01)
+                with guard:
+                    inside -= 1
+                return [0.5] * len(pairs)
+
+        reranker = CrossEncoderReranker(device="cpu", dtype=None)
+        reranker._model = SpyModel()  # type: ignore[assignment]
+
+        threads = [
+            threading.Thread(target=reranker.score, args=("q", ["a", "b"])) for _ in range(6)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert overlaps == 0, f"{overlaps} lần hai luồng cùng ở trong `predict`"

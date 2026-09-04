@@ -185,6 +185,53 @@ class TestBaseProviderDefaults:
         assert p.embed_query_hybrid("a") is None
 
 
+class TestConcurrentForwardIsSerialised:
+    """`W5-01`: lớp con ghi đè `_encode`, nên khoá của lớp cha bị đi vòng.
+
+    Bản vá đầu chỉ khoá `HuggingFaceEmbeddingProvider._encode`. Container **vẫn**
+    trả `RuntimeError: Already borrowed` — 6/9 request — vì `BgeM3` không bao giờ
+    đi qua `_encode` của cha: nó gọi thẳng `_forward`. Test này ghim đúng chỗ ấy.
+    """
+
+    def test_forward_khong_cho_hai_luong_vao_cung_luc(self) -> None:
+        import threading
+        import time
+
+        inside = 0
+        overlaps = 0
+        guard = threading.Lock()
+        provider = _provider(device="cpu")
+
+        def spy(texts: object, torch: object) -> str:
+            nonlocal inside, overlaps
+            with guard:
+                inside += 1
+                if inside > 1:
+                    overlaps += 1
+            time.sleep(0.01)
+            with guard:
+                inside -= 1
+            return "xong"
+
+        provider._forward_locked = spy  # type: ignore[assignment,method-assign]
+        threads = [threading.Thread(target=provider._forward, args=(["a"],)) for _ in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert overlaps == 0, f"{overlaps} lần hai luồng cùng ở trong `_forward`"
+
+    def test_khoa_dung_chung_voi_lop_cha(self) -> None:
+        """Khoá theo `(model_name, device)`, nên mọi provider trỏ cùng model —
+        kể cả lớp cha — chia sẻ đúng một khoá. Thiếu điều này thì hai đường vào
+        khác nhau vẫn chạm cùng một tokenizer cùng lúc."""
+        from rag_core.embedding.huggingface import HuggingFaceEmbeddingProvider
+
+        child = _provider(device="cpu")
+        parent = HuggingFaceEmbeddingProvider(child.model_name, device="cpu")
+        assert child.lock is parent.lock
+
+
 # --------------------------------------------------------------------------
 # Cần model thật (2,2GB) + GPU. `make test-gpu`.
 # --------------------------------------------------------------------------

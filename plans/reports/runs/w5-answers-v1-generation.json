@@ -1,0 +1,535 @@
+{
+  "run": "w5-answers-v1",
+  "golden_sha256": "55b6bc417c55ff32e730f13935e4eb66abea90c967cf8b1eb1d6130eaae7f7b0",
+  "bundle_versions": [
+    "0.2.0"
+  ],
+  "prompt_specs": [
+    "chat-system@v2"
+  ],
+  "judge": {
+    "model": "deepseek-v4-flash",
+    "reasoning": false,
+    "rubrics": [
+      "judge-answer-relevancy@v1",
+      "judge-faithfulness@v2"
+    ],
+    "cache_digest": "79d7df51897a1448c522234b40d160a9c4daa63018a241cc716b6606773b7fd1",
+    "hits": 947,
+    "misses": 0,
+    "hit_rate": 1.0,
+    "repairs": 0,
+    "unparseable": 0,
+    "budget_stopped": 0,
+    "served_models": {},
+    "spent_usd": 0.0
+  },
+  "metrics": {
+    "context_precision@5": {
+      "value": 0.2096,
+      "n": 209,
+      "n_unjudged": 0,
+      "n_no_evidence": 33,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 34,
+          "value": 0.1529
+        },
+        "aggregation": {
+          "n": 26,
+          "value": 0.3462
+        },
+        "cross_lingual": {
+          "n": 43,
+          "value": 0.1256
+        },
+        "factoid": {
+          "n": 68,
+          "value": 0.1824
+        },
+        "multi_hop": {
+          "n": 34,
+          "value": 0.3353
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 0.1
+        }
+      }
+    },
+    "context_recall@5": {
+      "value": 0.7887,
+      "n": 209,
+      "n_unjudged": 0,
+      "n_no_evidence": 33,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 34,
+          "value": 0.7647
+        },
+        "aggregation": {
+          "n": 26,
+          "value": 0.7436
+        },
+        "cross_lingual": {
+          "n": 43,
+          "value": 0.6279
+        },
+        "factoid": {
+          "n": 68,
+          "value": 0.9118
+        },
+        "multi_hop": {
+          "n": 34,
+          "value": 0.8382
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 0.5
+        }
+      }
+    },
+    "citation_coverage": {
+      "value": 0.6186,
+      "n": 700,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 110,
+          "value": 0.5636
+        },
+        "aggregation": {
+          "n": 175,
+          "value": 0.6743
+        },
+        "cross_lingual": {
+          "n": 100,
+          "value": 0.6
+        },
+        "factoid": {
+          "n": 101,
+          "value": 0.6634
+        },
+        "multi_hop": {
+          "n": 121,
+          "value": 0.7521
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 1.0
+        },
+        "unanswerable": {
+          "n": 89,
+          "value": 0.3483
+        }
+      }
+    },
+    "citation_validity": {
+      "value": 0.8308,
+      "n": 396,
+      "n_unjudged": 0,
+      "n_no_evidence": 28,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 54,
+          "value": 0.6667
+        },
+        "aggregation": {
+          "n": 72,
+          "value": 0.7639
+        },
+        "cross_lingual": {
+          "n": 68,
+          "value": 0.7941
+        },
+        "factoid": {
+          "n": 102,
+          "value": 0.9314
+        },
+        "multi_hop": {
+          "n": 74,
+          "value": 0.8649
+        },
+        "table_lookup": {
+          "n": 5,
+          "value": 1.0
+        },
+        "unanswerable": {
+          "n": 21,
+          "value": 0.9524
+        }
+      }
+    },
+    "faithfulness": {
+      "value": 0.9877,
+      "n": 407,
+      "n_unjudged": 0,
+      "n_no_evidence": 267,
+      "n_not_a_claim": 26,
+      "by_category": {
+        "adversarial": {
+          "n": 60,
+          "value": 1.0
+        },
+        "aggregation": {
+          "n": 116,
+          "value": 0.9828
+        },
+        "cross_lingual": {
+          "n": 58,
+          "value": 0.9828
+        },
+        "factoid": {
+          "n": 64,
+          "value": 1.0
+        },
+        "multi_hop": {
+          "n": 89,
+          "value": 0.9888
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 1.0
+        },
+        "unanswerable": {
+          "n": 16,
+          "value": 0.9375
+        }
+      }
+    },
+    "misattribution": {
+      "value": 0.0049,
+      "n": 407,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 60,
+          "value": 0.0
+        },
+        "aggregation": {
+          "n": 116,
+          "value": 0.0086
+        },
+        "cross_lingual": {
+          "n": 58,
+          "value": 0.0
+        },
+        "factoid": {
+          "n": 64,
+          "value": 0.0
+        },
+        "multi_hop": {
+          "n": 89,
+          "value": 0.0112
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 0.0
+        },
+        "unanswerable": {
+          "n": 16,
+          "value": 0.0
+        }
+      }
+    },
+    "uncited_grounding": {
+      "value": 0.856,
+      "n": 125,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 142,
+      "by_category": {
+        "adversarial": {
+          "n": 24,
+          "value": 0.8333
+        },
+        "aggregation": {
+          "n": 33,
+          "value": 0.7879
+        },
+        "cross_lingual": {
+          "n": 22,
+          "value": 0.9545
+        },
+        "factoid": {
+          "n": 26,
+          "value": 0.9615
+        },
+        "multi_hop": {
+          "n": 14,
+          "value": 0.7143
+        },
+        "unanswerable": {
+          "n": 6,
+          "value": 0.8333
+        }
+      }
+    },
+    "answer_relevancy": {
+      "value": 0.7479,
+      "n": 242,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 34,
+          "value": 0.7941
+        },
+        "aggregation": {
+          "n": 26,
+          "value": 0.7692
+        },
+        "cross_lingual": {
+          "n": 43,
+          "value": 0.8372
+        },
+        "factoid": {
+          "n": 68,
+          "value": 0.9412
+        },
+        "multi_hop": {
+          "n": 34,
+          "value": 0.8235
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 1.0
+        },
+        "unanswerable": {
+          "n": 33,
+          "value": 0.0606
+        }
+      }
+    }
+  },
+  "derived": {
+    "overall_groundedness": {
+      "value": 0.9568,
+      "n": 532,
+      "note": "mọi mệnh đề THẬT: có trích nguồn (chấm với nguồn đã trích) + không trích nguồn (chấm với hợp mọi chunk). Loại NO_CLAIM."
+    },
+    "citation_coverage_on_claims": {
+      "value": 0.765,
+      "n": 532,
+      "note": "mẫu số bỏ 168 câu meta (câu dẫn, đề mục, lời từ chối) mà luật 2 không đòi phải trích nguồn; bản tất định ở trên lấy mẫu số 700 câu"
+    },
+    "not_a_claim_share": {
+      "value": 0.24,
+      "n": 700,
+      "note": "tỉ trọng câu meta trong câu trả lời"
+    }
+  },
+  "refusal": {
+    "refusal_recall": {
+      "value": 0.9091,
+      "n": 33,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "unanswerable": {
+          "n": 33,
+          "value": 0.9091
+        }
+      }
+    },
+    "false_refusal_rate": {
+      "value": 0.0909,
+      "n": 209,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 34,
+          "value": 0.1471
+        },
+        "aggregation": {
+          "n": 26,
+          "value": 0.0769
+        },
+        "cross_lingual": {
+          "n": 43,
+          "value": 0.1395
+        },
+        "factoid": {
+          "n": 68,
+          "value": 0.0441
+        },
+        "multi_hop": {
+          "n": 34,
+          "value": 0.0882
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 0.0
+        }
+      }
+    },
+    "refusal_accuracy": {
+      "value": 0.9091,
+      "n": 242,
+      "n_unjudged": 0,
+      "n_no_evidence": 0,
+      "n_not_a_claim": 0,
+      "by_category": {
+        "adversarial": {
+          "n": 34,
+          "value": 0.8529
+        },
+        "aggregation": {
+          "n": 26,
+          "value": 0.9231
+        },
+        "cross_lingual": {
+          "n": 43,
+          "value": 0.8605
+        },
+        "factoid": {
+          "n": 68,
+          "value": 0.9559
+        },
+        "multi_hop": {
+          "n": 34,
+          "value": 0.9118
+        },
+        "table_lookup": {
+          "n": 4,
+          "value": 1.0
+        },
+        "unanswerable": {
+          "n": 33,
+          "value": 0.9091
+        }
+      }
+    }
+  },
+  "citation_accuracy": {
+    "quote_level": {
+      "value": 0.8308080808080808,
+      "n": 396,
+      "note": "quote nguyên văn trong đúng chunk được chỉ (W4-09, tất định)"
+    },
+    "claim_level": {
+      "value": 0.9877149877149877,
+      "n": 407,
+      "note": "chunk được trích chống đỡ ý của câu (judge)"
+    },
+    "gate_metric": "quote_level"
+  },
+  "relevancy_labels": {
+    "IRRELEVANT": 1,
+    "PARTIAL": 11,
+    "REFUSAL": 49,
+    "RELEVANT": 181
+  },
+  "faithfulness_labels": {
+    "NOT_FOUND": 5,
+    "NO_CLAIM": 26,
+    "SUPPORTED": 402
+  },
+  "examples": {
+    "unfaithful": [
+      {
+        "ref": "multi_hop-6ba8b46dfb#s0",
+        "claim": "Based on the provided context, the World Bank's Vietnam Financial Sector Assessment notes that the CIC no longer provides periodic reports of supervisory value, which is concerning because the financial supervision function remains weak and does not contribute effectively to improvements in the quality of financial reporting of the supervised entities.",
+        "reason": "Ngữ cảnh không đề cập đến việc CIC ngừng cung cấp báo cáo định kỳ có giá trị giám sát."
+      },
+      {
+        "ref": "aggregation-3895b9f4ae#s5",
+        "claim": "It only mentions that foreign banks could buy up to 30 percent of shares in local joint stock commercial banks,, but no equivalent limit is stated for MFIs.",
+        "reason": "Ngữ cảnh không nói về giới hạn sở hữu nước ngoài đối với MFI, chỉ nói về quy định cấp phép và giám sát MFI."
+      },
+      {
+        "ref": "aggregation-de7c45d9f1#s10",
+        "claim": "**Tại Quảng Ninh:** Công thức có thông số tương quan ρ, phản ánh vai trò của rừng ngập mặn như bãi đẻ và cung cấp lợi ích cho đánh bắt và nuôi trồng hải sản.",
+        "reason": "Ngữ cảnh không đề cập đến Quảng Ninh hay công thức có thông số tương quan ρ."
+      },
+      {
+        "ref": "cross_lingual-3e5b84a32c#s5",
+        "claim": "Các tổ chức như quỹ hưu trí và công ty bảo hiểm được nhắc đến như những bên tham gia thị trường vốn, nhưng không có thông tin về cơ quan quản lý chúng.",
+        "reason": "Ngữ cảnh không đề cập đến cơ quan quản lý của quỹ hưu trí và công ty bảo hiểm."
+      },
+      {
+        "ref": "unanswerable-599e160838#s3",
+        "claim": "Nguồn và nêu chi R&D của Việt Nam là 0,5% GDP (năm 2023).",
+        "reason": "Ngữ cảnh không đề cập đến chi R&D của Việt Nam là 0,5% GDP."
+      }
+    ],
+    "misattributed": [
+      {
+        "ref": "multi_hop-6ba8b46dfb#s0",
+        "claim": "Based on the provided context, the World Bank's Vietnam Financial Sector Assessment notes that the CIC no longer provides periodic reports of supervisory value, which is concerning because the financial supervision function remains weak and does not contribute effectively to improvements in the quality of financial reporting of the supervised entities.",
+        "cited": [
+          3,
+          4
+        ]
+      },
+      {
+        "ref": "aggregation-de7c45d9f1#s10",
+        "claim": "**Tại Quảng Ninh:** Công thức có thông số tương quan ρ, phản ánh vai trò của rừng ngập mặn như bãi đẻ và cung cấp lợi ích cho đánh bắt và nuôi trồng hải sản.",
+        "cited": [
+          3
+        ]
+      }
+    ],
+    "groundless_uncited": [
+      {
+        "ref": "aggregation-4c82245784#s0",
+        "claim": "Based on the report, Vietnam's tertiary education system has notable strengths and several weaknesses."
+      },
+      {
+        "ref": "aggregation-83e3bb4cc4#s5",
+        "claim": "Decree 61 addresses these weaknesses by:"
+      },
+      {
+        "ref": "multi_hop-6ba8b46dfb#s1",
+        "claim": "This gap in supervisory reporting from the CIC undermines an already weak oversight framework."
+      },
+      {
+        "ref": "aggregation-30fc4cc114#s6",
+        "claim": "Ba lĩnh vực chính sách tương lai được ưu tiên:**"
+      },
+      {
+        "ref": "multi_hop-202aa35e17#s2",
+        "claim": "Để đạt được mục tiêu thu nhập cao vào năm 2045, Việt Nam cần chuyển đổi kinh tế theo hướng:"
+      },
+      {
+        "ref": "aggregation-3895b9f4ae#s0",
+        "claim": "Based on the provided context, the new regulatory framework for microfinance institutions (MFIs) differed from regulations for joint stock banks in two key ways:"
+      },
+      {
+        "ref": "aggregation-de7c45d9f1#s0",
+        "claim": "Dựa trên các nguồn được cung cấp, có sự khác biệt rõ rệt trong cách tiếp cận định giá dịch vụ thủy sản giữa rừng ngập mặn và đầm phá Tam Giang - Cầu Hai (TGCH), xuất phát từ vai trò của tài sản rừng ven biển:"
+      },
+      {
+        "ref": "aggregation-173c1edaf8#s1",
+        "claim": "Nguyên nhân làm năng suất lao động tăng chậm lại:**"
+      },
+      {
+        "ref": "aggregation-173c1edaf8#s7",
+        "claim": "Giải pháp được khuyến nghị để duy trì tăng trưởng và tạo việc làm:**"
+      },
+      {
+        "ref": "multi_hop-6af19bc73a#s1",
+        "claim": "Vai trò của Bộ Y tế và Bộ Tài chính trong quản lý quỹ bảo hiểm y tế:**"
+      },
+      {
+        "ref": "multi_hop-384485145b#s0",
+        "claim": "Based on the provided context, small truck operators can pay up to 70 percent as their own down payment, but this is specifically noted for large companies."
+      },
+      {
+        "ref": "adversarial-c95b8f523d#s4",
+        "claim": "The consequences of this neglect are significant."
+      }
+    ]
+  }
+}

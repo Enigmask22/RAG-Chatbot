@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import lru_cache
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -179,12 +179,23 @@ class BgeM3EmbeddingProvider(HuggingFaceEmbeddingProvider):
         return batches
 
     def _forward(self, texts: Sequence[str]) -> HybridVectors:
-        """Chạy model, trả cả dense và sparse. Thứ tự đầu ra khớp đầu vào."""
+        """Chạy model, trả cả dense và sparse. Thứ tự đầu ra khớp đầu vào.
+
+        ⭐ Khoá ở **đây** chứ không chỉ ở `_encode` của lớp cha: lớp này ghi đè
+        `_encode`, nên khoá đặt ở lớp cha bị đi vòng hoàn toàn. Đã trả tiền để
+        biết — bản vá đầu chỉ khoá `HuggingFaceEmbeddingProvider._encode` và
+        container **vẫn** trả `RuntimeError: Already borrowed` ở đúng dòng
+        `tokenizer(...)` dưới đây, 6/9 request.
+        """
         import torch
 
         if not texts:
             return HybridVectors(np.zeros((0, self.dimension), dtype=np.float32), [])
 
+        with self.lock:
+            return self._forward_locked(texts, torch)
+
+    def _forward_locked(self, texts: Sequence[str], torch: Any) -> HybridVectors:
         limit = self.max_sequence_tokens or 8192
         tokenizer = self.model.tokenizer
         lengths = [len(ids) for ids in tokenizer(list(texts), truncation=False)["input_ids"]]

@@ -44,6 +44,7 @@ cắt thay vì tin — đúng bài học `TD-11`, nơi một giả định về 
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
@@ -94,6 +95,29 @@ def _resolve_dtype(dtype: str | None, device: str) -> str | None:
     if dtype != "auto":
         return dtype
     return "float16" if device.startswith("cuda") else None
+
+
+#: Khoá tuần tự hoá theo **model đã nạp**, không theo instance.
+#:
+#: ⭐⭐ Tokenizer "fast" của HuggingFace là đối tượng Rust dùng `RefCell`, và
+#: `sentence-transformers` đổi cấu hình truncation/padding của nó **ngay trong**
+#: lời gọi `predict`. Hai luồng cùng gọi ⇒ `RuntimeError: Already borrowed`.
+#: Đường serving đưa truy hồi vào `asyncio.to_thread`, nên **hai người dùng hỏi
+#: cùng lúc là đủ** — đo được ở `W5-01`: 4/6 request trả 503 với 3 luồng, 0/8
+#: khi chạy tuần tự. `W4-13` không thấy vì mọi phép đo ở đó đều tuần tự.
+#:
+#: Khoá đi theo **khoá cache của model**: `_load_cross_encoder` là `lru_cache`,
+#: nên hai instance khác nhau vẫn dùng CHUNG một model — một khoá gắn vào
+#: instance sẽ không bảo vệ được gì mà trông như đã bảo vệ.
+#:
+#: ⚠️ Giá: các lời gọi bị tuần tự hoá. Đánh đổi đúng ở đây — một GPU 8 GB không
+#: chạy song song hai lượt forward nhanh hơn chạy lần lượt, còn cách kia (mỗi
+#: luồng một tokenizer) nhân đôi VRAM để mua thứ phần cứng không cho.
+@lru_cache(maxsize=2)
+def _cross_encoder_lock(
+    model_name: str, device: str, max_length: int, dtype: str | None
+) -> threading.Lock:
+    return threading.Lock()
 
 
 @lru_cache(maxsize=2)
@@ -170,6 +194,11 @@ class CrossEncoderReranker(Reranker):
         self._model: CrossEncoder | None = None
 
     @property
+    def lock(self) -> threading.Lock:
+        """Cùng khoá cho mọi instance dùng chung một model đã nạp."""
+        return _cross_encoder_lock(self.model_name, self.device, self.max_length, self.dtype)
+
+    @property
     def model(self) -> CrossEncoder:
         if self._model is None:
             self._model = _load_cross_encoder(
@@ -197,13 +226,14 @@ class CrossEncoderReranker(Reranker):
         # kiểu đó vào đây là tự tạo việc phải sửa mỗi lần nâng ST, mà `Reranker`
         # chỉ hứa nhận `str`.
         pairs: list[Any] = [(query, text) for text in texts]
-        raw = self.model.predict(
-            pairs,
-            batch_size=self.batch_size,
-            activation_fn=self._activation_fn(),
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
+        with self.lock:
+            raw = self.model.predict(
+                pairs,
+                batch_size=self.batch_size,
+                activation_fn=self._activation_fn(),
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
         return [float(value) for value in cast("Sequence[float]", raw)]
 
     def count_pair_tokens(self, query: str, texts: Sequence[str]) -> list[int]:
@@ -216,12 +246,13 @@ class CrossEncoderReranker(Reranker):
         """
         if not texts:
             return []
-        encoded = self.model.tokenizer(
-            [query] * len(texts),
-            list(texts),
-            add_special_tokens=True,
-            truncation=False,
-            padding=False,
-            verbose=False,
-        )
+        with self.lock:
+            encoded = self.model.tokenizer(
+                [query] * len(texts),
+                list(texts),
+                add_special_tokens=True,
+                truncation=False,
+                padding=False,
+                verbose=False,
+            )
         return [len(ids) for ids in encoded["input_ids"]]
