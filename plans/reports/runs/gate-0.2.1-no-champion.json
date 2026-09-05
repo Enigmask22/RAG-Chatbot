@@ -1,0 +1,173 @@
+{
+  "status": "FAIL",
+  "exit_code": 1,
+  "candidate": "0.2.1",
+  "champion": null,
+  "counts": {
+    "PASS": 10,
+    "FAIL": 2,
+    "SKIP": 4
+  },
+  "rules": [
+    {
+      "group": "comparability",
+      "name": "generator không phải bí danh",
+      "outcome": "PASS",
+      "detail": "'deepseek-v4-flash' là slug tường minh",
+      "why": "Trường này tồn tại để bảo đảm so like-for-like. Một con trỏ phía server làm hai chuỗi bằng nhau mà hai phép đo thì không.",
+      "value": null,
+      "threshold": null,
+      "champion": null
+    },
+    {
+      "group": "comparability",
+      "name": "golden_set",
+      "outcome": "SKIP",
+      "detail": "không có champion để so",
+      "why": "",
+      "value": null,
+      "threshold": null,
+      "champion": null
+    },
+    {
+      "group": "comparability",
+      "name": "evaluated_with_generator",
+      "outcome": "SKIP",
+      "detail": "không có champion để so",
+      "why": "",
+      "value": null,
+      "threshold": null,
+      "champion": null
+    },
+    {
+      "group": "comparability",
+      "name": "judge_identity",
+      "outcome": "SKIP",
+      "detail": "không có champion để so",
+      "why": "",
+      "value": null,
+      "threshold": null,
+      "champion": null
+    },
+    {
+      "group": "validity",
+      "name": "chưa chấm được · answer_relevancy",
+      "outcome": "PASS",
+      "detail": "0.0% phán quyết không đọc được (trần 5%)",
+      "why": "Một metric tính trên phần còn lại chỉ đúng nếu việc mất phán quyết độc lập với nhãn — `W5-04` đo được nó không độc lập.",
+      "value": 0.0,
+      "threshold": 0.05,
+      "champion": null
+    },
+    {
+      "group": "validity",
+      "name": "chưa chấm được · faithfulness",
+      "outcome": "PASS",
+      "detail": "0.0% phán quyết không đọc được (trần 5%)",
+      "why": "Một metric tính trên phần còn lại chỉ đúng nếu việc mất phán quyết độc lập với nhãn — `W5-04` đo được nó không độc lập.",
+      "value": 0.0,
+      "threshold": 0.05,
+      "champion": null
+    },
+    {
+      "group": "validity",
+      "name": "chưa chấm được · misattribution",
+      "outcome": "PASS",
+      "detail": "0.0% phán quyết không đọc được (trần 5%)",
+      "why": "Một metric tính trên phần còn lại chỉ đúng nếu việc mất phán quyết độc lập với nhãn — `W5-04` đo được nó không độc lập.",
+      "value": 0.0,
+      "threshold": 0.05,
+      "champion": null
+    },
+    {
+      "group": "validity",
+      "name": "chưa chấm được · uncited_grounding",
+      "outcome": "PASS",
+      "detail": "0.0% phán quyết không đọc được (trần 5%)",
+      "why": "Một metric tính trên phần còn lại chỉ đúng nếu việc mất phán quyết độc lập với nhãn — `W5-04` đo được nó không độc lập.",
+      "value": 0.0,
+      "threshold": 0.05,
+      "champion": null
+    },
+    {
+      "group": "validity",
+      "name": "judge đã hiệu chỉnh",
+      "outcome": "PASS",
+      "detail": "κ vs người = 0.737 (tối thiểu 0.6)",
+      "why": "`W5-04` đo 0,737 trên 50 mệnh đề gán nhãn tay.",
+      "value": 0.7367704675846558,
+      "threshold": 0.6,
+      "champion": null
+    },
+    {
+      "group": "absolute",
+      "name": "ndcg@10",
+      "outcome": "PASS",
+      "detail": "0.7079 ≥ 0.6",
+      "why": "Điểm vận hành `W2-05` đo 0,7079; hạ dưới 0,60 là lùi về trước reranker.",
+      "value": 0.7078808968492386,
+      "threshold": 0.6,
+      "champion": null
+    },
+    {
+      "group": "absolute",
+      "name": "recall@5",
+      "outcome": "PASS",
+      "detail": "0.7847 ≥ 0.7",
+      "why": "Baseline 0,3573 → hiện tại 0,7679. Ngưỡng giữ phần lớn mức tăng ấy.",
+      "value": 0.784688995215311,
+      "threshold": 0.7,
+      "champion": null
+    },
+    {
+      "group": "absolute",
+      "name": "faithfulness",
+      "outcome": "PASS",
+      "detail": "0.9877 ≥ 0.92",
+      "why": "Ngưỡng gốc của plan. `W5-04` xác nhận bằng nhãn tay: 0,9905 [0,9800–1,0000].",
+      "value": 0.9877,
+      "threshold": 0.92,
+      "champion": null
+    },
+    {
+      "group": "absolute",
+      "name": "citation_accuracy",
+      "outcome": "FAIL",
+      "detail": "0.8308 < 0.85",
+      "why": "Ngưỡng gốc của plan, đo ở **cấp quote** (`W5-02` chọn quote_level làm gate_metric vì nó tất định). Hiện `0,8308` — `TD-64`. Cố ý **không** hạ xuống cho vừa: gate tồn tại để nói ra chỗ chưa đạt.",
+      "value": 0.8308080808080808,
+      "threshold": 0.85,
+      "champion": null
+    },
+    {
+      "group": "absolute",
+      "name": "refusal_accuracy",
+      "outcome": "PASS",
+      "detail": "0.9091 ≥ 0.85",
+      "why": "`W5-02` đo 0,9091. ⚠️ Rubric relevancy chưa hiệu chỉnh — `TD-68`.",
+      "value": 0.9091,
+      "threshold": 0.85,
+      "champion": null
+    },
+    {
+      "group": "absolute",
+      "name": "p95_end_to_end_ms",
+      "outcome": "FAIL",
+      "detail": "4706.5000 > 3500.0",
+      "why": "Ngân sách end-to-end của plan. ⚠️ Ngưỡng này từng đặt nhầm lên `p95_latency_ms` — trường ấy là **truy hồi thuần** (759 ms), nên gate cho qua một hệ thống mà người dùng chờ 4.706 ms. Con số hiện tại đo trên 242 request thật qua HTTP (`W5-01`), thay cho 5.312 ms từ smoke test của `W4-13`. Vẫn KHÔNG đạt — phần vượt là bộ sinh, không phải truy hồi.",
+      "value": 4706.5,
+      "threshold": 3500.0,
+      "champion": null
+    },
+    {
+      "group": "regression",
+      "name": "so với champion",
+      "outcome": "SKIP",
+      "detail": "không có champion để so",
+      "why": "",
+      "value": null,
+      "threshold": null,
+      "champion": null
+    }
+  ]
+}

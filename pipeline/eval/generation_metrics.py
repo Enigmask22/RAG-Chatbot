@@ -822,6 +822,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "golden_sha256": run.golden_sha256,
         "bundle_versions": run.bundle_versions,
         "prompt_specs": run.prompt_specs,
+        # ⭐ Model **thực tế đã sinh** ra những câu trả lời đang bị chấm. Thiếu nó
+        # thì `build_bundle` phải nhận `evaluated_with_generator` gõ tay — và đó
+        # đúng là cách hai bundle hiện có mang bí danh `deepseek-chat@2026-09`
+        # trong chính trường sinh ra để bảo đảm danh tính ổn định (`W5-05`).
+        "models": run.models,
+        # ⭐ Độ trễ **end-to-end**, đo trên chính 242 request đã sinh ra các con
+        # số ở trên. `W4-13` báo `5312 ms` từ một smoke test vài câu; đây là cùng
+        # phép đo trên toàn golden set, qua HTTP, kể cả một lượt trúng cache.
+        "latency_ms": _latency(run.records),
         "judge": {
             "model": config.model,
             "reasoning": config.reasoning,
@@ -860,6 +869,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     sys.stdout.write(json.dumps(headline, ensure_ascii=False, indent=2) + "\n")
     sys.stdout.write(f"đã ghi {target}\n")
     return 0
+
+
+def _latency(records: Sequence[AnswerRecord]) -> dict[str, float]:
+    """p50/p95/p99 của `wall_ms`. Bao gồm cả lượt trúng cache — đó là độ trễ
+    người dùng thật sự thấy, và loại chúng ra là tự cho mình một con số đẹp hơn
+    production."""
+    values = sorted(r.wall_ms for r in records if r.wall_ms)
+    if not values:
+        return {}
+
+    def quantile(fraction: float) -> float:
+        return values[min(len(values) - 1, int(fraction * len(values)))]
+
+    return {
+        "n": float(len(values)),
+        "mean": round(statistics.fmean(values), 1),
+        "p50": round(quantile(0.50), 1),
+        "p95": round(quantile(0.95), 1),
+        "p99": round(quantile(0.99), 1),
+        "max": round(max(values), 1),
+    }
 
 
 def _count(labels: Iterable[str | None]) -> dict[str, int]:

@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-05 (11) (cuối file)** — `W5-04` xong, **`W5` 4/11**. Faithfulness `0,9877` **đúng** (nhãn tay quy về quần thể: `0,9905` [0,9800–1,0000], κ judge–người **0,737**). ⭐⭐ Nhưng đổi **mỗi** model judge làm metric dịch **7,5 điểm** — GLM cho `0,9246`, DeepSeek suy luận-bật cho `1,0000`. ⭐⭐ **Judge hỏng không cho điểm thấp, nó cho điểm tuyệt đối**: bật suy luận mất 32/50 phán quyết vì chạm `max_tokens`, và ca bị mất có ngữ cảnh dài gần gấp đôi nên **cả 3 mệnh đề thất bại thật đều bị loại**; 18 ca sống sót đều `SUPPORTED`. ⭐⭐ File "mù" của tôi **rò rỉ qua thứ tự dòng** — phát hiện ở mẫu 18/50, phải bốc lại bằng seed khác. 4 nợ mới `TD-65`…`TD-68`. `W0-07` **hết hiệu lực** (câu hỏi chưa bao giờ dẫn tới quyết định nào).
+> **Phiên mới nhất: 2026-09-05 (12) (cuối file)** — `W5-05` xong, **`W5` 5/11**. `make gate BUNDLE=0.2.1` → **INCOMPARABLE, exit 2**; `--no-champion` → **FAIL, exit 1** (`citation_accuracy` 0,8308 < 0,85 · `p95_end_to_end_ms` 4706 > 3500). ⭐⭐ **"Không so được" là phán quyết THỨ BA**, không phải một kiểu FAIL — FAIL bảo sửa hệ thống, INCOMPARABLE bảo sửa phép đo. ⭐⭐ **Trường sinh ra để bảo đảm danh tính đang mang một bí danh**: `deepseek-chat@2026-09` ở cả hai bundle cũ, lọt vào vì nó được **gõ tay**. ⭐⭐ **Gate cho qua một hệ thống vượt ngân sách 34% vì hai con số cùng tên** — `p95_latency_ms` là truy hồi thuần (759 ms), ngân sách 3500 ms là end-to-end; đo lại trên 242 request thật: **p95 = 4706 ms**. Tiêm 18/18 đỏ. 3 nợ mới `TD-69`…`TD-71`.
+>
+> Phiên trước: **2026-09-05 (11)** — `W5-04` xong, **`W5` 4/11**. Faithfulness `0,9877` **đúng** (nhãn tay quy về quần thể: `0,9905` [0,9800–1,0000], κ judge–người **0,737**). ⭐⭐ Nhưng đổi **mỗi** model judge làm metric dịch **7,5 điểm** — GLM cho `0,9246`, DeepSeek suy luận-bật cho `1,0000`. ⭐⭐ **Judge hỏng không cho điểm thấp, nó cho điểm tuyệt đối**: bật suy luận mất 32/50 phán quyết vì chạm `max_tokens`, và ca bị mất có ngữ cảnh dài gần gấp đôi nên **cả 3 mệnh đề thất bại thật đều bị loại**; 18 ca sống sót đều `SUPPORTED`. ⭐⭐ File "mù" của tôi **rò rỉ qua thứ tự dòng** — phát hiện ở mẫu 18/50, phải bốc lại bằng seed khác. 4 nợ mới `TD-65`…`TD-68`. `W0-07` **hết hiệu lực** (câu hỏi chưa bao giờ dẫn tới quyết định nào).
 >
 > Phiên trước: **2026-09-04 (10)** — `W5-01` + `W5-02` xong, **`W5` 3/11**. ⭐⭐ Harness eval tìm ra **hai lỗi production** trước khi in được con số nào: image trôi khỏi `uv.lock` (mọi request truy hồi trả 503, mà `runtime_drift` vẫn báo `null`) và **hai người dùng hỏi cùng lúc là đủ để hỏng** (`Already borrowed`; `W4-13` không thấy vì mọi phép đo ở đó tuần tự). ⭐⭐ Phép đo suýt sai: `uncited_grounding = 0,427` sắp thành "22% nội dung không có căn cứ" — đọc ví dụ thì gần hết là câu meta; rubric v2 đưa nó lên **0,856**. faithfulness **0,9877** ✅ · refusal **0,9091** ✅ · citation accuracy cấp quote **0,8308** ❌. Tái lập ở **$0**. **2241 test xanh** (+8 e2e).
 >
@@ -3724,3 +3726,96 @@ trị dưới ngưỡng. 3/5 ca bất đồng nằm đúng chỗ mờ của rubr
 bàn nó: ngưỡng `n_unjudged` (`TD-67`), `(judge_model, rubric_spec)` trong khoá so sánh
 champion (`TD-66`), và một ngưỡng citation accuracy đang **đỏ** sẵn (`TD-64`, 0,8308
 vs 0,85) để chứng minh gate biết nói FAIL.
+
+---
+
+## 2026-09-05 (12) — `W5-05`: gate phát hành, và ba lỗi nó tìm ra ở chính mình
+
+**Trạng thái**: `W5` **5/11** · 52 `[x]` backlog gốc + 7 `NEW` · **2107 unit test xanh**, 3 skip ·
+`make lint` sạch cả ba lệnh · chi phí **$0** (không có lời gọi mạng nào trong cả hạng mục).
+⚠️ Bộ integration/e2e **không chạy được phiên này** — Docker Desktop tắt, Qdrant từ chối kết nối
+(`WinError 10061`). Không phải hệ quả của thay đổi ở đây, nhưng cũng chưa được kiểm lại.
+
+```
+make gate BUNDLE=0.2.1                → INCOMPARABLE, exit 2
+make gate BUNDLE=0.2.1 --no-champion  → FAIL,          exit 1
+    ❌ citation_accuracy   0,8308 < 0,85       (TD-64)
+    ❌ p95_end_to_end_ms   4706,5 > 3500
+```
+
+**Hạng mục bắt đầu bằng việc không có gì để gate.** Cả hai bundle trên đĩa có
+`generation_metrics: {}`. Nguyên nhân là một vòng lặp thật: metric truy hồi đo
+**offline trước khi deploy**, metric tầng sinh đo **qua HTTP trên server đang
+chạy một bundle** — nên bundle ký xong mới có số của chính nó. Lối ra: đúc bản
+**patch** `0.2.1`, thành phần y hệt `0.2.0`, thêm phép đo. Điều kiện để lối ra ấy
+không thành lỗ hổng: `build_bundle` nạp bundle mà lần chạy khai là đã chạy trên
+đó và **đòi đường truy hồi trùng khít**.
+
+**⭐⭐ "Không so được" là phán quyết THỨ BA.** `PASS`/`FAIL`/`INCOMPARABLE`, exit
+0/1/2. FAIL bảo sửa **hệ thống**; INCOMPARABLE bảo sửa **phép đo**. Gộp cái thứ
+ba vào FAIL đẩy người ta đi tối ưu một hệ thống không có gì sai; gộp vào PASS thì
+thả một bundle chưa ai so với gì. Khi bị chặn, gate vẫn chạy nốt ba nhóm còn lại
+— người đọc cần thấy cả hai thứ cùng lúc.
+
+**⭐⭐ Trường sinh ra để bảo đảm danh tính đang mang một bí danh.** Cả `0.1.0` lẫn
+`0.2.0` ghi `evaluated_with_generator: "deepseek-chat@2026-09"`, mà
+`DEEPSEEK_ALIASES` nói `deepseek-chat` là con trỏ phía server (`W5-03` đo được nó
+→ `deepseek-v4-flash`, cùng đích với `deepseek-reasoner`). Hai chuỗi bằng nhau
+**không** chứng minh hai lần đo dùng cùng model — đúng thứ quy tắc cứng #1 cấm,
+lọt vào chính cái trường dựng ra để chống nó. Vì sao lọt: nó được **gõ tay** ở
+tầng CLI. Bịt bằng hai lớp — gate từ chối bí danh/preset (so trên phần slug trước
+`@`), và `--generation-run` **đọc** model thực tế đã phục vụ 242 request. → `TD-70`
+
+**⭐⭐ Gate cho qua một hệ thống vượt ngân sách 34% vì hai con số cùng tên.** Lần
+chạy đầu in `✅ p95_latency_ms: 759 ≤ 3500`. Xanh, và sai: trường ấy là **truy hồi
+thuần**, còn `3500 ms` là ngân sách **end-to-end** (`W4-13` đo 5312 ms và ghi rõ
+KHÔNG ĐẠT). Tách `p95_end_to_end_ms`, và đo lại từ `wall_ms` của **242 request
+thật qua HTTP**:
+
+```
+n=242  mean=2776  p50=2549  p95=4706  p99=5953  max=6372   (ms)
+```
+
+Từ nay con số end-to-end của dự án là **4706 ms trên toàn golden set**, thay cho
+5312 ms đo trên vài câu. Cùng họ lỗi "mẫu số là toàn bộ câu chuyện" với
+`citation_coverage` (`W5-02`) và `uncited_grounding` (`W5-01`) — một cái tên chung
+làm hai đại lượng khác nhau trông như một.
+
+**⭐⭐ `validity` chạy TRƯỚC `absolute`** (`TD-67` trả xong). Bài test tái dựng
+nhánh hỏng của `W5-04`: faithfulness `1,0000` với 64% phán quyết mất. Ngưỡng
+tuyệt đối cho **PASS**; luật tính hợp lệ bắt được. Không khai `unjudged_rate`
+cũng **đỏ** — chế độ hỏng đã đo lệch về phía điểm cao, nên "không biết" không
+được hưởng lợi thế nghi ngờ. Mẫu số là **số câu đã hỏi**, không phải số câu chấm
+được: dùng mẫu số sau thì tỉ lệ tự nhỏ đi đúng ở lần chạy hỏng nặng nhất.
+
+**⭐ `judge_identity` = `(model, rubrics, reasoning)`** (`TD-66` trả xong).
+`reasoning=None` in ra `?`, **không** đọc thành `false` — đọc "chưa khai" thành
+"đã tắt" là khai hộ một điều chưa ai đo (phép tiêm `G7` giữ). κ đọc từ file hiệu
+chỉnh `W5-04`, và **từ chối** nếu nó đo trên rubric hoặc model khác.
+
+**⭐ Ngưỡng ở YAML, LUẬT ở mã.** Không có cờ nào tắt `comparability`, không có
+danh sách miễn trừ metric — cái cờ ấy sẽ được bật vào đúng ngày người ta cần nó
+nhất. Mỗi ngưỡng **bắt buộc** có trường `why` (có test), và `why` đi thẳng vào
+HTML. Báo cáo tự chứa, không CDN (có test cấm mọi `http` trong output).
+
+**Chốt nhỏ**: champion là bản cao nhất **thấp hơn** ứng viên, không phải "bản mới
+nhất" — ứng viên thường chính là bản mới nhất, nên "mới nhất" làm nó tự so với
+mình và gate luôn xanh (`G14` đỏ). Metric trùng tên ở hai bảng là **lỗi**. Metric
+champion có mà ứng viên thiếu là **FAIL**. Chỉ metric do judge chấm mới có
+`unjudged_rate` — gán `0,0` cho một metric tất định là khai một phép kiểm chưa
+từng chạy.
+
+**Tiêm lỗi 18/18 đỏ**, không phép nào sống sót.
+
+**`G5`** có hai dòng đã trả: gate từ chối so hai bundle khác
+`evaluated_with_generator` (chứng minh trên **dữ liệu thật**, không chỉ fixture),
+và κ ≥ 0,6 giờ nằm **trong manifest** chứ không chỉ trong markdown.
+
+**Nợ mới**: `TD-69` (`answer_run` không ghi `max_tokens`/`temperature` nên hai
+tham số ấy là lời khai, không phải phép đo) · `TD-70` (hai bundle cũ mang bí
+danh, không so được) · `TD-71` (gate chưa ghi phán quyết ngược vào
+`RagBundle.gate` — bundle bất biến; **chặn `W5-10`** auto-PR promote).
+
+**Việc tiếp theo**: `W5-06` — Langfuse self-host + instrument full trace. Sau đó
+`W5-09` (CI) sẽ là chỗ gate này thật sự có răng: PR mở ra là `make gate` chạy, và
+`G5` còn một dòng chưa trả — *"mở 1 PR cố ý làm tụt retrieval → CI phải đỏ"*.

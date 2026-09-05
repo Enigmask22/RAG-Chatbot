@@ -187,10 +187,17 @@ def test_todays_bundle_is_retrieval_only() -> None:
     assert bundle.eval.generation_metrics == {}
 
 
-def test_generator_is_required_by_the_signature() -> None:
-    """Không có mặc định nào cho `evaluated_with_generator`, kể cả ở tầng CLI."""
-    with pytest.raises(TypeError):
-        build_bundle(  # type: ignore[call-arg]
+def test_generator_cannot_be_left_blank() -> None:
+    """Không có mặc định nào cho `evaluated_with_generator`.
+
+    ⚠️ `W5-05` đổi nó từ tham số **bắt buộc của chữ ký** thành bắt buộc **lúc
+    chạy**, vì khi có `--generation-run` thì nó được đọc từ model đã thật sự
+    phục vụ lần chạy — tốt hơn hẳn gõ tay. Chính việc gõ tay đã đưa bí danh
+    `deepseek-chat@2026-09` vào cả hai bundle đang có trên đĩa. Ràng buộc không
+    mất đi, nó chuyển chỗ; bài test này giữ đúng chỗ mới.
+    """
+    with pytest.raises(BundleValidationError, match="bắt buộc"):
+        build_bundle(
             config=make_config(),
             index_report=make_index_report(make_config()),
             eval_run=make_eval_run(make_config()),
@@ -276,3 +283,274 @@ def test_an_explicit_top_n_is_kept() -> None:
     run["config"]["branch_options"]["rerank_top_n"] = 6
     rerank = build(config, eval_run=run).components.rerank
     assert rerank is not None and rerank.top_n == 6
+
+
+# ---------------------------------------------------------------------------
+# 5. `W5-05` — gắn phép đo tầng sinh vào bundle
+# ---------------------------------------------------------------------------
+
+
+def make_generation_report(**overrides: Any) -> dict[str, Any]:
+    """Hình dạng thật của `w5-answers-v1-generation.json`, số thật của `W5-01`."""
+    report: dict[str, Any] = {
+        "run": "w5-answers-v1",
+        "bundle_versions": ["0.1.0"],
+        "prompt_specs": ["chat-system@v2"],
+        "models": ["deepseek-v4-flash"],
+        "judge": {
+            "model": "deepseek-v4-flash",
+            "reasoning": False,
+            "rubrics": ["judge-answer-relevancy@v1", "judge-faithfulness@v2"],
+            "cache_digest": "79d7df51",
+        },
+        "metrics": {
+            "faithfulness": {"value": 0.9877, "n": 407, "n_unjudged": 0, "n_not_a_claim": 26},
+            "answer_relevancy": {"value": 0.7479, "n": 242, "n_unjudged": 0, "n_not_a_claim": 0},
+        },
+        "citation_accuracy": {
+            "quote_level": {"value": 0.8308},
+            "claim_level": {"value": 0.9877},
+            "gate_metric": "quote_level",
+        },
+        "refusal": {"refusal_accuracy": {"value": 0.9091}},
+        "latency_ms": {"p95": 4706.5},
+    }
+    report.update(overrides)
+    return report
+
+
+def save_measured_bundle(root: Path, config: IndexConfig, version: str = "0.1.0") -> None:
+    """Ghi ra bundle mà lần chạy tầng sinh khai là đã chạy trên đó."""
+    from rag_core.bundle import save_bundle
+
+    save_bundle(build(config, version=version).signed(), root)
+
+
+def test_generation_metrics_land_in_the_bundle(tmp_path: Path) -> None:
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    bundle = build(
+        config,
+        version="0.1.1",
+        generator=None,
+        generation_report=make_generation_report(),
+        gen_max_tokens=1024,
+        gen_temperature=0.0,
+        root=tmp_path,
+    )
+    assert bundle.serves_generation is True
+    assert bundle.eval.generation_metrics["faithfulness"] == pytest.approx(0.9877)
+    assert bundle.eval.generation_metrics["citation_accuracy"] == pytest.approx(0.8308)
+    assert bundle.eval.p95_end_to_end_ms == pytest.approx(4706.5)
+
+
+def test_the_generator_is_read_from_the_run_not_typed_by_hand(tmp_path: Path) -> None:
+    """⭐⭐ Đây là cách bí danh `deepseek-chat@2026-09` lọt vào hai bundle đầu.
+
+    Trường sinh ra để bảo đảm danh tính ổn định mà lại được gõ tay thì nó ổn định
+    đúng bằng trí nhớ của người gõ.
+    """
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    bundle = build(
+        config,
+        version="0.1.1",
+        generator="deepseek-chat@2026-09",
+        generation_report=make_generation_report(),
+        gen_max_tokens=1024,
+        gen_temperature=0.0,
+        root=tmp_path,
+    )
+    assert bundle.eval.evaluated_with_generator == "deepseek-v4-flash"
+
+
+def test_numbers_measured_on_a_different_retrieval_path_are_refused(tmp_path: Path) -> None:
+    """Metric truy hồi đo **offline**, metric tầng sinh đo **qua HTTP** trên một
+    server đang chạy một bundle. Không có gì tự bắt việc ghép chéo hai nguồn ấy."""
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    other = make_config(chunking={"chunk_size": 550, "chunk_overlap": 50})
+    with pytest.raises(BundleValidationError, match="truy hồi của bundle đang dựng"):
+        build(
+            other,
+            version="0.1.1",
+            generator=None,
+            index_report=make_index_report(other),
+            eval_run=make_eval_run(other),
+            generation_report=make_generation_report(),
+            gen_max_tokens=1024,
+            gen_temperature=0.0,
+            root=tmp_path,
+        )
+
+
+def test_a_run_spanning_two_bundles_is_refused(tmp_path: Path) -> None:
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    with pytest.raises(BundleValidationError, match="cần đúng"):
+        build(
+            config,
+            version="0.1.1",
+            generator=None,
+            generation_report=make_generation_report(bundle_versions=["0.1.0", "0.2.0"]),
+            gen_max_tokens=1024,
+            gen_temperature=0.0,
+            root=tmp_path,
+        )
+
+
+def test_generation_params_must_be_declared_not_defaulted(tmp_path: Path) -> None:
+    """`TD-69`: answer run chưa ghi lại `max_tokens`/`temperature`, nên chúng
+    phải được khai. Mặc định ở đây sẽ khai hộ một điều chưa ai kiểm."""
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    with pytest.raises(BundleValidationError, match="gen-max-tokens"):
+        build(
+            config,
+            version="0.1.1",
+            generator=None,
+            generation_report=make_generation_report(),
+            root=tmp_path,
+        )
+
+
+def test_two_prompts_in_one_run_are_refused(tmp_path: Path) -> None:
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    with pytest.raises(BundleValidationError, match="prompt"):
+        build(
+            config,
+            version="0.1.1",
+            generator=None,
+            generation_report=make_generation_report(
+                prompt_specs=["chat-system@v2", "chat-system@v1"]
+            ),
+            gen_max_tokens=1024,
+            gen_temperature=0.0,
+            root=tmp_path,
+        )
+
+
+def test_a_prompt_that_has_changed_since_the_run_is_refused(tmp_path: Path) -> None:
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    with pytest.raises(BundleValidationError, match="đã đổi kể từ lần đo"):
+        build(
+            config,
+            version="0.1.1",
+            generator=None,
+            generation_report=make_generation_report(prompt_specs=["chat-system@v99"]),
+            gen_max_tokens=1024,
+            gen_temperature=0.0,
+            root=tmp_path,
+        )
+
+
+def test_unjudged_rate_denominator_is_questions_asked(tmp_path: Path) -> None:
+    """Mẫu số là số câu **đã hỏi**, không phải số câu chấm được.
+
+    Dùng mẫu số "chấm được" thì tỉ lệ tự nhỏ đi đúng ở lần chạy hỏng nặng nhất:
+    mất càng nhiều phán quyết, mẫu số càng bé, con số trông càng đẹp.
+    """
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    broken = make_generation_report(
+        metrics={
+            "faithfulness": {"value": 1.0, "n": 18, "n_unjudged": 32, "n_not_a_claim": 0},
+        }
+    )
+    bundle = build(
+        config,
+        version="0.1.1",
+        generator=None,
+        generation_report=broken,
+        gen_max_tokens=1024,
+        gen_temperature=0.0,
+        root=tmp_path,
+    )
+    assert bundle.eval.unjudged_rate["faithfulness"] == pytest.approx(32 / 50)
+
+
+def test_kappa_comes_from_the_calibration_file_not_from_a_flag(tmp_path: Path) -> None:
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    calibration = {
+        "rubric": "judge-faithfulness@v2",
+        "judge_model": "deepseek-v4-flash",
+        "agreement": {"judge_vs_human": {"population": {"kappa": 0.7368}}},
+    }
+    bundle = build(
+        config,
+        version="0.1.1",
+        generator=None,
+        generation_report=make_generation_report(),
+        calibration=calibration,
+        gen_max_tokens=1024,
+        gen_temperature=0.0,
+        root=tmp_path,
+    )
+    assert bundle.eval.judge is not None
+    assert bundle.eval.judge.kappa_vs_human == pytest.approx(0.7368)
+    assert bundle.eval.judge.rubrics == (
+        "judge-answer-relevancy@v1",
+        "judge-faithfulness@v2",
+    )
+
+
+def test_a_calibration_of_a_different_rubric_is_refused(tmp_path: Path) -> None:
+    """κ của một rubric không nói gì về rubric khác — `W5-01` đo được rubric
+    v1→v2 làm một metric đổi gấp đôi trên cùng dữ liệu."""
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    with pytest.raises(BundleValidationError, match="rubric"):
+        build(
+            config,
+            version="0.1.1",
+            generator=None,
+            generation_report=make_generation_report(),
+            calibration={
+                "rubric": "judge-faithfulness@v1",
+                "agreement": {"judge_vs_human": {"population": {"kappa": 0.9}}},
+            },
+            gen_max_tokens=1024,
+            gen_temperature=0.0,
+            root=tmp_path,
+        )
+
+
+def test_a_calibration_of_a_different_judge_model_is_refused(tmp_path: Path) -> None:
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    with pytest.raises(BundleValidationError, match="judge"):
+        build(
+            config,
+            version="0.1.1",
+            generator=None,
+            generation_report=make_generation_report(),
+            calibration={
+                "rubric": "judge-faithfulness@v2",
+                "judge_model": "glm-5.3-flash",
+                "agreement": {"judge_vs_human": {"population": {"kappa": 0.371}}},
+            },
+            gen_max_tokens=1024,
+            gen_temperature=0.0,
+            root=tmp_path,
+        )
+
+
+def test_only_judged_metrics_get_an_unjudged_rate(tmp_path: Path) -> None:
+    """Gán `0,0` cho một metric tất định là khai một phép kiểm chưa từng chạy."""
+    config = make_config()
+    save_measured_bundle(tmp_path, config)
+    bundle = build(
+        config,
+        version="0.1.1",
+        generator=None,
+        generation_report=make_generation_report(),
+        gen_max_tokens=1024,
+        gen_temperature=0.0,
+        root=tmp_path,
+    )
+    assert set(bundle.eval.unjudged_rate) == {"faithfulness", "answer_relevancy"}
+    assert "citation_accuracy" in bundle.eval.generation_metrics
+    assert "citation_accuracy" not in bundle.eval.unjudged_rate

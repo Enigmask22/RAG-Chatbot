@@ -1,0 +1,90 @@
+# Ngưỡng gate — `W5-05`.
+#
+# File này là **một tài liệu về những gì dự án chịu trách nhiệm**, không phải một
+# bảng cấu hình. Mỗi ngưỡng phải nêu nguồn gốc: nó đến từ đâu, ai đo, và điều gì
+# xảy ra nếu vi phạm. Một con số không có `why` là một con số ai đó sẽ hạ xuống
+# vào lúc 11 giờ đêm để cho CI xanh.
+#
+# Ba nhóm luật, và thứ tự giữa chúng có nghĩa:
+#
+#   1. `comparability` — điều kiện tiên quyết. Vi phạm ⇒ INCOMPARABLE, không phải
+#      FAIL. "Không so được" khác "tệ đi", và trộn hai thứ đó lại sẽ khiến một
+#      bundle bị chặn vì lý do sai, hoặc tệ hơn, được thả vì lý do sai.
+#   2. `validity` — phép đo có dùng được không. Chạy TRƯỚC ngưỡng tuyệt đối, vì
+#      một con số tính trên 36% quần thể thì so với ngưỡng nào cũng vô nghĩa.
+#   3. `absolute` / `regression` — chất lượng.
+
+version: 1
+
+comparability:
+  # `G5`: gate chỉ so like-for-like. Đo bundle A bằng model này, bundle B bằng
+  # model khác, rồi quy toàn bộ chênh lệch cho retrieval là một lỗi không tự lộ.
+  require_same:
+    - golden_set
+    - evaluated_with_generator
+    - judge_identity # (model, rubrics, reasoning) — `TD-66`
+
+  # ⭐⭐ Chuỗi bằng nhau CHƯA ĐỦ nếu chuỗi ấy là một con trỏ phía server.
+  # `W5-03` đo được `deepseek-reasoner` và `deepseek-chat` cùng được phục vụ bởi
+  # `deepseek-v4-flash`; `DEEPSEEK_ALIASES` trong `rag_core.llm` ghi lại điều đó.
+  # Hai bundle cùng ghi "deepseek-chat" có thể đã được đo bằng hai model khác
+  # nhau, và không có cách nào biết. Đây là đúng lý do quy tắc cứng #1 cấm
+  # OpenRouter preset, chỉ kín đáo hơn.
+  reject_alias_identity: true
+
+validity:
+  # `TD-67`. Ngưỡng 5% chọn theo nguyên tắc "đủ chặt để bắt chế độ hỏng đã đo":
+  # nhánh suy luận-bật của `W5-04` cho 64%, còn nhánh đang dùng cho 0%. Bất kỳ
+  # ngưỡng nào trong khoảng (0, 0,64) đều bắt được; 5% để chỗ cho nhiễu thật mà
+  # vẫn đỏ rất sớm.
+  max_unjudged_rate: 0.05
+  # Bundle khai `generation_metrics` mà không khai `unjudged_rate` thì không
+  # kiểm được giả định trên. "Không biết" phải đỏ, vì chế độ hỏng đã đo cho
+  # điểm CAO hơn thực tế.
+  require_unjudged_rate: true
+  # Một judge chưa đối chiếu với người là một thước đo chưa hiệu chuẩn.
+  # `W5-04` đo được 0,737.
+  min_judge_kappa: 0.6
+
+absolute:
+  # Nguồn: `§2` bảng metric của CHECKLIST. Cột "Mục tiêu W6".
+  "ndcg@10":
+    min: 0.60
+    why: "Điểm vận hành `W2-05` đo 0,7079; hạ dưới 0,60 là lùi về trước reranker."
+  "recall@5":
+    min: 0.70
+    why: "Baseline 0,3573 → hiện tại 0,7679. Ngưỡng giữ phần lớn mức tăng ấy."
+  faithfulness:
+    min: 0.92
+    why: "Ngưỡng gốc của plan. `W5-04` xác nhận bằng nhãn tay: 0,9905 [0,9800–1,0000]."
+  citation_accuracy:
+    min: 0.85
+    why: >-
+      Ngưỡng gốc của plan, đo ở **cấp quote** (`W5-02` chọn quote_level làm
+      gate_metric vì nó tất định). Hiện `0,8308` — `TD-64`. Cố ý **không** hạ
+      xuống cho vừa: gate tồn tại để nói ra chỗ chưa đạt.
+  refusal_accuracy:
+    min: 0.85
+    why: "`W5-02` đo 0,9091. ⚠️ Rubric relevancy chưa hiệu chỉnh — `TD-68`."
+  p95_end_to_end_ms:
+    max: 3500
+    why: >-
+      Ngân sách end-to-end của plan. ⚠️ Ngưỡng này từng đặt nhầm lên
+      `p95_latency_ms` — trường ấy là **truy hồi thuần** (759 ms), nên gate cho
+      qua một hệ thống mà người dùng chờ 4.706 ms. Con số hiện tại đo trên 242
+      request thật qua HTTP (`W5-01`), thay cho 5.312 ms từ smoke test của
+      `W4-13`. Vẫn KHÔNG đạt — phần vượt là bộ sinh, không phải truy hồi.
+
+regression:
+  # So với champion. Ngưỡng nới hơn ngưỡng tuyệt đối vì đây bắt **hướng đi**,
+  # không bắt mức. Nguồn: sai số bootstrap của `W2-08` trên cùng golden set là
+  # cỡ ±0,01, nên 0,01 là "không phân biệt được với nhiễu".
+  max_drop:
+    "ndcg@10": 0.01
+    "recall@5": 0.01
+    faithfulness: 0.01
+    citation_accuracy: 0.01
+    refusal_accuracy: 0.02
+  # Metric có ở champion mà thiếu ở ứng viên là FAIL, không phải bỏ qua.
+  # Đó đúng là cách một lần chạy eval hỏng đi qua được gate.
+  require_metrics_present: true

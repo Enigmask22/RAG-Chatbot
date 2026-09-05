@@ -7,6 +7,17 @@
   "prompt_specs": [
     "chat-system@v2"
   ],
+  "models": [
+    "deepseek-v4-flash"
+  ],
+  "latency_ms": {
+    "n": 242.0,
+    "mean": 2776.4,
+    "p50": 2549.3,
+    "p95": 4706.5,
+    "p99": 5953.2,
+    "max": 6371.6
+  },
   "judge": {
     "model": "deepseek-v4-flash",
     "reasoning": false,

@@ -360,6 +360,29 @@ class JudgeSpec(_Component):
     """Mức đồng thuận giữa judge và người. `None` = **chưa đo**, và một judge
     chưa đối chiếu với người là một thước đo chưa được hiệu chuẩn."""
 
+    rubrics: tuple[NonEmptyStr, ...] = ()
+    """Các rubric đã dùng, dạng `id@vN`. Thuộc **danh tính** của giám khảo.
+
+    `W5-04` đo được: giữ nguyên hệ thống, nguyên câu trả lời, nguyên rubric và
+    đổi mỗi model judge thì faithfulness đọc ra `0,9246` (GLM) hay `1,0000`
+    (DeepSeek suy luận bật) thay vì `0,9877`. Chiều ngược lại đã đo ở `W5-01`:
+    cùng model, rubric v1 → v2 đưa `uncited_grounding` từ `0,427` lên `0,856`.
+    Nên `(model, rubrics, reasoning)` là một bộ ba, và gate chỉ so được hai
+    bundle có cùng cả ba (`TD-66`).
+    """
+
+    reasoning: bool | None = None
+    """`None` = bundle cũ không khai. Không có mặc định `False` vì mặc định ấy
+    sẽ khai hộ một điều chưa ai đo cho những manifest sinh trước `W5-04`."""
+
+    cache_digest: str | None = None
+    """Vân tay của **toàn bộ** tập phán quyết đã sinh ra các con số này.
+
+    Hai lần chạy cùng digest ⇒ cùng tập phán quyết ⇒ cùng số. Trả một phần
+    `TD-61`: cache vẫn nằm ngoài repo, nhưng manifest giờ mang đủ để phát hiện
+    khi người khác tái lập bằng một tập phán quyết khác.
+    """
+
 
 class EvalReport(_Component):
     """Không có khối này thì không có bundle. Đó là toàn bộ luận điểm của dự án.
@@ -383,7 +406,36 @@ class EvalReport(_Component):
     judge: JudgeSpec | None = None
     retrieval_metrics: dict[str, float] = Field(default_factory=dict)
     generation_metrics: dict[str, float] = Field(default_factory=dict)
+    unjudged_rate: dict[str, float] = Field(default_factory=dict)
+    """Tỉ lệ câu hỏi mà judge **không trả lời được**, theo từng metric của tầng sinh.
+
+    ⭐⭐ Không phải một con số phụ. `W5-04` đo được rằng một judge hỏng **không
+    cho điểm thấp — nó cho điểm tuyệt đối**: bật suy luận làm mất 32/50 phán
+    quyết vì chuỗi suy luận ăn hết `max_tokens`, và ca bị mất có ngữ cảnh dài
+    gần gấp đôi nên **toàn bộ mệnh đề thất bại đều nằm trong nhóm bị loại**;
+    18 ca sống sót đều `SUPPORTED` ⇒ faithfulness `1,0000`.
+
+    `W5-03` loại phán quyết không đọc được khỏi cả tử lẫn mẫu — quyết định đúng,
+    nhưng chỉ an toàn khi việc "không đọc được" **độc lập** với nhãn. Trường này
+    là thứ để `gate.py` kiểm giả định ấy thay vì tin nó (`TD-67`).
+
+    Mẫu số là **số câu đã hỏi** (`n` + `n_unjudged` + `n_not_a_claim`), không
+    phải số câu chấm được — dùng mẫu số sau thì tỉ lệ luôn nhỏ đi đúng ở những
+    lần chạy hỏng nhất.
+    """
     p95_latency_ms: float | None = Field(default=None, ge=0.0)
+    """⚠️ **Truy hồi thuần** (embed câu hỏi + tìm trong Qdrant + rerank), không
+    phải end-to-end. Tên trường nói "latency" trống không, và `W5-05` bắt được
+    hậu quả: gate đem `759 ms` so với ngân sách end-to-end `3500 ms` rồi cho
+    qua, trong khi con số end-to-end thật là `4706 ms`.
+
+    Giữ tên cũ để manifest đã ký còn nạp được; ngân sách end-to-end đọc từ
+    `p95_end_to_end_ms`."""
+
+    p95_end_to_end_ms: float | None = Field(default=None, ge=0.0)
+    """Từ lúc nhận request tới lúc stream xong, đo **qua HTTP** trên chính đường
+    production. `None` = chưa đo, và gate phải đỏ chứ không được coi là đạt."""
+
     cost_per_query_usd: float | None = Field(default=None, ge=0.0)
 
     @model_validator(mode="after")

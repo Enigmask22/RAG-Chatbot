@@ -32,6 +32,7 @@ import argparse
 import json
 import logging
 import subprocess
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,10 @@ from rag_core.bundle import (
     EvalReport,
     GateRecord,
     GateStatus,
+    GenerationComponent,
     IndexComponent,
+    JudgeSpec,
+    PromptComponent,
     RagBundle,
     RerankComponent,
     RetrievalComponent,
@@ -170,15 +174,200 @@ def _check_provenance(
         )
 
 
+# ---------------------------------------------------------------- tầng sinh
+
+
+#: Metric của tầng sinh do **judge** chấm. Chỉ những metric này mới có
+#: `unjudged_rate`: một metric tất định (`citation_validity`, `context_recall@5`)
+#: không có judge để hỏng, nên gán cho nó tỉ lệ `0,0` là khai một phép kiểm
+#: chưa từng chạy.
+_JUDGED_METRICS = ("faithfulness", "answer_relevancy", "uncited_grounding", "misattribution")
+
+#: Ánh xạ tên trong báo cáo `W5-01` → tên trong bundle. Tên bundle là tên mà
+#: `configs/eval/gate.yaml` nói tới, nên đổi tên ở đây là đổi hợp đồng với gate.
+_GENERATION_METRICS = (
+    "faithfulness",
+    "answer_relevancy",
+    "citation_coverage",
+    "misattribution",
+    "uncited_grounding",
+    "context_precision@5",
+    "context_recall@5",
+)
+
+#: Các trường của `BundleComponents` mô tả **đường truy hồi**. Đây là phần mà
+#: một lần chạy tầng sinh phụ thuộc vào; `prompt`/`generation` thì không, vì
+#: chính chúng là thứ bundle mới đang bổ sung.
+_RETRIEVAL_SIDE = ("chunking", "embedding", "index", "retrieval", "rerank", "retriever_name")
+
+
+def _unjudged_rate(block: Mapping[str, Any]) -> float:
+    """`n_unjudged / số câu đã hỏi`. Mẫu số **không** phải số câu chấm được.
+
+    Dùng mẫu số "chấm được" thì tỉ lệ tự nhỏ đi đúng ở những lần chạy hỏng nặng
+    nhất — mất càng nhiều phán quyết, mẫu số càng bé, tỉ lệ trông càng đẹp.
+    """
+    unjudged = int(block.get("n_unjudged", 0))
+    asked = int(block.get("n", 0)) + unjudged + int(block.get("n_not_a_claim", 0))
+    return unjudged / asked if asked else 0.0
+
+
+def _measured_on(generation_report: Mapping[str, Any], root: Path) -> RagBundle:
+    """Bundle mà lần chạy tầng sinh đã thật sự được phục vụ bởi.
+
+    ⭐⭐ Đây là chỗ dễ nói dối nhất trong cả file, và nó không có phép kiểm nào
+    sẵn có: metric truy hồi đo **offline** trên một index, còn metric tầng sinh
+    đo **qua HTTP** trên một server đang chạy một bundle. Hai nguồn ấy có thể
+    thuộc về hai hệ thống khác nhau mà vẫn ghép thành một manifest hợp lệ.
+
+    `answer_run` có ghi `bundle_versions`, nên phép kiểm là: nạp đúng bundle ấy
+    lên và đòi phần **đường truy hồi** của nó trùng khít với bundle đang dựng.
+    """
+    from rag_core.bundle import bundle_dir_name, load_bundle
+
+    versions = list(generation_report.get("bundle_versions") or [])
+    if len(versions) != 1:
+        raise BundleValidationError(
+            f"lần chạy tầng sinh phục vụ bởi {versions or 'không bundle nào'} — cần đúng "
+            "một. Trộn nhiều bundle trong một lần chạy thì con số không thuộc về bundle nào."
+        )
+    path = root / bundle_dir_name(str(versions[0])) / "manifest.json"
+    if not path.is_file():
+        raise BundleValidationError(
+            f"lần chạy tầng sinh nói nó chạy trên bundle {versions[0]!r} nhưng không "
+            f"tìm thấy {path}. Không đối chiếu được thì không đóng gói."
+        )
+    return load_bundle(path)
+
+
+def _check_generation_provenance(components: BundleComponents, measured: RagBundle) -> None:
+    differing = [
+        field_name
+        for field_name in _RETRIEVAL_SIDE
+        if getattr(components, field_name) != getattr(measured.components, field_name)
+    ]
+    if differing:
+        raise BundleValidationError(
+            f"metric tầng sinh đo trên bundle {measured.bundle_version}, nhưng đường "
+            f"truy hồi của bundle đang dựng khác ở {differing}. Gắn số của hệ thống này "
+            "lên hệ thống khác là đúng loại lời nói dối mà module này tồn tại để chặn."
+        )
+
+
+def _judge_spec(
+    generation_report: Mapping[str, Any], calibration: Mapping[str, Any] | None
+) -> JudgeSpec:
+    judge = dict(generation_report.get("judge") or {})
+    if not judge.get("model"):
+        raise BundleValidationError("báo cáo tầng sinh không nêu `judge.model`.")
+
+    kappa: float | None = None
+    if calibration is not None:
+        cal_rubric = str(calibration.get("rubric", ""))
+        rubrics = [str(r) for r in judge.get("rubrics", [])]
+        if cal_rubric and cal_rubric not in rubrics:
+            raise BundleValidationError(
+                f"hiệu chỉnh đo trên rubric {cal_rubric!r} nhưng lần chạy dùng {rubrics}. "
+                "κ của một rubric không nói gì về rubric khác (`W5-01` đo được rubric "
+                "v1→v2 đổi một metric gấp đôi)."
+            )
+        if calibration.get("judge_model") and calibration["judge_model"] != judge["model"]:
+            raise BundleValidationError(
+                f"hiệu chỉnh đo trên judge {calibration['judge_model']!r} nhưng lần chạy "
+                f"dùng {judge['model']!r}."
+            )
+        arm = ((calibration.get("agreement") or {}).get("judge_vs_human") or {}).get("population")
+        if arm is None or arm.get("kappa") is None:
+            raise BundleValidationError(
+                "file hiệu chỉnh không có `agreement.judge_vs_human.population.kappa`."
+            )
+        kappa = float(arm["kappa"])
+
+    return JudgeSpec(
+        model=str(judge["model"]),
+        temperature=0.0,
+        kappa_vs_human=kappa,
+        rubrics=tuple(str(r) for r in judge.get("rubrics", [])),
+        reasoning=bool(judge["reasoning"]) if "reasoning" in judge else None,
+        cache_digest=judge.get("cache_digest"),
+    )
+
+
+def _prompt_component(generation_report: Mapping[str, Any]) -> PromptComponent:
+    from rag_core.generation import PromptRegistry
+
+    specs = list(generation_report.get("prompt_specs") or [])
+    if len(specs) != 1:
+        raise BundleValidationError(
+            f"lần chạy dùng {specs or 'không'} prompt — cần đúng một để bundle nêu được "
+            "prompt nào đã sinh ra các con số này."
+        )
+    prompt_id, _, version = str(specs[0]).partition("@")
+    prompt = PromptRegistry().get(prompt_id)
+    if prompt.spec != specs[0]:
+        raise BundleValidationError(
+            f"registry hiện có {prompt.spec!r} nhưng lần chạy dùng {specs[0]!r}. "
+            "Prompt đã đổi kể từ lần đo; đóng gói bây giờ sẽ mô tả sai."
+        )
+    return PromptComponent(id=prompt_id, version=int(version.lstrip("v")), hash=prompt.sha256)
+
+
+def _generation_eval(
+    generation_report: Mapping[str, Any],
+) -> tuple[dict[str, float], dict[str, float]]:
+    metrics_block = dict(generation_report.get("metrics") or {})
+    values: dict[str, float] = {}
+    for name in _GENERATION_METRICS:
+        block = metrics_block.get(name)
+        if block is None or block.get("value") is None:
+            continue
+        values[name] = float(block["value"])
+
+    accuracy = dict(generation_report.get("citation_accuracy") or {})
+    gate_metric = str(accuracy.get("gate_metric", "quote_level"))
+    if gate_metric in accuracy:
+        # ⭐ Bundle mang **một** con số tên `citation_accuracy`, và nó là con số
+        # mà chính `W5-02` đã khai là gate_metric. Đóng gói cả hai cấp rồi để
+        # gate chọn sau là mở đường cho việc chọn cấp nào cho vừa kết quả.
+        values["citation_accuracy"] = float(accuracy[gate_metric]["value"])
+
+    refusal = dict(generation_report.get("refusal") or {})
+    if "refusal_accuracy" in refusal:
+        values["refusal_accuracy"] = float(refusal["refusal_accuracy"]["value"])
+
+    rates = {
+        name: _unjudged_rate(metrics_block[name])
+        for name in _JUDGED_METRICS
+        if name in metrics_block
+    }
+    return values, rates
+
+
 def build_bundle(
     *,
     config: IndexConfig,
     index_report: dict[str, Any],
     eval_run: dict[str, Any],
     version: str,
-    generator: str,
+    generator: str | None = None,
     notes: str | None = None,
+    generation_report: dict[str, Any] | None = None,
+    calibration: dict[str, Any] | None = None,
+    gen_max_tokens: int | None = None,
+    gen_temperature: float | None = None,
+    root: Path = DEFAULT_ROOT,
 ) -> RagBundle:
+    """`generation_report` là báo cáo của `pipeline.eval.generation_metrics` (`W5-01`).
+
+    Khi có nó, bundle mọc thêm `components.prompt`, `components.generation`,
+    `eval.judge`, `eval.generation_metrics` và `eval.unjudged_rate` — và
+    `evaluated_with_generator` được **đọc từ lần chạy** thay vì gõ tay. Đó là
+    cách trả một lỗi có thật: cả hai bundle đang có trên đĩa đều ghi
+    `deepseek-chat@2026-09`, mà `deepseek-chat` là bí danh (`W5-03` đo được nó
+    được phục vụ bởi `deepseek-v4-flash`). Trường sinh ra để bảo đảm so
+    like-for-like đang mang một danh tính không ổn định, và nó không ổn định vì
+    nó được gõ tay.
+    """
     _check_provenance(config, index_report, eval_run)
 
     eval_config: dict[str, Any] = eval_run.get("config", {})
@@ -231,13 +420,52 @@ def build_bundle(
         generation=None,
     )
 
+    generation_values: dict[str, float] = {}
+    unjudged: dict[str, float] = {}
+    judge: JudgeSpec | None = None
+    end_to_end: float | None = None
+    if generation_report is not None:
+        measured = _measured_on(generation_report, root)
+        _check_generation_provenance(components, measured)
+        if gen_max_tokens is None or gen_temperature is None:
+            raise BundleValidationError(
+                "`--generation-run` cần cả `--gen-max-tokens` và `--gen-temperature`. "
+                "Artifact answer run chưa ghi lại hai tham số này (`TD-69`), nên chúng "
+                "phải được **khai**; mặc định ở đây sẽ khai hộ một điều chưa ai kiểm."
+            )
+        served = list(generation_report.get("models") or [])
+        components = components.model_copy(
+            update={
+                "prompt": _prompt_component(generation_report),
+                "generation": GenerationComponent(
+                    primary=str(served[0]) if served else str(generator or ""),
+                    max_tokens=gen_max_tokens,
+                    temperature=gen_temperature,
+                ),
+            }
+        )
+        judge = _judge_spec(generation_report, calibration)
+        generation_values, unjudged = _generation_eval(generation_report)
+        end_to_end = (generation_report.get("latency_ms") or {}).get("p95")
+        if served:
+            generator = str(served[0])
+
+    if not generator:
+        raise BundleValidationError(
+            "`evaluated_with_generator` bắt buộc — gate chỉ so được like-for-like."
+        )
+
     latency = eval_run.get("latency_ms", {})
     report = EvalReport(
         golden_set=Path(eval_config.get("golden", "golden_v1")).stem,
         n_queries=int(eval_run["n_scored"]),
         evaluated_with_generator=generator,
+        judge=judge,
         retrieval_metrics={str(k): float(v) for k, v in eval_run.get("overall", {}).items()},
+        generation_metrics=generation_values,
+        unjudged_rate=unjudged,
         p95_latency_ms=float(latency["p95"]) if "p95" in latency else None,
+        p95_end_to_end_ms=float(end_to_end) if end_to_end is not None else None,
     )
 
     return RagBundle(
@@ -259,13 +487,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", required=True, help="semver, ví dụ `0.1.0`.")
     parser.add_argument(
         "--generator",
-        required=True,
-        help="`evaluated_with_generator` — bắt buộc, vì gate chỉ so like-for-like.",
+        default=None,
+        help=(
+            "`evaluated_with_generator`. Bắt buộc TRỪ KHI có `--generation-run` — "
+            "khi ấy nó được đọc từ model thực tế đã phục vụ lần chạy, thay vì gõ tay."
+        ),
     )
+    parser.add_argument(
+        "--generation-run",
+        type=Path,
+        default=None,
+        help="Báo cáo `generation_metrics` của `W5-01` (`*-generation.json`).",
+    )
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        default=None,
+        help="Báo cáo `W5-04` — nguồn của `judge.kappa_vs_human`. Không gõ tay κ.",
+    )
+    parser.add_argument("--gen-max-tokens", type=int, default=None)
+    parser.add_argument("--gen-temperature", type=float, default=None)
     parser.add_argument("--notes")
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
+
+    def _read(path: Path | None) -> dict[str, Any] | None:
+        return None if path is None else json.loads(path.read_text(encoding="utf-8"))
 
     bundle = build_bundle(
         config=load_index_config(args.index_config),
@@ -274,6 +522,11 @@ def main(argv: list[str] | None = None) -> int:
         version=args.version,
         generator=args.generator,
         notes=args.notes,
+        generation_report=_read(args.generation_run),
+        calibration=_read(args.calibration),
+        gen_max_tokens=args.gen_max_tokens,
+        gen_temperature=args.gen_temperature,
+        root=args.root,
     )
     path = save_bundle(bundle, args.root, overwrite=args.overwrite)
     logger.info("đã ghi bundle %s → %s", bundle.bundle_version, path)

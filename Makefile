@@ -144,6 +144,12 @@ index:  ## Build index Qdrant (BUNDLE=baseline). Cần `make up` trước
 index-dry:  ## Chunk thử vài tài liệu và in thống kê, không chạm Qdrant
 	$(PY) python -m pipeline.indexing.build_index --config $(INDEX_CONFIG) --dry-run
 
+.PHONY: gate
+gate:  ## `W5-05`: gate phát hành cho một bundle (BUNDLE=0.2.1). Exit 1=FAIL, 2=INCOMPARABLE
+	$(PY) python -m pipeline.eval.gate --bundle $(BUNDLE) \
+		--html plans/reports/runs/gate-$(BUNDLE).html \
+		--json plans/reports/runs/gate-$(BUNDLE).json
+
 .PHONY: eval-compare
 eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAND=chunk550)
 	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \
