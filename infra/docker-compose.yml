@@ -130,6 +130,19 @@ services:
       # thống đã eval — với image CUDA thì không cần, và nếu ai đó phải bật nó
       # thì `GET /admin/bundle` sẽ khai `runtime_drift` cho người vận hành thấy.
       - BUNDLE_ALLOW_RUNTIME_DRIFT=${BUNDLE_ALLOW_RUNTIME_DRIFT:-0}
+      # ⚠️ `W5-06`. Khoá Langfuse đi qua `env_file` (như khoá LLM), nhưng HOST thì
+      # **không** — `.env` viết cho đường chạy trên host nên nó khai
+      # `http://127.0.0.1:3000`, và bên trong mạng compose `127.0.0.1` là chính
+      # container này. Cùng hình dạng lỗi với `QDRANT_URL`/`POSTGRES_HOST` ở trên,
+      # chỉ khác ở chỗ Langfuse nằm ở một compose project KHÁC nên không có tên
+      # service nào để trỏ tới — phải đi qua cổng đã publish trên máy chủ.
+      - LANGFUSE_HOST=${LANGFUSE_HOST_FROM_CONTAINER:-http://host.docker.internal:3000}
+    # `host.docker.internal` có sẵn trên Docker Desktop; trên Docker Engine Linux
+    # thì không, nên khai tường minh. Không có nó thì tracing im lặng thất bại
+    # với `ConnectError` trong thread nền — đúng kiểu hỏng mà `/admin/tracing`
+    # sinh ra để nhìn thấy (`failed` tăng, `sent` đứng yên).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Trọng số model: 4,4 GB dùng chung với đường chạy trên host, không nướng
       # vào image. `${HF_HOME}` để máy nào đã có cache thì khỏi tải lại.

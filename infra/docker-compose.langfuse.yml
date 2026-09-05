@@ -1,0 +1,193 @@
+# Langfuse tự dựng cho Serving Plane — `W5-06`.
+#
+#     make up-langfuse      # lên, chờ healthy
+#     make down-langfuse    # xuống, GIỮ dữ liệu
+#
+# ## ⭐ Vì sao là một file riêng, không phải một profile của `docker-compose.yml`
+#
+# Hai vòng đời khác nhau. Qdrant/Postgres/Redis là thứ `/chat` **không chạy
+# được nếu thiếu**; Langfuse là thứ `/chat` chạy y hệt khi thiếu. Trộn chúng vào
+# một project nghĩa là `make down` gỡ luôn quan sát, và `docker compose up`
+# đánh thức 6 container ClickHouse+MinIO mỗi lần ai đó chỉ muốn chạy test tích
+# hợp. Project riêng (`name:` khác) giữ hai thứ ấy tắt/bật độc lập.
+#
+# Hệ quả phải nói ra: hai project = hai network, nên API **không** gọi được
+# `http://langfuse-web:3000`. Đường đi là cổng đã publish:
+#   * uvicorn chạy trên host  → `LANGFUSE_HOST=http://127.0.0.1:3000`
+#   * API trong container     → `LANGFUSE_HOST=http://host.docker.internal:3000`
+#
+# ## ⭐⭐ Khoá API được KHAI TRƯỚC, không bấm ra từ giao diện
+#
+# `LANGFUSE_INIT_*` cho Langfuse tự tạo org + project + user + **cặp khoá** ở
+# lần khởi động đầu. Đó không phải tiện tay: một hạ tầng mà bước cuối là "vào
+# UI bấm New API key rồi dán vào .env" là một hạ tầng không dựng lại được từ
+# repo, và `W5-09` (CI) sẽ cần dựng lại nó mà không có ai bấm.
+#
+# ⚠️ Khoá dưới đây là khoá **local, công khai, chỉ để dev**. Chúng nằm trong git
+# có chủ đích và không được mang sang bất kỳ chỗ nào có dữ liệu thật.
+
+name: rag-langfuse
+
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://langfuse:langfuse_local_dev_only@langfuse-db:5432/langfuse
+  SALT: rag-platform-local-salt
+  # ⚠️⚠️ **Dấu nháy là bắt buộc**, và thiếu nó là lỗi đầu tiên hạng mục này gặp.
+  #
+  # Bản đầu viết `ENCRYPTION_KEY: 0000…0` (64 số 0) không nháy. YAML đọc nó là
+  # một **số**, chuẩn hoá thành `0`, và Langfuse nhận đúng một ký tự rồi chết
+  # với *"must be 256 bits, 64 string characters"*. Cấu hình nhìn đúng trên
+  # màn hình, sai trong container — và nó chỉ hỏng với những khoá toàn chữ số.
+  #
+  # 64 ký tự hex (AES-256). Sinh bằng `openssl rand -hex 32`; giá trị này cố
+  # định để mọi lần dựng lại đọc được dữ liệu cũ — đổi nó là mất mọi thứ đã mã
+  # hoá trong DB.
+  ENCRYPTION_KEY: "6b1f2d0a94c7e35810bd4af62c9e07531ae8d4bf20c6739e5a81df4c0b2e963a"
+  NEXTAUTH_SECRET: rag-platform-local-nextauth
+  NEXTAUTH_URL: http://localhost:3000
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: default
+  CLICKHOUSE_PASSWORD: clickhouse_local_dev_only
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_HOST: langfuse-redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: langfuse_redis_local_dev_only
+  # Langfuse v3 ghi sự kiện thô vào một object store trước khi worker nạp vào
+  # ClickHouse. MinIO đóng vai S3 để không phải mở một tài khoản cloud cho một
+  # máy dev — và để `W5-09` dựng lại được toàn bộ stack trong CI.
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: minio_local_dev_only
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  TELEMETRY_ENABLED: "false"
+  LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+
+services:
+  langfuse-web:
+    image: langfuse/langfuse:3
+    restart: unless-stopped
+    depends_on:
+      langfuse-db: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      langfuse-redis: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      <<: *langfuse-env
+      # Tự tạo org/project/user + cặp khoá ở lần lên đầu tiên. Xem §⭐⭐ ở đầu.
+      LANGFUSE_INIT_ORG_ID: rag-platform
+      LANGFUSE_INIT_ORG_NAME: RAG Platform
+      LANGFUSE_INIT_PROJECT_ID: rag-serving
+      LANGFUSE_INIT_PROJECT_NAME: rag-serving
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-rag-platform-local
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-rag-platform-local
+      # ⚠️ Phải là địa chỉ **hợp lệ** (có TLD). `dev@localhost` bị Zod từ chối,
+      # và triệu chứng là `/api/public/health` trả 500 trong khi Docker vẫn
+      # báo `health: starting` suốt cả `start_period` — xem §⚠️ ở healthcheck.
+      LANGFUSE_INIT_USER_EMAIL: dev@example.com
+      LANGFUSE_INIT_USER_NAME: dev
+      LANGFUSE_INIT_USER_PASSWORD: langfuse_local_dev_only
+    healthcheck:
+      # Image không có curl; Node thì chắc chắn có (đây là một app Next.js).
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/api/public/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      # Lần lên đầu chạy migration Postgres **và** ClickHouse; trên máy dev
+      # việc đó mất hàng chục giây tới vài phút.
+      #
+      # ⚠️ Đánh đổi phải nói ra: trong `start_period`, Docker báo
+      # `health: starting` chứ **không** báo `unhealthy` — nên một lỗi cấu hình
+      # chết ngay lập tức trông y hệt một lần khởi động chậm, và `up --wait` ngồi
+      # đợi đủ 180 giây trước khi nói bất cứ điều gì. Đã gặp hai lần ở đúng file
+      # này (`ENCRYPTION_KEY`, `LANGFUSE_INIT_USER_EMAIL`). Cách gỡ nhanh là đọc
+      # `make logs-langfuse` chứ không đọc cột STATUS.
+      start_period: 180s
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    restart: unless-stopped
+    depends_on:
+      langfuse-db: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      langfuse-redis: {condition: service_healthy}
+    environment: *langfuse-env
+
+  # ⚠️ Postgres **riêng**, không dùng chung với `rag-platform`. Langfuse chạy
+  # migration của nó trên database mà nó được trỏ tới; chung một instance là
+  # buộc hai hệ thống có schema độc lập phải chia sẻ một vòng đời nâng cấp.
+  langfuse-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse_local_dev_only
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse_local_dev_only
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    # Bucket phải tồn tại **trước** khi worker ghi vào; MinIO không tự tạo.
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server /data --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio_local_dev_only
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  langfuse-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "langfuse_redis_local_dev_only"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "langfuse_redis_local_dev_only", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  langfuse_db:
+  clickhouse_data:
+  clickhouse_logs:
+  minio_data:

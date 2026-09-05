@@ -199,6 +199,20 @@ class Settings(BaseSettings):
     """Bước viết lại nằm **trước** truy hồi, nên nó cộng thẳng vào TTFB. Quá hạn
     thì lượt đi tiếp bằng câu gốc — mất một cải thiện, không mất câu trả lời."""
 
+    # ------------------------------------------------------- Quan sát (W5-06)
+    langfuse_host: str = "http://127.0.0.1:3000"
+    langfuse_public_key: str = ""
+    langfuse_secret_key: SecretStr | None = None
+    """Quan sát bật **chỉ** khi có đủ host + cả hai khoá. Không có cờ bật/tắt
+    riêng: một cờ bên cạnh một cặp khoá cho hai trạng thái mâu thuẫn, và cái
+    người ta gặp thật là "bật nhưng chưa có khoá" — mọi thứ trông như đã chạy,
+    không trace nào tới nơi. Xem `serving.core.langfuse.build_sink`."""
+
+    langfuse_queue_size: int = Field(default=256, ge=1)
+    """Trần hàng đợi đẩy trace. Đầy thì trace mới bị **vứt** kèm bộ đếm, chứ
+    không xếp hàng vô hạn: một endpoint chết vì bộ đếm span của chính nó là chế
+    độ hỏng khó chấp nhận nhất của một hạng mục quan sát."""
+
     # ------------------------------------------------------------ Model
     embedding_model: str = "bkai-foundation-models/vietnamese-bi-encoder"
     embedding_device: str = "auto"

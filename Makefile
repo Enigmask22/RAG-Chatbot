@@ -53,6 +53,10 @@ cov:  ## Unit test + báo cáo coverage của rag_core
 
 # ---------------------------------------------------------------- hạ tầng
 COMPOSE := docker compose -f infra/docker-compose.yml --env-file .env
+# `W5-06`. Project riêng, KHÔNG `--env-file .env`: stack quan sát tự khai
+# đủ biến của nó, và một `.env` thiếu một dòng không được phép làm nó lệch
+# cấu hình so với lần dựng trước.
+LANGFUSE := docker compose -f infra/docker-compose.langfuse.yml
 
 # Clone sạch chưa có `.env`; compose sẽ chết vì `--env-file`. Tự tạo từ mẫu để
 # `make up` chạy được ngay, secret vẫn phải điền tay sau.
@@ -71,6 +75,18 @@ up-api: up  ## `W4-13`: bật thêm API (build image nếu cần), đợi /ready
 .PHONY: smoke
 smoke:  ## `W4-13`: e2e qua compose thật — cần `make up-api` trước
 	$(PY) pytest tests/e2e -m e2e
+
+.PHONY: up-langfuse
+up-langfuse:  ## `W5-06`: bật Langfuse tự dựng (web+worker+clickhouse+minio+redis+pg)
+	$(LANGFUSE) up -d --wait
+
+.PHONY: down-langfuse
+down-langfuse:  ## Tắt Langfuse (giữ nguyên volume dữ liệu)
+	$(LANGFUSE) down
+
+.PHONY: logs-langfuse
+logs-langfuse:  ## Xem log Langfuse
+	$(LANGFUSE) logs -f --tail=100
 
 .PHONY: down
 down:  ## Tắt hạ tầng (giữ nguyên volume dữ liệu)

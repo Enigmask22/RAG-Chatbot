@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-05 (12) (cuối file)** — `W5-05` xong, **`W5` 5/11**. `make gate BUNDLE=0.2.1` → **INCOMPARABLE, exit 2**; `--no-champion` → **FAIL, exit 1** (`citation_accuracy` 0,8308 < 0,85 · `p95_end_to_end_ms` 4706 > 3500). ⭐⭐ **"Không so được" là phán quyết THỨ BA**, không phải một kiểu FAIL — FAIL bảo sửa hệ thống, INCOMPARABLE bảo sửa phép đo. ⭐⭐ **Trường sinh ra để bảo đảm danh tính đang mang một bí danh**: `deepseek-chat@2026-09` ở cả hai bundle cũ, lọt vào vì nó được **gõ tay**. ⭐⭐ **Gate cho qua một hệ thống vượt ngân sách 34% vì hai con số cùng tên** — `p95_latency_ms` là truy hồi thuần (759 ms), ngân sách 3500 ms là end-to-end; đo lại trên 242 request thật: **p95 = 4706 ms**. Tiêm 18/18 đỏ. 3 nợ mới `TD-69`…`TD-71`.
+> **Phiên mới nhất: 2026-09-05 (13) (cuối file)** — `W5-06` xong, **`W5` 6/11**. Langfuse tự dựng (6 container, project riêng) + trace đủ tầng: một lượt `/chat` cho **7 span** kèm `$0,001299`, đọc lại bằng `GET /api/public/traces/{id}` chứ không bằng ảnh chụp. ⭐⭐ **"Truy hồi 725 ms" hoá ra là 44,8 ms tìm + 685,3 ms xếp lại** — cross-encoder chiếm **92,8%** ngân sách truy hồi, Qdrant hybrid 6,1%; cả `W2` tối ưu đúng 6%. ⭐⭐ **Request đầu sau deploy tốn 10,7× thời gian rerank** (7 353 ms) vì kernel CUDA khởi tạo ở `score()` đầu tiên trong khi `/ready` đã xanh → `TD-72`. ⭐⭐ **Trace hữu ích nhất trong bảy là của một request hỏng** — nó tồn tại vì trace mở **trước** `prepare()`. ⭐⭐ **Prompt trong trace mang `nonce` của `W4-12`** sang một hệ thống thứ hai; che theo hình dạng, 0/7 trace rò. ⭐ `TD-55` trả xong: phần khung `done` không thấy = **19,92%**. ⭐⭐ Lỗi thật: **proxy uỷ quyền tự đệ quy tới chết khi bị `copy.copy`**. Tiêm 26/26 đỏ nhưng lượt một có 3 phép sống sót, 2 là lỗ thật. 3 nợ mới `TD-72`…`TD-74`.
+>
+> Phiên trước: **2026-09-05 (12)** — `W5-05` xong, **`W5` 5/11**. `make gate BUNDLE=0.2.1` → **INCOMPARABLE, exit 2**; `--no-champion` → **FAIL, exit 1** (`citation_accuracy` 0,8308 < 0,85 · `p95_end_to_end_ms` 4706 > 3500). ⭐⭐ **"Không so được" là phán quyết THỨ BA**, không phải một kiểu FAIL — FAIL bảo sửa hệ thống, INCOMPARABLE bảo sửa phép đo. ⭐⭐ **Trường sinh ra để bảo đảm danh tính đang mang một bí danh**: `deepseek-chat@2026-09` ở cả hai bundle cũ, lọt vào vì nó được **gõ tay**. ⭐⭐ **Gate cho qua một hệ thống vượt ngân sách 34% vì hai con số cùng tên** — `p95_latency_ms` là truy hồi thuần (759 ms), ngân sách 3500 ms là end-to-end; đo lại trên 242 request thật: **p95 = 4706 ms**. Tiêm 18/18 đỏ. 3 nợ mới `TD-69`…`TD-71`.
 >
 > Phiên trước: **2026-09-05 (11)** — `W5-04` xong, **`W5` 4/11**. Faithfulness `0,9877` **đúng** (nhãn tay quy về quần thể: `0,9905` [0,9800–1,0000], κ judge–người **0,737**). ⭐⭐ Nhưng đổi **mỗi** model judge làm metric dịch **7,5 điểm** — GLM cho `0,9246`, DeepSeek suy luận-bật cho `1,0000`. ⭐⭐ **Judge hỏng không cho điểm thấp, nó cho điểm tuyệt đối**: bật suy luận mất 32/50 phán quyết vì chạm `max_tokens`, và ca bị mất có ngữ cảnh dài gần gấp đôi nên **cả 3 mệnh đề thất bại thật đều bị loại**; 18 ca sống sót đều `SUPPORTED`. ⭐⭐ File "mù" của tôi **rò rỉ qua thứ tự dòng** — phát hiện ở mẫu 18/50, phải bốc lại bằng seed khác. 4 nợ mới `TD-65`…`TD-68`. `W0-07` **hết hiệu lực** (câu hỏi chưa bao giờ dẫn tới quyết định nào).
 >
@@ -3819,3 +3821,130 @@ danh, không so được) · `TD-71` (gate chưa ghi phán quyết ngược vào
 **Việc tiếp theo**: `W5-06` — Langfuse self-host + instrument full trace. Sau đó
 `W5-09` (CI) sẽ là chỗ gate này thật sự có răng: PR mở ra là `make gate` chạy, và
 `G5` còn một dòng chưa trả — *"mở 1 PR cố ý làm tụt retrieval → CI phải đỏ"*.
+
+---
+
+## 2026-09-05 (13) — `W5-06`: Langfuse tự dựng, và con số 725 ms hoá ra là hai con số
+
+**Trạng thái**: `W5` **6/11** · 53 `[x]` backlog gốc + 7 `NEW` · **2 157 test**
+bộ mặc định xanh (3 skip, +50) · **254 test integration xanh** — bộ ấy chạy hết
+lần này, nên cảnh báo *"chưa kiểm lại được"* của `W5-05` đóng · `make lint` sạch
+cả ba lệnh · chi phí **$0,009161** (7 trace thật, 6 tới được model).
+
+```
+trace 7d6453c9…   name=chat   cost=$0.001299   latency=9.892 s
+
+cache.lookup       SPAN         416.4 ms   hit=false
+  embed.query      SPAN         413.3 ms
+understand         SPAN           0.07 ms  route=retrieve · vi · rewritten=false
+retrieval          SPAN         7398.4 ms  n_hits=5
+  retrieve.hybrid  SPAN          44.4 ms   n_hits=50
+  rerank           SPAN        7353.5 ms   n_candidates=50
+prompt             SPAN           0.07 ms  chat-system@v2 · 5 chunk · 9 392 ký tự
+completion         GENERATION  2035.4 ms   deepseek-v4-flash  in=4199 out=197
+citations          SPAN           0.03 ms  block=ok
+```
+
+**⭐⭐ "Truy hồi 725 ms" là 44,8 ms tìm + 685,3 ms xếp lại.** `W4-13` ghi nó là
+*một* con số vì mã chỉ có **một** lời gọi `retriever.retrieve()` và một đồng hồ
+quanh nó. Tách ra (p50, n=5 đã nóng): Qdrant dense+sparse+RRF chiếm **6,1%**,
+cross-encoder chiếm **92,8%**. Cả hạng mục `W2` — hybrid, RRF, `candidate_k`,
+trọng số nhánh — tối ưu đúng 6% ngân sách truy hồi. Đòn bẩy cho `W6-05` là
+`DEFAULT_RERANK_CANDIDATES = 50`, không phải Qdrant. Cùng họ lỗi với
+`p95_latency_ms` / `p95_end_to_end_ms` của `W5-05`: một cái tên gộp hai đại
+lượng, và cái gộp luôn nghiêng về phía dễ chịu.
+
+**⭐⭐ Request đầu sau deploy tốn 10,7× thời gian rerank.** 7 353 ms vs 685 ms.
+Trọng số nạp lúc `activate()` nhưng kernel CUDA chỉ khởi tạo ở `score()` đầu
+tiên — và `/ready` đã xanh từ trước, nên load balancer đã gửi traffic. Một p95
+trên hàng nghìn request pha loãng nó tới vô hình; một trace thì không. → `TD-72`
+
+**⭐⭐ Trace hữu ích nhất trong bảy trace là trace của một request HỎNG.** Một
+lượt trả `503`; log để lại một dòng `InterfaceError`, còn trace để lại: cache
+lookup ✔ 485 ms, retrieval ✔ 8 245 ms, **rồi chết** — tức nó đã tiêu 8,2 giây
+GPU trước khi Postgres từ chối. Nó tồn tại nhờ một quyết định nhỏ: trace mở ở
+`api/chat.py` **trước** `prepare()`. `ChatTurn` chỉ ra đời ở *dòng cuối* của
+`prepare()`, nên sinh trace cùng nó thì mọi lượt 404/403/429/503 không có trace
+— hệ quan sát sẽ phủ đúng những request đã chạy trót lọt, tức nó không im lặng
+mà **nói rằng mọi thứ đều ổn**. Cái giá: `finish()` phải idempotent (đóng ở hai
+chỗ), có test và có phép tiêm.
+
+**⭐⭐ Cây span chỉ mịn được tới đúng chỗ mã có mối nối.** Muốn hai span từ một
+lời gọi thì hoặc bổ đôi con số ấy theo một tỉ lệ đoán được — **sinh ra dữ
+liệu**, hai con số trông như hai phép đo — hoặc đi tìm mối nối thật.
+`RerankedRetriever` giữ `base`/`reranker` là hai thuộc tính công khai, nên mỗi
+lớp được bọc riêng và mỗi span đo `perf_counter` quanh đúng lời gọi của nó.
+Hệ quả phải nói ra: **không có span `embed`** ở đường truy hồi, vì
+`embed_query_hybrid` nằm trong *thân* `QdrantHybridRetriever.retrieve` và tách
+nó đòi sửa `rag_core` — thứ cố ý không biết gì về quan sát.
+
+**⭐⭐ Ghi nguyên prompt vào trace là mang `nonce` của `W4-12` sang một hệ thống
+thứ hai.** Đó là lớp *duy nhất* của hàng rào tiêm không phụ thuộc model
+(`TD-53`), và DoD của chính hạng mục này là *"screenshot trace"* — tức trace là
+loại dữ liệu được chụp và dán đi. Mã hết hiệu lực sau mỗi lượt nên rủi ro nhỏ,
+nhưng che nó **không tốn gì**: người đọc cần biết khối ngữ cảnh *có được bọc
+hay không*, không cần biết bọc bằng chuỗi nào. Đo trên 7 trace thật: **0** chuỗi
+16-hex lọt ra, 9 dấu `«nonce»` mỗi trace.
+
+**⭐ `TD-55` trả xong cả hai vế.** Trace bắt đầu ở handler nên nó đo được phần
+khung `done` không thấy: **787,3 ms = 19,92%** (p50) — ước lượng 18% của
+`TD-55` đúng, và giờ nó thôi là một ước lượng. Khung `done` cũng khai
+`prepare_ms` ở cả ba nhánh, để hai đồng hồ không lệch một cách im lặng.
+
+**⭐ Chưa đo ≠ miễn phí.** `Usage` khai `int | None`, `total_cost_usd()` **bỏ
+qua** bước không có số thay vì cộng 0, và `unmeasured_cost_steps()` khai ra
+danh sách ấy. Khách hàng thật: `_rewrite` bọc lời gọi trong `wait_for`, thứ huỷ
+được cái *chờ* nhưng không huỷ được cái *thread* — quá hạn thì lời gọi kia vẫn
+chạy nốt và vẫn bị tính tiền. Cùng bài học `W5-04` đã trả giá.
+
+**⭐ Quan sát không được phép giết thứ nó quan sát.** Thread nền +
+`queue.Queue(maxsize=256)`, **vứt trace mới** khi đầy kèm bộ đếm (vứt cái mới
+chứ không cái cũ: lúc nghẽn, trace chờ lâu nhất là trace gần sự cố nhất).
+`GET /admin/tracing` khai `queued/sent/failed/dropped` — không có nó thì hàng
+đợi đầy, khoá sai và host sai trông y hệt nhau từ phía `/chat`.
+
+**⭐ httpx thẳng vào `/api/public/ingestion`, không SDK.** Cùng lý lẽ đã viết
+cho `rag_core/llm`: cần đúng một endpoint, và cần biết chính xác byte nào rời
+khỏi tiến trình — "chụp tự động" ở đây nghĩa là chụp cả `nonce`. Đổi lại bộ mã
+hoá viết tay có thể sai schema mà vẫn nhận `207`, nên có một bài đối chiếu với
+**server thật** rồi đọc lại `totalCost`.
+
+**⭐⭐ Lỗi thật: proxy uỷ quyền tự đệ quy tới chết khi bị sao chép.**
+`return getattr(self._inner, item)` chạy đúng cho tới khi có ai `copy.copy` một
+lớp bọc — `copy` dựng thực thể **không qua `__init__`** rồi tra `__setstate__`,
+`_inner` chưa có, `__getattr__("_inner")` gọi lại chính nó, 961 tầng rồi
+`RecursionError`. Chỗ gọi `copy.copy` là chính `instrument_retriever`, nên lỗi
+nổ đúng khi bọc một chuỗi **đã bọc** — tức đúng kịch bản mà lối "sao chép thay
+vì sửa tại chỗ" được chọn để phục vụ. Tìm ra bởi một test viết cho một phép
+tiêm, không bởi một lượt chạy.
+
+**Hai bẫy hạ tầng cùng che nhau sau một cột STATUS.** `ENCRYPTION_KEY: 0000…0`
+không nháy bị YAML đọc là **số**, chuẩn hoá thành `0`; rồi
+`LANGFUSE_INIT_USER_EMAIL: dev@localhost` bị Zod từ chối vì thiếu TLD. Cả hai
+đều hiện ra là `health: starting` suốt `start_period: 180s`, vì trong khoảng ấy
+Docker **không** báo `unhealthy`. Cách gỡ là đọc `make logs-langfuse`, không
+đọc cột `STATUS`.
+
+Và một chi tiết dự án đã ghi sẵn mà tôi vẫn đâm vào: `uvicorn serving.api.app:app`
+không chạy được `psycopg` trên Windows — `serving/__main__.py` tồn tại đúng vì
+lý do đó. Nhưng docstring ở đó nói *đổi `event_loop_policy` không đủ cho
+uvicorn*, còn nó **đủ** cho `TestClient` (đi qua `asyncio.run`). Hai đường vào,
+hai cách chữa cho cùng một lỗi.
+
+**Tiêm lỗi 26/26 đỏ — nhưng lượt một có ba phép sống sót, và hai là lỗ thật.**
+`L2` (bỏ `parentObservationId` khỏi gói tin) sống vì mọi bài đều kiểm cây
+**trong bộ nhớ**, không bài nào kiểm nó còn nguyên sau khi mã hoá. `C4` (span
+`rewrite` khai `cost = 0` khi quá hạn) sống vì span ấy **không có bài test
+nào** — nó ở `understanding.py`, ngoài file test của hạng mục. Hai lỗ cùng một
+hình dạng: **bài test dừng lại ở ranh giới của module đang được viết.**
+
+**Nợ mới**: `TD-72` (rerank lạnh 10,7×, cần làm nóng ở `lifespan`) · `TD-73`
+(`tenant` vào Langfuse như một **nhãn**, không như một hàng rào — đủ cho corpus
+công khai, không đủ cho dữ liệu thật) · `TD-74` (prompt trong trace cắt ở 4 000
+ký tự trong khi prompt thật 9 392; phải cắt theo **chunk**).
+
+**Việc tiếp theo**: `W5-07` — Prometheus + Grafana "RAG Health". Bảng ấy giờ có
+một danh sách metric đã biết là đáng đo, vì trace vừa chỉ ra chúng: tỉ lệ rerank
+trong tổng thời gian, `prepare_ms`, `dropped` của sink, và tỉ lệ request đầu
+sau deploy. Sau đó `W5-09` (CI) là chỗ gate của `W5-05` có răng, và `G5` còn
+dòng *"mở 1 PR cố ý làm tụt retrieval → CI phải đỏ"*.

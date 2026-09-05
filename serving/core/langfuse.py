@@ -1,0 +1,294 @@
+"""Đẩy cây span sang Langfuse tự dựng — `W5-06`.
+
+Dùng httpx thẳng vào `POST /api/public/ingestion` thay vì SDK `langfuse`, cùng
+lý lẽ đã viết cho `rag_core/llm/openai_compat.py`: cần đúng **một** endpoint,
+và cần biết chính xác byte nào rời khỏi tiến trình. SDK Langfuse hiện đại kéo
+theo cả OpenTelemetry và một bộ chụp tự động — mà "chụp tự động" ở đây nghĩa là
+chụp cả `nonce` của `W4-12`, thứ `tracing.redact()` sinh ra để chặn.
+
+## ⭐⭐ Một hệ thống quan sát không được phép giết thứ nó quan sát
+
+Hai chế độ hỏng, và cả hai đều là chế độ hỏng của **hàng đợi**, không phải của
+mạng:
+
+* **Chặn.** Đẩy đồng bộ ở cuối `stream_turn` thì Langfuse chậm 2 giây là mọi
+  câu trả lời chậm thêm 2 giây — và Langfuse chậm đúng vào lúc hệ thống đang
+  tải cao, tức đúng lúc không được chậm.
+* **Phình.** Hàng đợi không trần + Langfuse chết = mọi trace nằm lại trong RAM
+  cho tới khi tiến trình bị OOM. Một endpoint `/chat` chết vì bộ đếm span của
+  chính nó là một cách hỏng đặc biệt khó chấp nhận.
+
+Nên: một thread nền, một `queue.Queue(maxsize=…)`, và **vứt trace mới khi đầy**
+— có đếm. `dropped` đi vào `/admin/tracing`, vì một con số bị vứt mà không ai
+biết thì bảng Langfuse trở thành một mẫu thiên lệch: nó mất đúng những lượt
+xảy ra lúc hệ thống bận nhất.
+
+⚠️ Vứt **cái mới**, không vứt cái cũ. Lúc nghẽn, trace cũ đã chờ lâu nhất là
+trace gần nhất với sự cố đang diễn ra; đổi nó lấy một trace vừa đến là bỏ đúng
+bằng chứng cần đọc.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+import queue
+import threading
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+import httpx
+
+from serving.core.tracing import Span, Trace
+
+__all__ = ["LangfuseSink", "build_sink"]
+
+logger = logging.getLogger(__name__)
+
+_INGESTION_PATH = "/api/public/ingestion"
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _usage_body(span: Span) -> dict[str, Any] | None:
+    """`usage` theo giao thức ingestion. `None` khi bước này **chưa đo** gì.
+
+    ⭐ Không dựng `{"input": 0, "output": 0, "totalCost": 0}` cho một bước không
+    có số. Langfuse cộng mọi `totalCost` nó nhận được, nên một số 0 khai hộ sẽ
+    biến "chưa đo" thành "miễn phí" trong đúng cái bảng người ta mở ra để trả
+    lời *một câu hỏi tốn bao nhiêu*.
+    """
+    usage = span.usage
+    if usage.empty:
+        return None
+    body: dict[str, Any] = {"unit": "TOKENS"}
+    if usage.prompt_tokens is not None:
+        body["input"] = usage.prompt_tokens
+    if usage.completion_tokens is not None:
+        body["output"] = usage.completion_tokens
+    if usage.prompt_tokens is not None and usage.completion_tokens is not None:
+        body["total"] = usage.prompt_tokens + usage.completion_tokens
+    if usage.cost_usd is not None:
+        body["totalCost"] = usage.cost_usd
+    return body
+
+
+def encode_trace(trace: Trace) -> list[dict[str, Any]]:
+    """Cây span → danh sách sự kiện ingestion. Thuần, không I/O, test được."""
+    now = _iso(trace.end_time) or _iso(trace.start_time)
+    events: list[dict[str, Any]] = [
+        {
+            "id": uuid.uuid4().hex,
+            "timestamp": now,
+            "type": "trace-create",
+            "body": {
+                "id": trace.id,
+                "name": trace.name,
+                "userId": trace.user_id,
+                "sessionId": trace.session_id,
+                "timestamp": _iso(trace.start_time),
+                "input": trace.input,
+                "output": trace.output,
+                "tags": trace.tags,
+                "metadata": {
+                    **trace.metadata,
+                    "level": trace.level,
+                    "status_message": trace.status_message,
+                    "total_cost_usd": trace.total_cost_usd(),
+                    # Xem `Trace.unmeasured_cost_steps`: tổng ở trên chỉ là một
+                    # tổng khi danh sách này rỗng.
+                    "unmeasured_cost_steps": trace.unmeasured_cost_steps(),
+                },
+            },
+        }
+    ]
+    for span in trace.spans:
+        body: dict[str, Any] = {
+            "id": span.id,
+            "traceId": trace.id,
+            "parentObservationId": span.parent_id,
+            "name": span.name,
+            "startTime": _iso(span.start_time),
+            "endTime": _iso(span.end_time),
+            "input": span.input,
+            "output": span.output,
+            "metadata": {**span.metadata, "duration_ms": span.duration_ms},
+            "level": span.level,
+            "statusMessage": span.status_message,
+        }
+        if span.kind == "generation":
+            body["model"] = span.model
+            usage = _usage_body(span)
+            if usage is not None:
+                body["usage"] = usage
+        events.append(
+            {
+                "id": uuid.uuid4().hex,
+                "timestamp": _iso(span.end_time) or now,
+                "type": "generation-create" if span.kind == "generation" else "span-create",
+                "body": body,
+            }
+        )
+    return events
+
+
+@dataclass
+class LangfuseSink:
+    """Thread nền + hàng đợi có trần. `submit()` không chặn và không ném."""
+
+    host: str
+    public_key: str
+    secret_key: str
+    max_queue: int = 256
+    timeout_s: float = 10.0
+    client: httpx.Client | None = None
+
+    _queue: queue.Queue[Trace | None] = field(init=False, repr=False)
+    _worker: threading.Thread | None = field(default=None, init=False, repr=False)
+    _sent: int = field(default=0, init=False)
+    _failed: int = field(default=0, init=False)
+    _dropped: int = field(default=0, init=False)
+
+    def __post_init__(self) -> None:
+        self._queue = queue.Queue(maxsize=self.max_queue)
+        if self.client is None:
+            self.client = httpx.Client(
+                base_url=self.host.rstrip("/"),
+                timeout=self.timeout_s,
+                auth=(self.public_key, self.secret_key),
+                headers={"Content-Type": "application/json"},
+            )
+        self._worker = threading.Thread(target=self._run, name="langfuse-sink", daemon=True)
+        self._worker.start()
+
+    # ---------------------------------------------------------------- công khai
+
+    def submit(self, trace: Trace) -> None:
+        try:
+            self._queue.put_nowait(trace)
+        except queue.Full:
+            self._dropped += 1
+            if self._dropped % 50 == 1:
+                # Không log mỗi lần: lúc nghẽn thì chính dòng log là thứ tiếp
+                # theo làm nghẽn. Log lần đầu rồi mỗi 50 lần.
+                logger.warning(
+                    "tracing: hàng đợi Langfuse đầy (%d), đã vứt %d trace",
+                    self.max_queue,
+                    self._dropped,
+                )
+        except Exception:  # pragma: no cover - phòng thân
+            logger.warning("tracing: không xếp được trace vào hàng đợi")
+
+    def status(self) -> dict[str, Any]:
+        """Đủ để một lệnh `curl` trả lời "trace có thật sự tới nơi không"."""
+        return {
+            "host": self.host,
+            "queued": self._queue.qsize(),
+            "sent": self._sent,
+            "failed": self._failed,
+            "dropped": self._dropped,
+        }
+
+    def close(self, *, timeout_s: float = 5.0) -> None:
+        """Đẩy nốt rồi dừng. Gọi ở `lifespan` lúc tắt.
+
+        ⚠️ Có trần thời gian. Một Langfuse chết không được phép giữ tiến trình
+        không tắt được — cùng đánh đổi mà `W4-06` đã chọn cho task ghi Postgres,
+        và cùng giới hạn thật: tắt lúc còn hàng đợi ⇒ mất trace.
+        """
+        with contextlib.suppress(queue.Full):  # hàng đợi đầy ⇒ worker vẫn thoát
+            self._queue.put_nowait(None)
+        if self._worker is not None:
+            self._worker.join(timeout=timeout_s)
+        if self.client is not None:
+            self.client.close()
+
+    # ------------------------------------------------------------------ nền
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            try:
+                self._send(item)
+            except Exception:
+                self._failed += 1
+                logger.warning("tracing: đẩy trace %s thất bại", item.id, exc_info=True)
+            finally:
+                self._queue.task_done()
+
+    def _send(self, trace: Trace) -> None:
+        assert self.client is not None
+        payload = {"batch": encode_trace(trace)}
+        response = self.client.post(_INGESTION_PATH, content=json.dumps(payload, default=str))
+        if response.status_code >= 400:
+            self._failed += 1
+            # ⚠️ **Không** log `response.request.headers` — ở đó có Basic auth
+            # mang `secret_key`. Một dòng log gỡ rối là cách phổ biến nhất để
+            # một khoá đi vào một hệ thống log có quyền đọc rộng hơn nó.
+            logger.warning(
+                "tracing: Langfuse trả %d cho trace %s: %s",
+                response.status_code,
+                trace.id,
+                response.text[:300],
+            )
+            return
+        self._sent += 1
+
+
+def build_sink(settings: Any) -> LangfuseSink | None:
+    """`None` = tắt quan sát. Bật **chỉ** khi có đủ cả hai khoá.
+
+    ⭐ Không có cờ `tracing_enabled` riêng, và đó là có chủ đích: một cờ bật/tắt
+    bên cạnh một cặp khoá cho **bốn** trạng thái cấu hình trong đó hai là mâu
+    thuẫn ("bật nhưng không có khoá", "tắt nhưng có khoá"), và cái người ta gặp
+    trong thực tế là trạng thái thứ nhất — mọi thứ trông như đã bật, không
+    trace nào tới nơi, không lỗi nào được ném.
+    """
+    host = _plain(getattr(settings, "langfuse_host", ""))
+    public_key = _plain(getattr(settings, "langfuse_public_key", ""))
+    secret_key = _plain(getattr(settings, "langfuse_secret_key", ""))
+    if not (host and public_key and secret_key):
+        logger.info("tracing: chưa cấu hình Langfuse (thiếu host/khoá) — không có trace")
+        return None
+    if not _is_local(host):
+        # ⚠️⚠️ Trace mang **câu hỏi của người dùng** và **điểm số kèm id chunk**
+        # của corpus. Gửi ra một host ngoài là một quyết định về dữ liệu, không
+        # phải một dòng cấu hình. Không chặn — chặn thì người có quyền làm việc
+        # ấy không làm được — nhưng phải nói ra, mỗi lần khởi động.
+        logger.warning(
+            "tracing: LANGFUSE_HOST=%s KHÔNG phải máy cục bộ — nội dung câu hỏi "
+            "và metadata corpus sẽ rời khỏi máy này",
+            host,
+        )
+    return LangfuseSink(
+        host=host,
+        public_key=public_key,
+        secret_key=secret_key,
+        max_queue=int(getattr(settings, "langfuse_queue_size", 256)),
+    )
+
+
+def _plain(value: Any) -> str:
+    """Mở `SecretStr` nếu có. Đây là **chỗ duy nhất** khoá thành `str` trần —
+    giữ nó ở một hàm để mọi đường khác vẫn cầm kiểu che được lúc log."""
+    reveal = getattr(value, "get_secret_value", None)
+    if callable(reveal):
+        revealed: str = reveal()
+        return revealed
+    return str(value or "")
+
+
+def _is_local(host: str) -> bool:
+    lowered = host.lower()
+    # `host.docker.internal` = máy chủ đang chạy container này, tức vẫn là
+    # "cục bộ" theo nghĩa dữ liệu không rời khỏi máy. Không có nó ở đây thì
+    # đường chạy trong compose cảnh báo nhầm ở MỌI lần khởi động — và một
+    # cảnh báo luôn sai là một cảnh báo không ai đọc nữa.
+    marks = ("localhost", "127.0.0.1", "://langfuse", "[::1]", "host.docker.internal")
+    return any(mark in lowered for mark in marks)

@@ -98,6 +98,7 @@ from typing import Any, Literal
 
 from rag_core.generation import default_registry
 from rag_core.llm import ChatMessage, LLMError, LLMProvider
+from serving.core.tracing import Usage, current_trace
 
 __all__ = [
     "CLARIFY_FALLBACK",
@@ -504,6 +505,15 @@ class QueryUnderstanding:
             ),
         ]
         started = time.perf_counter()
+        # `W5-06`. Span mở ở đây chứ không ở `prepare()`: chi phí và thời lượng
+        # của lời gọi này chỉ hàm này nhìn thấy, và dựng span từ bên ngoài bằng
+        # `plan.rewrite_ms` sẽ phải bịa ra mốc bắt đầu.
+        trace = current_trace()
+        span = (
+            trace.span("rewrite", kind="generation", input=question, model=self.llm.model)
+            if trace is not None
+            else None
+        )
         try:
             response = await asyncio.wait_for(
                 # `complete()` là **đồng bộ** (httpx blocking). Gọi thẳng ở đây
@@ -526,13 +536,35 @@ class QueryUnderstanding:
             )
         except TimeoutError:
             logger.warning("viết lại câu hỏi quá %.1fs — dùng câu gốc", self.timeout_s)
+            if span is not None:
+                # ⭐⭐ Span này đóng với `cost_usd = None`, **không** phải 0 — và
+                # đó là con số duy nhất trung thực ở đây. `wait_for` huỷ được
+                # cái *chờ*, không huỷ được cái *thread*: lời gọi kia vẫn chạy
+                # nốt và vẫn bị nhà cung cấp tính tiền, chỉ là không ai còn đọc
+                # kết quả. Nên chi phí thật của bước này là **chưa biết**, và
+                # `Trace.unmeasured_cost_steps()` sẽ khai nó ra thay vì để tổng
+                # chi phí của trace âm thầm thiếu một khoản.
+                span.end(level="WARNING", status=f"quá {self.timeout_s:.1f}s — dùng câu gốc")
             return None, (time.perf_counter() - started) * 1000.0, 0.0, None
         except LLMError as exc:
             logger.warning("viết lại câu hỏi thất bại (%s) — dùng câu gốc", exc)
+            if span is not None:
+                span.end(level="WARNING", status=f"{type(exc).__name__}: {exc}")
             return None, (time.perf_counter() - started) * 1000.0, 0.0, None
 
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         candidate = _clean_rewrite(response.text, question)
+        if span is not None:
+            span.end(
+                output=candidate if candidate is not None else response.text,
+                model=response.model,
+                usage=Usage(
+                    prompt_tokens=response.usage.prompt_tokens,
+                    completion_tokens=response.usage.completion_tokens,
+                    cost_usd=response.usage.cost_usd,
+                ),
+                kept=candidate is not None,
+            )
         if candidate is None:
             return None, elapsed_ms, response.usage.cost_usd, response.model
         return candidate, elapsed_ms, response.usage.cost_usd, response.model

@@ -56,6 +56,7 @@ import logging
 import time
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -76,6 +77,7 @@ from rag_core.schemas import RetrievedChunk
 from serving.core.auth import Principal, tenant_filter
 from serving.core.registry import ActiveBundle, BundleRegistry, NoBundleLoadedError
 from serving.core.semantic_cache import CachedAnswer, SemanticCache, embedder_of
+from serving.core.tracing import Trace, TraceSink, Usage, trace_scope
 from serving.core.understanding import QueryPlan, QueryUnderstanding, detect_language
 from serving.db.engine import atenant_session
 from serving.db.models import Conversation, Message
@@ -91,6 +93,7 @@ __all__ = [
     "ChatTurn",
     "ConversationNotFound",
     "GenerationUnavailable",
+    "prepare_ms_of",
 ]
 
 logger = logging.getLogger(__name__)
@@ -218,6 +221,16 @@ class ChatTurn:
     max_tokens: int = 1024
     started: float = field(default_factory=time.perf_counter)
 
+    trace: Trace = field(default_factory=Trace)
+    """`W5-06`. **Luôn** có một trace, kể cả khi không ai thu — khi ấy nó là một
+    `Trace` không sink và cây span rơi vào GC lúc lượt kết thúc.
+
+    ⭐ Không khai `Trace | None`, và lý do là số chỗ phải kiểm. Một `Optional`
+    ở đây sinh ra khoảng một tá `if trace is not None` rải khắp hai nửa của
+    lượt, và mỗi cái là một chỗ để một span biến mất khi ai đó quên. Dựng
+    thừa vài dataclass cho một request 2,5 giây là cái giá không đo được;
+    một span thiếu trong đúng lượt cần đọc thì đo được."""
+
     @property
     def question(self) -> str:
         """Chuỗi **đã đưa vào truy hồi** — viết lại rồi nếu `W4-07` có viết lại.
@@ -314,6 +327,26 @@ class ChatTurn:
         ]
 
 
+def prepare_ms_of(turn: ChatTurn) -> float | None:
+    """Bao nhiêu mili giây đã trôi **trước** khi `turn.started` được đặt.
+
+    ⭐⭐ Nửa còn lại của `TD-55`. `total_ms` trong khung `done` đếm từ
+    `ChatTurn.started`, thứ được gán ở *dòng cuối* của `prepare()` — tức sau
+    embed, truy hồi và rerank. `W4-13` đo được 725 ms nằm ngoài khung ấy; trace
+    của `W5-06` đo lại trên 5 lượt thật và ra **787 ms, 19,9%** của một request.
+
+    Một hệ thống báo SLA màu hồng bằng cách bắt đầu bấm giờ sau phần chậm nhất
+    của chính nó là một hệ thống nói dối theo đúng một hướng. Khung `done` giờ
+    khai con số ấy ra, nên client cộng được `prepare_ms + total_ms` mà không
+    phải có Langfuse.
+
+    `None` = không đo được (trace bị người gọi thay bằng một trace khác giữa
+    chừng). Không thay bằng `0.0`: xem `tracing.Usage`.
+    """
+    value = turn.trace.metadata.get("prepare_ms")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 @dataclass
 class ChatService:
     """Người điều phối một lượt. Không biết gì về HTTP hay SSE — đó là `api/chat.py`.
@@ -331,6 +364,11 @@ class ChatService:
     cache: SemanticCache | None = None
     """`W4-10`. `None` = tắt. Mọi lỗi cache đều suy giảm thành miss — cache
     không bao giờ được phép là lý do `/chat` trả lỗi."""
+
+    sink: TraceSink | None = None
+    """`W5-06`. `None` = cây span vẫn được dựng nhưng không đi đâu cả. Cùng hợp
+    đồng với `cache`: quan sát hỏng làm mất một trace, không làm mất một câu
+    trả lời."""
 
     understanding: QueryUnderstanding = field(default_factory=QueryUnderstanding)
     """`W4-07`. Mặc định là bản **không có LLM**: luật vẫn chạy đủ (định tuyến +
@@ -366,8 +404,48 @@ class ChatService:
         conversation_id: str | None = None,
         top_k: int | None = None,
         filters: MetadataFilter | None = None,
+        trace: Trace | None = None,
     ) -> ChatTurn:
-        """Mọi thứ còn hỏng thành một HTTP status tử tế. Xem bảng ở docstring module."""
+        """Mọi thứ còn hỏng thành một HTTP status tử tế. Xem bảng ở docstring module.
+
+        ⭐ `trace` do **người gọi** cấp, không do hàm này tạo, và đó là điều kiện
+        để quan sát nhìn thấy phần đáng nhìn nhất. Nếu trace ra đời cùng
+        `ChatTurn` — thứ chỉ tồn tại ở *dòng cuối* của hàm này — thì mọi lượt
+        404/403/429/503 không có trace nào cả: hệ thống quan sát sẽ phủ đúng
+        những request đã chạy trót lọt. `api/chat.py` mở trace trước khi gọi vào
+        đây, và đóng nó ở `except` của chính nó.
+        """
+        trace = trace if trace is not None else Trace(sink=self.sink)
+        with trace_scope(trace):
+            return await self._prepare(
+                principal,
+                question=question,
+                conversation_id=conversation_id,
+                top_k=top_k,
+                filters=filters,
+                trace=trace,
+            )
+
+    async def _prepare(
+        self,
+        principal: Principal,
+        *,
+        question: str,
+        conversation_id: str | None,
+        top_k: int | None,
+        filters: MetadataFilter | None,
+        trace: Trace,
+    ) -> ChatTurn:
+        """Thân của `prepare()`, chạy bên trong `trace_scope`.
+
+        ⚠️ `trace_scope` là một `ContextVar`, và một `ContextVar` đặt trong thân
+        một **async generator** sẽ rò sang context của người gọi giữa hai lần
+        `yield` (generator chạy trong context của người tiêu thụ nó). Đó là lý
+        do nửa dưới — `stream_turn`, đúng là một async generator — **không** dùng
+        `trace_scope` mà truyền `Span` cha tường minh. Ở đây thì an toàn: một
+        coroutine thường không bị treo giữa chừng bởi người ngoài, nên khối
+        `with` luôn reset trước khi hàm trả về.
+        """
         if self.llm is None:
             raise GenerationUnavailable(
                 "chưa cấu hình LLM cho serving — đặt `DEEPSEEK_API_KEY` rồi khởi động lại"
@@ -405,7 +483,19 @@ class ChatService:
         # phụ thuộc vào bộ phân loại câu hỏi.
         scoped = tenant_filter(principal, filters)
 
-        plan = await self.understanding.plan(question, history)
+        with trace.span("understand", input=question, n_history=len(history)) as span:
+            # Span `rewrite` (nếu có) mở bên trong `QueryUnderstanding._rewrite`
+            # và nối vào đây qua `ContextVar` — nó cần thời lượng và chi phí của
+            # đúng lời gọi model, thứ chỉ hàm ấy nhìn thấy.
+            plan = await self.understanding.plan(question, history)
+            span.end(
+                output={"question": plan.question, "reason": plan.reason},
+                route=plan.route,
+                language=plan.language,
+                rewritten=plan.rewritten,
+            )
+        trace.metadata["route"] = plan.route
+        trace.metadata["language"] = plan.language
 
         # ⭐ `W4-10`: tra cache TRƯỚC khi truy hồi — hit thì tiết kiệm cả lượt
         # embed+rerank (~800 ms) lẫn lượt model. Vector tra trượt được giữ lại
@@ -416,14 +506,31 @@ class ChatService:
         if self.cache is not None and cache_eligible(plan, history):
             embedder = embedder_of(snapshot.retriever)
             if embedder is not None:
-                cache_vector = await asyncio.to_thread(embedder.embed_query, plan.question)
-                assert cache_vector is not None
-                cached = await self.cache.lookup(
-                    principal.tenant_id,
-                    cache_namespace(snapshot.version),
-                    plan.question,
-                    cache_vector,
-                )
+                with trace.span("cache.lookup", input=plan.question) as span:
+                    # ⭐ Span `embed.query` chỉ tồn tại ở **đường cache**, và đó
+                    # không phải một thiếu sót ở đường kia. `prepare()` tự gọi
+                    # embedder ở đây nên có mối nối để bọc; trong truy hồi thì
+                    # `embed_query_hybrid` nằm trong thân
+                    # `QdrantHybridRetriever.retrieve` và tách nó ra đòi sửa
+                    # `rag_core`. Xem docstring `serving/core/instrument.py`.
+                    with trace.span("embed.query") as embed_span:
+                        cache_vector = await asyncio.to_thread(embedder.embed_query, plan.question)
+                        embed_span.end(embedder=getattr(embedder, "name", None))
+                    assert cache_vector is not None
+                    cached = await self.cache.lookup(
+                        principal.tenant_id,
+                        cache_namespace(snapshot.version),
+                        plan.question,
+                        cache_vector,
+                    )
+                    span.end(
+                        output={
+                            "hit": cached is not None,
+                            "similarity": cached.similarity if cached else None,
+                            "matched_question": cached.question if cached else None,
+                        },
+                        hit=cached is not None,
+                    )
 
         contexts: list[RetrievedChunk] = []
         if plan.retrieves and cached is None:
@@ -445,7 +552,18 @@ class ChatService:
         resolved_id, user_message_id = await self._open_turn(
             principal, conversation_id, plan, snapshot.version
         )
+        trace.session_id = resolved_id
+        trace.user_id = principal.tenant_id
+        # ⭐⭐ `TD-55` trả ở đây. Khung `done` đếm `total_ms` từ `ChatTurn.started`
+        # — thứ được đặt ở **dòng dưới**, tức sau embed + truy hồi + rerank. Đo
+        # được: `W4-13` thấy 725 ms nằm ngoài khung `done`, ~18% của một lượt.
+        # Trace bắt đầu ở handler HTTP nên nó đo được cả phần ấy, và `prepare_ms`
+        # nói ra đúng khoảng chênh giữa hai đồng hồ thay vì để người đọc trừ tay.
+        trace.metadata["prepare_ms"] = round(
+            (datetime.now(UTC) - trace.start_time).total_seconds() * 1000.0, 2
+        )
         return ChatTurn(
+            trace=trace,
             principal=principal,
             conversation_id=resolved_id,
             user_message_id=user_message_id,
@@ -467,6 +585,20 @@ class ChatService:
         là một phần của hợp đồng chứ không phải một chi tiết: người gọi phải
         đóng được nó (`aclose`/`athrow`), vì hai đường huỷ ở §"Ngắt kết nối"
         chính là hai cách generator này kết thúc trong thực tế.
+
+        ## ⚠️ `W5-06`: span ở đây mở/đóng **tường minh**, không bằng `with`
+
+        Một async generator chạy trong context của người *tiêu thụ* nó, không
+        có context riêng (PEP 568 chưa bao giờ được nhận). Nên một
+        `with trace.span(...)` bọc quanh một `yield` sẽ đặt `ContextVar` cha rồi
+        **trả quyền điều khiển về cho người gọi trong khi biến ấy vẫn đang
+        đặt** — mọi span mà người gọi mở giữa hai lần `yield` sẽ mọc nhầm dưới
+        span của chúng ta, và với SSE thì "giữa hai lần yield" là toàn bộ thời
+        gian sinh chữ.
+
+        Cây ở nửa dưới nông (mọi span đều là con trực tiếp của trace) nên mất
+        `with` không mất gì; đổi lại `finally` là chỗ duy nhất đóng trace, và
+        nó chạy trên cả ba đường thoát kể cả huỷ.
         """
         assert self.llm is not None  # `prepare()` đã kiểm; giữ mypy yên tâm
         if turn.cached is not None:
@@ -504,10 +636,25 @@ class ChatService:
                     "usage": {},
                     "ttfb_ms": elapsed,
                     "total_ms": elapsed,
+                    "prepare_ms": prepare_ms_of(turn),
                     "language_mismatch": False,
                 },
             )
             self._schedule_save(turn, cached.text, f"cache:{cached.model}", "cache")
+            replay = turn.trace.span("cache.replay", input=cached.question)
+            replay.end(
+                output=cached.text,
+                model=cached.model,
+                similarity=cached.similarity,
+                # ⚠️ **Không** khai `usage` cho lượt này. Một cache hit không
+                # tốn token, nhưng nó cũng không phải "$0 cho câu hỏi này" —
+                # câu trả lời ấy đã được trả tiền một lần ở lượt trước. Ghi 0
+                # vào đây là chia tiền của lượt kia cho một lượt không gọi
+                # model, và bảng chi phí sẽ tụt theo tỉ lệ trúng cache thay vì
+                # theo giá thật.
+                billed_here=False,
+            )
+            turn.trace.finish(output=cached.text, status="cache")
             return
 
         yield ChatEvent(
@@ -553,10 +700,12 @@ class ChatService:
                     "usage": {},
                     "ttfb_ms": round((time.perf_counter() - turn.started) * 1000.0, 2),
                     "total_ms": round((time.perf_counter() - turn.started) * 1000.0, 2),
+                    "prepare_ms": prepare_ms_of(turn),
                     "language_mismatch": False,
                 },
             )
             self._schedule_save(turn, text, "rule:clarify", "clarify")
+            turn.trace.finish(output=text, status="clarify")
             return
 
         parts: list[str] = []
@@ -575,9 +724,28 @@ class ChatService:
         finish_reason = "unknown"
         usage: dict[str, Any] = {}
         ttfb_ms: float | None = None
+
+        prompt_span = turn.trace.span("prompt", prompt_spec=turn.prompt_spec())
+        messages = turn.prompt()
+        prompt_span.end(
+            # `redact()` che `nonce` ở đây — xem `tracing.NONCE_MASK`. Đây là
+            # span DUY NHẤT mang nguyên văn thứ đã gửi cho model, nên nó cũng là
+            # chỗ duy nhất mã phiên của `W4-12` có thể rời khỏi tiến trình.
+            output=[{"role": m.role, "content": m.content} for m in messages],
+            n_messages=len(messages),
+            n_context_chunks=len(turn.contexts),
+            prompt_chars=sum(len(m.content) for m in messages),
+        )
+        completion = turn.trace.span(
+            "completion",
+            kind="generation",
+            input={"n_messages": len(messages)},
+            temperature=0.0,
+            max_tokens=turn.max_tokens,
+        )
         try:
             async for chunk in self.llm.astream(
-                turn.prompt(),
+                messages,
                 temperature=0.0,
                 max_tokens=turn.max_tokens,
                 extra_body=self.extra_body,
@@ -618,6 +786,20 @@ class ChatService:
             # nuốt một `GeneratorExit` cho `RuntimeError: async generator
             # ignored GeneratorExit`.
             finish_reason = "client_disconnect"
+            # ⭐⭐ Đóng span **trước** khi ném tiếp, và ghi cả phần đã sinh.
+            #
+            # Cùng bài học với `_schedule_save` ở §"Ngắt kết nối": token đã trả
+            # tiền rồi. Một hệ quan sát chỉ ghi lại những lượt người dùng ở lại
+            # tới cuối là một hệ quan sát mù đúng chỗ đắt nhất — request bị bỏ
+            # giữa chừng vẫn có hoá đơn, và một tỉ lệ bỏ cao là một tín hiệu
+            # sản phẩm chứ không phải một khoảng trống trong log.
+            completion.end(
+                output="".join(emitted),
+                level="WARNING",
+                status="client_disconnect",
+                model=served_model,
+                chars_emitted=len("".join(emitted)),
+            )
             raise
         except BudgetExceeded as exc:
             # Trần cạn **giữa** stream: phép kiểm ở `prepare()` chỉ hỏi "đã cạn
@@ -626,6 +808,12 @@ class ChatService:
             # khung `error` có tên riêng chứ không lặng lẽ dừng dòng token.
             finish_reason = "budget"
             logger.warning("hết ngân sách giữa lượt: %s", exc)
+            completion.end(
+                output="".join(emitted),
+                level="ERROR",
+                status=f"BudgetExceeded: {exc}",
+                model=served_model,
+            )
             yield ChatEvent(
                 "error",
                 {"detail": f"BudgetExceeded: {exc}", "partial_chars": len("".join(emitted))},
@@ -633,6 +821,12 @@ class ChatService:
         except LLMError as exc:
             finish_reason = "error"
             logger.warning("stream hỏng giữa chừng: %s", exc)
+            completion.end(
+                output="".join(emitted),
+                level="ERROR",
+                status=f"{type(exc).__name__}: {exc}",
+                model=served_model,
+            )
             yield ChatEvent(
                 "error",
                 {
@@ -642,6 +836,23 @@ class ChatService:
             )
         else:
             finish_reason = finish_reason if parts else "empty"
+            completion.end(
+                output="".join(emitted),
+                model=served_model,
+                # ⭐ `Usage` nhận `None` khi provider không khai, **không** nhận
+                # 0. `usage` rỗng xảy ra thật: `finish_reason="empty"` của
+                # `W4-08` (toàn bộ completion đi vào chuỗi suy luận) đến kèm một
+                # `usage` có số, còn một stream đứt trước khung cuối thì không.
+                usage=Usage(
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                    cost_usd=usage.get("cost_usd"),
+                ),
+                level="WARNING" if finish_reason == "empty" else None,
+                status="model trả 0 ký tự" if finish_reason == "empty" else None,
+                finish_reason=finish_reason,
+                ttfb_ms=round(ttfb_ms, 2) if ttfb_ms is not None else None,
+            )
             # ⭐⭐ Khung `sources` (đã đưa gì cho model) đã phát từ đầu; đây là
             # khung `citations` — model TUYÊN BỐ đã dùng gì, sau khi đối chiếu
             # từng quote với đúng chunk nó chỉ vào. Một quote bịa không thể là
@@ -649,6 +860,7 @@ class ChatService:
             # `verified: false` trong khung này, to và rõ, không im lặng.
             parsed = split_citation_block("".join(parts))
             if turn.plan.retrieves or parsed.block != "absent":
+                cite_span = turn.trace.span("citations", n_sources=len(turn.contexts))
                 report = verify_citations(parsed, [hit.chunk for hit in turn.contexts])
                 claimed = len(report.citations) + len(report.invalid_ns)
                 if report.block != "ok" or report.verified_count < claimed:
@@ -659,6 +871,18 @@ class ChatService:
                         claimed,
                         turn.conversation_id,
                     )
+                cite_span.end(
+                    output=report.as_frame(),
+                    block=report.block,
+                    verified=report.verified_count,
+                    claimed=claimed,
+                    # ⭐ Span này ở trace vì *kết quả*, không vì đồng hồ (đối
+                    # chiếu quote là công việc thuần chuỗi, dưới một mili giây).
+                    # `W4-09` là phép kiểm duy nhất chỉ báo được bằng một khung
+                    # SSE — không có nó ở đây thì một citation bịa hiện ra với
+                    # client mà **không** hiện ra với người vận hành.
+                    level="WARNING" if report.verified_count < claimed else None,
+                )
                 yield ChatEvent("citations", report.as_frame())
             if (
                 self.cache is not None
@@ -714,6 +938,7 @@ class ChatService:
                     "usage": usage,
                     "ttfb_ms": round(ttfb_ms, 2) if ttfb_ms is not None else None,
                     "total_ms": round((time.perf_counter() - turn.started) * 1000.0, 2),
+                    "prepare_ms": prepare_ms_of(turn),
                     "language_mismatch": mismatch,
                 },
             )
@@ -726,6 +951,15 @@ class ChatService:
             # giữa model và mã, không phải nội dung — lịch sử đọc lại từ DB phải
             # là đúng những gì người dùng đã thấy trên màn hình.
             self._schedule_save(turn, "".join(emitted), served_model, finish_reason)
+            # ⭐ `finish()` là idempotent và tự đóng mọi span còn mở, nên đây là
+            # chỗ **duy nhất** cần đóng trace ở nửa dưới: nó chạy trên cả ba
+            # đường thoát (xong, lỗi, huỷ) và không cần biết đường nào đã chạy.
+            turn.trace.metadata["finish_reason"] = finish_reason
+            turn.trace.finish(
+                output="".join(emitted),
+                level="ERROR" if finish_reason in {"error", "budget"} else None,
+                status=finish_reason,
+            )
 
     # ---------------------------------------------------------------- DB
 

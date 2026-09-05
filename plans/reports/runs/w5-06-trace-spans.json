@@ -1,0 +1,516 @@
+{
+  "summary": {
+    "n_traces": 7,
+    "n_warm": 5,
+    "cold_rerank_ms": 7353.524,
+    "total_cost_usd": 0.009161,
+    "p50_cache.lookup": 14.8,
+    "p50_embed.query": 13.2,
+    "p50_retrieval": 738.1,
+    "p50_retrieve.hybrid": 44.8,
+    "p50_rerank": 685.3,
+    "p50_completion": 3183.4,
+    "p50_prepare_ms": 787.3,
+    "p50_latency_s": 3.953,
+    "prepare_share": 0.1992
+  },
+  "traces": [
+    {
+      "trace_id": "3c9cc56790df4c0e90bf9f242b62de71",
+      "session": null,
+      "user": "public",
+      "request_id": "4d73d6f98b4440cb84f6384305db7722",
+      "status": "503 InterfaceError: (psycopg.InterfaceError) Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop, for instance by running 'asyncio.run(..., loop_factory=asyncio.SelectorEventLoop(selectors.SelectSelector()))'\n(Background on this error at: https://sqlalche.me/e/20/rvf5)",
+      "level": "ERROR",
+      "prepare_ms": null,
+      "latency_s": 8.729,
+      "cost_usd": 0,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "understand": {
+          "ms": 0.075,
+          "type": "SPAN",
+          "parent": null
+        },
+        "cache.lookup": {
+          "ms": 484.771,
+          "type": "SPAN",
+          "parent": null
+        },
+        "rerank": {
+          "ms": 8168.236,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "retrieval": {
+          "ms": 8244.537,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "retrieve.hybrid": {
+          "ms": 75.759,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "embed.query": {
+          "ms": 481.575,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        }
+      }
+    },
+    {
+      "trace_id": "7d6453c9055b4023803ac2c3065c8de3",
+      "session": "2ec487b0fc804282a5f79a0afa038518",
+      "user": "public",
+      "request_id": "1b360fc26e4d4fe6b976daf4d45cda45",
+      "status": "stop",
+      "level": "DEFAULT",
+      "prepare_ms": 7853.8,
+      "latency_s": 9.892,
+      "cost_usd": 0.001299,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "retrieval": {
+          "ms": 7398.4,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "citations": {
+          "ms": 0.029,
+          "type": "SPAN",
+          "parent": null,
+          "verified": 0,
+          "claimed": 0
+        },
+        "rerank": {
+          "ms": 7353.524,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "retrieve.hybrid": {
+          "ms": 44.362,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "prompt": {
+          "ms": 0.07,
+          "type": "SPAN",
+          "parent": null,
+          "n_context_chunks": 5,
+          "prompt_chars": 9405
+        },
+        "completion": {
+          "ms": 2035.369,
+          "type": "GENERATION",
+          "parent": null,
+          "finish_reason": "stop",
+          "ttfb_ms": 872.37
+        },
+        "cache.lookup": {
+          "ms": 416.424,
+          "type": "SPAN",
+          "parent": null
+        },
+        "embed.query": {
+          "ms": 413.349,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        },
+        "understand": {
+          "ms": 0.074,
+          "type": "SPAN",
+          "parent": null
+        }
+      }
+    },
+    {
+      "trace_id": "3efd245b8c7945b0b2664f75262bf767",
+      "session": "86ebc5890e864bd196656d9acc0bc70a",
+      "user": "public",
+      "request_id": "964d70e301d743b08b4a5f927a7df98c",
+      "status": "stop",
+      "level": "DEFAULT",
+      "prepare_ms": 796.77,
+      "latency_s": 3.237,
+      "cost_usd": 0.001414,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "retrieval": {
+          "ms": 772.906,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "cache.lookup": {
+          "ms": 13.962,
+          "type": "SPAN",
+          "parent": null
+        },
+        "citations": {
+          "ms": 0.11,
+          "type": "SPAN",
+          "parent": null,
+          "verified": 1,
+          "claimed": 1
+        },
+        "embed.query": {
+          "ms": 12.581,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        },
+        "completion": {
+          "ms": 2436.285,
+          "type": "GENERATION",
+          "parent": null,
+          "finish_reason": "stop",
+          "ttfb_ms": 741.51
+        },
+        "understand": {
+          "ms": 0.093,
+          "type": "SPAN",
+          "parent": null
+        },
+        "rerank": {
+          "ms": 709.922,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "retrieve.hybrid": {
+          "ms": 62.602,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "prompt": {
+          "ms": 0.076,
+          "type": "SPAN",
+          "parent": null,
+          "n_context_chunks": 5,
+          "prompt_chars": 9295
+        }
+      }
+    },
+    {
+      "trace_id": "eb527a353b4b4121939eeb4348681d85",
+      "session": "9407e1321ca24f1b92f96046ff2eba10",
+      "user": "public",
+      "request_id": "0a243b86af3048b18e6966208c2088dd",
+      "status": "stop",
+      "level": "DEFAULT",
+      "prepare_ms": 787.34,
+      "latency_s": 4.204,
+      "cost_usd": 0.00155,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "cache.lookup": {
+          "ms": 55.224,
+          "type": "SPAN",
+          "parent": null
+        },
+        "citations": {
+          "ms": 0.015,
+          "type": "SPAN",
+          "parent": null,
+          "verified": 0,
+          "claimed": 0
+        },
+        "retrieval": {
+          "ms": 722.061,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "rerank": {
+          "ms": 676.869,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "completion": {
+          "ms": 3413.705,
+          "type": "GENERATION",
+          "parent": null,
+          "finish_reason": "stop",
+          "ttfb_ms": 632.68
+        },
+        "embed.query": {
+          "ms": 53.677,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        },
+        "retrieve.hybrid": {
+          "ms": 44.792,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "prompt": {
+          "ms": 0.065,
+          "type": "SPAN",
+          "parent": null,
+          "n_context_chunks": 5,
+          "prompt_chars": 9257
+        },
+        "understand": {
+          "ms": 0.059,
+          "type": "SPAN",
+          "parent": null
+        }
+      }
+    },
+    {
+      "trace_id": "c6198ce9152b4e509695ae2bd96000f2",
+      "session": "6f793fcd32ef46f183c073f0089a12e4",
+      "user": "public",
+      "request_id": "dacf130376af42a5971ab8df794017e0",
+      "status": "stop",
+      "level": "DEFAULT",
+      "prepare_ms": 730.28,
+      "latency_s": 5.748,
+      "cost_usd": 0.002184,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "completion": {
+          "ms": 5015.4,
+          "type": "GENERATION",
+          "parent": null,
+          "finish_reason": "stop",
+          "ttfb_ms": 402.77
+        },
+        "citations": {
+          "ms": 0.288,
+          "type": "SPAN",
+          "parent": null,
+          "verified": 3,
+          "claimed": 4
+        },
+        "retrieval": {
+          "ms": 697.477,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "rerank": {
+          "ms": 657.392,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "prompt": {
+          "ms": 0.069,
+          "type": "SPAN",
+          "parent": null,
+          "n_context_chunks": 5,
+          "prompt_chars": 9830
+        },
+        "retrieve.hybrid": {
+          "ms": 39.715,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "understand": {
+          "ms": 0.06,
+          "type": "SPAN",
+          "parent": null
+        },
+        "cache.lookup": {
+          "ms": 14.172,
+          "type": "SPAN",
+          "parent": null
+        },
+        "embed.query": {
+          "ms": 12.314,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        }
+      }
+    },
+    {
+      "trace_id": "cad4683c251c42b7805cc3dbcfa36aac",
+      "session": "47e81c3fe71a4639b6fbec5fb9aac66a",
+      "user": "public",
+      "request_id": "dfbce6130f9647829696187e4c65429f",
+      "status": "stop",
+      "level": "DEFAULT",
+      "prepare_ms": 802.88,
+      "latency_s": 2.643,
+      "cost_usd": 0.001126,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "retrieval": {
+          "ms": 768.922,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "embed.query": {
+          "ms": 13.213,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        },
+        "citations": {
+          "ms": 0.014,
+          "type": "SPAN",
+          "parent": null,
+          "verified": 0,
+          "claimed": 0
+        },
+        "completion": {
+          "ms": 1838.048,
+          "type": "GENERATION",
+          "parent": null,
+          "finish_reason": "stop",
+          "ttfb_ms": 696.15
+        },
+        "retrieve.hybrid": {
+          "ms": 43.558,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "understand": {
+          "ms": 0.066,
+          "type": "SPAN",
+          "parent": null
+        },
+        "prompt": {
+          "ms": 0.067,
+          "type": "SPAN",
+          "parent": null,
+          "n_context_chunks": 5,
+          "prompt_chars": 9209
+        },
+        "rerank": {
+          "ms": 725.019,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "cache.lookup": {
+          "ms": 14.762,
+          "type": "SPAN",
+          "parent": null
+        }
+      }
+    },
+    {
+      "trace_id": "39a97070bd6a45ba801ec23c267d69db",
+      "session": "677b53e180ce40eea4547fcb2d7ab971",
+      "user": "public",
+      "request_id": "f6ad33f6a13441e89d62d95ba0808819",
+      "status": "stop",
+      "level": "DEFAULT",
+      "prepare_ms": 766.79,
+      "latency_s": 3.953,
+      "cost_usd": 0.001588,
+      "unmeasured_cost_steps": [],
+      "spans": {
+        "prompt": {
+          "ms": 0.062,
+          "type": "SPAN",
+          "parent": null,
+          "n_context_chunks": 5,
+          "prompt_chars": 9392
+        },
+        "citations": {
+          "ms": 0.221,
+          "type": "SPAN",
+          "parent": null,
+          "verified": 1,
+          "claimed": 2
+        },
+        "completion": {
+          "ms": 3183.355,
+          "type": "GENERATION",
+          "parent": null,
+          "finish_reason": "stop",
+          "ttfb_ms": 553.86
+        },
+        "retrieval": {
+          "ms": 738.06,
+          "type": "SPAN",
+          "parent": null,
+          "retriever": "reranked[qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25]:BAAI/bge-reranker-v2-m3@cuda:L512:float16:n50",
+          "n_hits": 5,
+          "truncated": false
+        },
+        "retrieve.hybrid": {
+          "ms": 52.409,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "retriever": "qdrant-hybrid:rag_bgem3_ctx:rrf1-c20-w1:0.25",
+          "n_hits": 50,
+          "truncated": false
+        },
+        "rerank": {
+          "ms": 685.278,
+          "type": "SPAN",
+          "parent": "retrieval",
+          "reranker": "BAAI/bge-reranker-v2-m3@cuda:L512:float16",
+          "n_candidates": 50,
+          "n_scores": 50
+        },
+        "cache.lookup": {
+          "ms": 18.305,
+          "type": "SPAN",
+          "parent": null
+        },
+        "embed.query": {
+          "ms": 16.566,
+          "type": "SPAN",
+          "parent": "cache.lookup"
+        },
+        "understand": {
+          "ms": 0.099,
+          "type": "SPAN",
+          "parent": null
+        }
+      }
+    }
+  ]
+}

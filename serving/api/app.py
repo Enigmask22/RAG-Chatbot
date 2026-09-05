@@ -53,6 +53,8 @@ from serving.api.middleware import RequestContextMiddleware
 from serving.api.security import AuthMiddleware
 from serving.core.auth import ApiKeyStore
 from serving.core.chat import ChatService
+from serving.core.instrument import instrument_retriever
+from serving.core.langfuse import build_sink
 from serving.core.logging import configure_logging
 from serving.core.probes import Check, ReadinessProbes
 from serving.core.ratelimit import RateLimiter
@@ -330,6 +332,23 @@ def build_probes(registry: BundleRegistry) -> ReadinessProbes:
     )
 
 
+def _traced_runtime(builder: RuntimeBuilder) -> RuntimeBuilder:
+    """Bọc chuỗi truy hồi mỗi lần một bundle được nạp — `W5-06`.
+
+    Đặt ở đây chứ không trong `BundleRegistry`: registry là chỗ giữ *cái gì
+    đang phục vụ*, và nhét quan sát vào đó buộc mọi test của `W4-02` phải biết
+    về span. Bọc ở tầng builder thì `create_app(build_runtime=…)` của test vẫn
+    tiêm được một retriever giả, và nó cũng được bọc — nên đường span được test
+    bằng đúng cơ chế mà production dùng, không bằng một nhánh riêng.
+    """
+
+    def build(bundle: Any) -> tuple[Any, Any]:
+        retriever, reranker = builder(bundle)
+        return instrument_retriever(retriever), reranker
+
+    return build
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -350,15 +369,17 @@ def create_app(
 
     registry = BundleRegistry(
         root=resolved.bundle_root,
-        build_runtime=build_runtime
-        or QdrantRuntimeBuilder(
-            url=resolved.qdrant_url,
-            api_key=(
-                resolved.qdrant_api_key.get_secret_value() if resolved.qdrant_api_key else None
-            ),
-            device=resolved.embedding_device,
-            batch_size=resolved.embedding_batch_size,
-            allow_runtime_drift=resolved.bundle_allow_runtime_drift,
+        build_runtime=_traced_runtime(
+            build_runtime
+            or QdrantRuntimeBuilder(
+                url=resolved.qdrant_url,
+                api_key=(
+                    resolved.qdrant_api_key.get_secret_value() if resolved.qdrant_api_key else None
+                ),
+                device=resolved.embedding_device,
+                batch_size=resolved.embedding_batch_size,
+                allow_runtime_drift=resolved.bundle_allow_runtime_drift,
+            )
         ),
     )
 
@@ -383,7 +404,13 @@ def create_app(
                     version,
                 )
         yield
+        # Đẩy nốt hàng đợi trace trước khi tiến trình đi. Có trần thời gian —
+        # xem `LangfuseSink.close`: một Langfuse chết không được phép giữ
+        # container không tắt được.
+        if trace_sink is not None:
+            trace_sink.close()
 
+    trace_sink = build_sink(resolved)
     api = FastAPI(
         title="RAG serving",
         version="0.1.0",
@@ -392,6 +419,7 @@ def create_app(
     )
     api.state.registry = registry
     api.state.probes = probe_factory(registry)
+    api.state.trace_sink = trace_sink
     llm = build_llm(resolved)
     api.state.chat = ChatService(
         registry=registry,
@@ -403,6 +431,7 @@ def create_app(
         # cung cấp mình, và một giá trị ở đây sẽ ghi đè bảng ấy cho MỌI nhánh.
         understanding=build_understanding(resolved, llm),
         cache=build_cache(resolved),
+        sink=trace_sink,
     )
     # ⚠️ **Thứ tự quan trọng và nó ngược trực giác.** `add_middleware` *chèn lên
     # đầu*, nên cái thêm **sau** nằm **ngoài**. Auth phải thêm trước để

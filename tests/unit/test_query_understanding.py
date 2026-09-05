@@ -471,3 +471,90 @@ def test_the_plan_reaches_the_sse_frame_in_a_shape_a_client_can_read() -> None:
         "question": "hello",
         "rewrite_ms": None,
     }
+
+
+# ---------------------------------------------------------------------------
+# `W5-06` — bước viết lại trong trace
+# ---------------------------------------------------------------------------
+
+
+class TestRewriteSpan:
+    """Span `rewrite` mở **bên trong** `_rewrite`, không dựng lại từ `QueryPlan`.
+
+    Dựng từ bên ngoài bằng `plan.rewrite_ms` sẽ phải bịa ra mốc bắt đầu; ở đây
+    span đo đúng lời gọi model, và nó là span duy nhất của lượt có thể **quá
+    hạn mà vẫn tốn tiền**.
+    """
+
+    def test_a_successful_rewrite_reports_its_own_tokens_and_cost(self) -> None:
+        from serving.core.tracing import Trace, trace_scope
+
+        trace = Trace()
+        with trace_scope(trace):
+            asyncio.run(QueryUnderstanding(llm=FakeProvider()).plan("cái đó thì sao?", HISTORY))
+        span = trace.find("rewrite")
+        assert span is not None
+        assert span.kind == "generation"
+        assert span.usage.prompt_tokens == 120
+        assert span.usage.cost_usd == pytest.approx(0.00004)
+        assert trace.unmeasured_cost_steps() == []
+
+    def test_a_timed_out_rewrite_reports_no_cost_rather_than_zero(self) -> None:
+        """⭐⭐ `wait_for` huỷ được cái *chờ*, **không** huỷ được cái *thread*:
+        lời gọi kia vẫn chạy nốt và vẫn bị provider tính tiền. Chi phí thật của
+        bước này là *chưa biết*.
+
+        Ghi `0.0` biến một khoản chi không quan sát được thành một khoản chi
+        bằng không — và tổng chi phí của trace trở thành một cận dưới đội lốt
+        một phép đo. `unmeasured_cost_steps()` là chỗ điều đó phải hiện ra.
+        """
+        from serving.core.tracing import Trace, trace_scope
+
+        release = threading.Event()
+
+        class SlowProvider(FakeProvider):
+            def complete(self, *args: Any, **kwargs: Any) -> LLMResponse:
+                release.wait(5.0)
+                return super().complete(*args, **kwargs)
+
+        trace = Trace()
+        try:
+            with trace_scope(trace):
+                asyncio.run(
+                    QueryUnderstanding(llm=SlowProvider(), timeout_s=0.2).plan(
+                        "cái đó thì sao?", HISTORY
+                    )
+                )
+        finally:
+            release.set()
+        span = trace.find("rewrite")
+        assert span is not None
+        assert span.level == "WARNING"
+        assert span.usage.cost_usd is None, "0.0 nghĩa là miễn phí; ở đây là chưa biết"
+        assert trace.unmeasured_cost_steps() == ["rewrite"]
+        assert trace.total_cost_usd() is None
+
+    def test_a_failing_rewrite_reports_no_cost_either(self) -> None:
+        from serving.core.tracing import Trace, trace_scope
+
+        trace = Trace()
+        with trace_scope(trace):
+            asyncio.run(
+                QueryUnderstanding(llm=FakeProvider(raises=LLMError("provider 500"))).plan(
+                    "cái đó thì sao?", HISTORY
+                )
+            )
+        span = trace.find("rewrite")
+        assert span is not None
+        assert span.level == "WARNING"
+        assert span.usage.empty
+
+    def test_no_rewrite_means_no_span(self) -> None:
+        """Phần lớn lượt không viết lại. Một span `rewrite` rỗng ở mỗi lượt là
+        một dòng vô nghĩa nhân với toàn bộ traffic."""
+        from serving.core.tracing import Trace, trace_scope
+
+        trace = Trace()
+        with trace_scope(trace):
+            asyncio.run(QueryUnderstanding(llm=FakeProvider()).plan("RRF là gì?", []))
+        assert trace.find("rewrite") is None

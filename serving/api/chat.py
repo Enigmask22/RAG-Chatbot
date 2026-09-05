@@ -30,6 +30,8 @@ from serving.api.sse import SSE_HEADERS, encode
 from serving.core.auth import CrossTenantError, Principal
 from serving.core.chat import ChatService, ConversationNotFound, GenerationUnavailable
 from serving.core.chat import load_history as _load_history
+from serving.core.logging import current_request_id
+from serving.core.tracing import Trace
 
 __all__ = ["router"]
 
@@ -86,6 +88,25 @@ async def chat(
     `delta` dừng lại không nói được điều gì cả: nó giống hệt nhau khi model nói
     xong, khi kết nối đứt, và khi provider hết hạn mức giữa chừng.
     """
+    # ⭐⭐ `W5-06`: trace mở ở đây, **trước** `prepare()`, và đó là điều kiện để
+    # nó nhìn thấy phần đáng nhìn nhất.
+    #
+    # Chỗ hiển nhiên để mở trace là bên trong `ChatService` — nhưng `ChatTurn`
+    # chỉ tồn tại ở *dòng cuối* của `prepare()`, tức mọi lượt 404/403/429/503
+    # sẽ không có trace nào. Một hệ quan sát phủ đúng những request đã chạy
+    # trót lọt là một hệ quan sát nói rằng mọi thứ đều ổn.
+    #
+    # `X-Request-ID` của `W4-03` đi vào trace: đó là chỗ duy nhất nối được một
+    # dòng log JSON với một trace trong Langfuse. Không có nó thì hai hệ thống
+    # cùng ghi một sự cố mà không ai ghép được chúng lại.
+    trace = Trace(
+        name="chat",
+        sink=service.sink,
+        user_id=principal.tenant_id,
+        input=body.message,
+        tags=[f"tenant:{principal.tenant_id}"],
+        metadata={"request_id": current_request_id(), "top_k": body.top_k},
+    )
     try:
         turn = await service.prepare(
             principal,
@@ -93,14 +114,17 @@ async def chat(
             conversation_id=body.conversation_id,
             top_k=body.top_k,
             filters=body.filters,
+            trace=trace,
         )
     except ConversationNotFound as exc:
+        trace.finish(level="ERROR", status=f"404 {exc}")
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except BudgetExceeded as exc:
         # ⭐ `429`, không `503`: trần chi phí là một **hạn mức**, và nó hết cho
         # tới nửa đêm UTC chứ không phải "thử lại sau vài giây". `Retry-After`
         # nói ra con số ấy để client không phải đoán — cùng khuôn với hạn mức
         # nhịp của `W4-04`.
+        trace.finish(level="ERROR", status=f"429 {exc}")
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             str(exc),
@@ -108,13 +132,17 @@ async def chat(
         ) from exc
     except CrossTenantError as exc:
         # Lời của lỗi cố ý **không** nhắc tenant mà client đã xin (`W4-04`).
+        # ⚠️ Cùng lý do, trace ghi mã lỗi chứ không ghi tenant bị từ chối.
+        trace.finish(level="ERROR", status="403 cross-tenant")
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except GenerationUnavailable as exc:
+        trace.finish(level="ERROR", status=f"503 {exc}")
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except Exception as exc:
         # Truy hồi nằm trong `prepare()`, nên Qdrant chết tới được đây — và đây
         # là chỗ **cuối cùng** nó còn biến thành một status đọc được bằng máy.
         logger.exception("chuẩn bị lượt chat thất bại")
+        trace.finish(level="ERROR", status=f"503 {type(exc).__name__}: {exc}")
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, f"{type(exc).__name__}: {exc}"
         ) from exc
@@ -149,6 +177,30 @@ def llm_status(service: ServiceDep) -> dict[str, Any]:
     if router_obj is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chưa cấu hình bộ định tuyến LLM")
     result: dict[str, Any] = router_obj()
+    return result
+
+
+@router.get("/admin/tracing")
+def tracing_status(request: Request) -> dict[str, Any]:
+    """Trace có **thật sự** tới Langfuse không — `W5-06`.
+
+    ⭐ Không có endpoint này thì quan sát là thứ duy nhất trong hệ thống không
+    quan sát được. Hàng đợi đầy, khoá sai, host sai — cả ba đều biểu hiện y hệt
+    nhau từ phía `/chat`: 200, câu trả lời đúng, và một bảng Langfuse trống mà
+    người ta sẽ đọc là "hôm nay ít traffic".
+
+    `dropped` là con số quan trọng nhất ở đây và nó phải được đọc cùng
+    `sent`: trace bị vứt khi hàng đợi đầy, và hàng đợi đầy đúng lúc hệ thống
+    bận — nên một `dropped` lớn nghĩa là bảng đang thiếu **đúng** những lượt
+    đáng xem nhất, chứ không thiếu ngẫu nhiên.
+    """
+    sink = getattr(request.app.state, "trace_sink", None)
+    if sink is None:
+        return {"enabled": False, "reason": "chưa cấu hình LANGFUSE_* — xem build_sink()"}
+    status_of = getattr(sink, "status", None)
+    if not callable(status_of):
+        return {"enabled": True, "reason": "sink không khai status()"}
+    result: dict[str, Any] = {"enabled": True, **status_of()}
     return result
 
 
