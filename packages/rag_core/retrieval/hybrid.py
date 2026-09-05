@@ -163,7 +163,7 @@ class QdrantHybridRetriever(Retriever):
                 [hit.chunk.chunk_id for hit in dense_hits],
                 [hit.chunk.chunk_id for hit in sparse_hits],
             ],
-            k=self.k,
+            k=RRF_K,
             weights=list(self.weights) if self.weights is not None else None,
             limit=top_k,
         )
