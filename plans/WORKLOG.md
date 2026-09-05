@@ -4178,3 +4178,124 @@ golden set).
 **Việc tiếp theo**: `W5-09` — CI GitHub Actions. Đó là chỗ gate của `W5-05` có
 răng, và nó nợ sẵn hai thứ: `TD-53` (bảng tiêm 11×k trên **mọi** nhánh router)
 và `TD-59` (ma trận tiêm chạy lên đường judge).
+
+---
+
+## 2026-09-05 (16) — `W5-09`: CI bốn tầng, và lượt chạy đầu tiên tìm ra bốn lỗi chỉ có trên Linux
+
+**Trạng thái**: `W5` **9/11** · 56 `[x]` backlog gốc + 7 `NEW` · **`G5` đóng 4/4**
+· bộ mặc định **2 259 xanh** (3 skip) · integration **305 xanh** · `make lint`
+sạch cả ba lệnh **và** sạch với `--platform linux` · chi phí **$0**.
+
+```
+main xanh 4/4 job          128 s tường   run #4
+  lint (ruff + mypy)        87 s
+  unit                      77 s   2 155 bài
+  integration              128 s   283 bài, 3 service
+  smoke eval truy hồi       20 s   ← cổng của G5
+nhánh làm tụt truy hồi     ĐỎ 3/4  run #5 (lint vẫn xanh — đúng thiết kế)
+```
+
+**⚠️ Lệch DoD một chỗ, nói trước.** DoD viết "smoke eval 30 câu, **model rẻ**".
+Giữ 30 câu và < 5 phút, **bỏ model**. Ba ràng buộc độc lập loại một cổng có gọi
+LLM: `temp=0` ở DeepSeek **không tất định** (`TD-41`) nên cổng sẽ đỏ vì lý do
+ngoài diff; PR từ fork **không thấy secret** nên cổng biến mất đúng lúc cần
+nhất; và mỗi lần đẩy commit là một lần trả tiền. Phần sinh thuộc eval đêm, nơi
+độ nhiễu xử lý bằng kiểm định chứ không bằng ngưỡng → `TD-83`.
+
+**⭐⭐ Đóng băng vector là cách duy nhất còn lại.** 30 câu golden (mẫu phân tầng
+theo nhóm) + 260 chunk (36 liên quan + 224 nhiễu **cùng tài liệu**), vector
+dense/sparse kéo thẳng từ Qdrant bằng `fetch_vectors` — không embed lại, vector
+đã nằm sẵn đó. CI nạp vào một Qdrant rỗng rồi chạy **đúng lớp
+`QdrantHybridRetriever` của production**. Giữ được phần hay hỏng vì một diff
+(RRF, độ sâu ứng viên, trọng số nhánh, filter, schema, payload); bỏ phần không
+hỏng vì một diff (chất lượng model). 138 KB + 675 KB, dưới trần 1 MB của
+pre-commit.
+
+**⭐⭐ Cổng có răng — đo chứ không suy.** RRF `k=60` → `mrr` **−0,1624** · bỏ
+trọng số nhánh **−0,0578** · đảo trọng số **−0,1868**; dung sai 0,02 nên cả ba
+đỏ. ⚠️ Và một giới hạn đã đo: `candidate_k=5` **không nhúc nhích**, vì `_depth()`
+kẹp nó lên bằng `top_k` — cổng mù đúng chỗ mã cũng mù. Nhưng trên index thật
+`candidate_k` vẫn quan trọng cho tầng **rerank**, thứ smoke không phủ (`TD-81`,
+và `W5-06` đo rerank chiếm 92,8% ngân sách truy hồi — tức phần không gác được
+là phần đắt nhất).
+
+**⭐ Cổng phải gác cả cấu hình.** Bản đầu ghim `k/candidate_k/weights` trong
+`smoke.py`: gác được mọi thay đổi *mã* và mù hoàn toàn với một PR đổi
+`components.retrieval.options`. Giờ đọc từ **manifest bundle**, và baseline mang
+`retrieval_options`. ⚠️ So **bộ tham số** chứ không so `retriever.name` — cái tên
+mang cả tên collection, tức nó trộn *chỗ chạy* với *cách chạy*; bài test đỏ ngay
+lần đầu vì đúng chuyện đó.
+
+**⭐⭐ `FrozenEmbedder` ném khi gặp chuỗi lạ.** Trả `zeros(1024)` thì Qdrant vẫn
+nhận, vẫn tìm ra thứ gì đó, metric vẫn ra một con số — con số đo **không gì cả**
+và nó sẽ nằm cạnh những con số thật.
+
+**⭐⭐ Cái CI không chạy phải là một con số.** Marker `weights` gom **103 unit +
+12 integration** ra khỏi tầng nhanh, và `test_ci_tiers.py` đọc **chính file
+workflow** rồi đòi ba tính chất: phủ · kín · chính tả. ⚠️ Vế thứ ba là chỗ câm
+nhất: `-m "not weigths"` gõ sai **không** báo lỗi, nó chọn đúng mọi bài, và
+`--strict-markers` không cứu vì nó chỉ gác marker *gắn lên test*.
+
+**⭐⭐ Lượt CI đầu tiên tìm ra bốn lỗi, cả bốn chỉ tồn tại trên Linux.** Log
+Actions cần token nên tái lập tại chỗ: `mypy --platform linux`, và một container
+`python:3.12-bookworm-slim` mount repo.
+
+1. **`make lint` xanh Windows / đỏ Linux.** `warn_unreachable` cộng với việc
+   mypy thu hẹp `sys.platform` biến ba fixture `_selector_loop` thành ba lỗi
+   `unreachable`. Phán quyết của cổng chất lượng phụ thuộc **hệ điều hành**, và
+   cả dự án phát triển trên Windows nên nó vô hình cho tới khi có CI. Gộp ba bản
+   sao thành một fixture, hỏi qua `needs_selector_loop()` (trả `bool`, không thu
+   hẹp được).
+2. **Vân tay index phụ thuộc dấu `\` vs `/`** (`TD-82`) — trên đúng cái trường
+   tồn tại để chứng minh danh tính index, thứ `runtime_drift` dựng lên trên.
+   Không sửa ở đây vì sửa là đúc lại ba manifest; ghim bằng một bài test đỏ vào
+   đúng ngày ai đó sửa.
+3. **Lỗ trong chính bài canh tầng CI**: nó chỉ thử **singleton** `{gpu}` nên
+   xanh, trong khi `test_reranked_retriever.py` mang `{integration, gpu}` và
+   biểu thức `integration and not weights` nhận nó → 9 bài chết vì CUDA.
+4. **Một marker gắn trên MỘT bài lọt lưới** (`test_structure_chunker.py`): đợt
+   phân loại đầu chỉ soi module mà *mọi* bài đều cần trọng số.
+
+**⭐ Ruff `B009` tự sửa mất chỗ tránh lỗi.** `getattr(asyncio, "hằng")` bị đổi
+thành truy cập thuộc tính trực tiếp — chính thứ mypy từ chối trên Linux. Hai
+linter kéo ngược nhau và bên tự sửa thắng im lặng; chữa bằng `getattr` với một
+**biến**.
+
+**⭐ `mypy` của CI dùng đủ extras TRỪ torch**, và đó là quyết định đã đo: bộ nhẹ
+cho **10 lỗi** (docling/transformers/huggingface_hub/mlflow), còn torch nằm
+trong `ignore_missing_imports` nên có hay không đều 0 lỗi. Tiết kiệm ~4 GB wheel
+CUDA mà không đổi thứ đang được gác.
+
+**💡 Repro sai môi trường sinh ra lỗi không phải của CI.** Chạy container bằng
+**root** làm `test_file_is_read_only_after_freeze` đỏ (root bỏ qua quyền file);
+runner GitHub chạy non-root nên nó xanh. Xác nhận bằng `--user 1000:1000`. Cùng
+họ với bốn lỗi trên, ngược chiều.
+
+**⚠️ Dự đoán sai, ghi đúng như đo được.** Tôi đoán các phép tụt sẽ *chỉ* bị smoke
+bắt. Không phải: `test_hybrid_branch.py` bắt cả hai phép đã thử. Tầng truy hồi
+được phủ tốt hơn tôi giả định. Cái smoke **thêm vào** không phải bắt nhiều hơn
+mà là **nói khác đi** — unit nói *"bạn truyền sai tham số"*, smoke nói *"truy hồi
+tệ đi 20%"*, và người review cần cái thứ hai để quyết một thay đổi **có chủ
+đích** là chấp nhận được hay không.
+
+**⚠️ Đính chính `W5-08`** (`c4ed809`): commit ấy báo "2 225 xanh" trong khi
+`test_checklist_dashboard` đỏ hai bài — bảng đếm §1 vẫn ghi `W5 done=7` sau khi
+`W5-08` thành `[x]`. Bộ test chạy **trước** lần sửa `CHECKLIST.md` cuối cùng.
+Khác cơ chế với lỗi `W5-06` (thay lệnh rộng bằng lệnh hẹp), cùng hệ quả: **phép
+đo đúng lúc lấy, cũ lúc báo cáo**. Thêm hook `pre-commit` `docs-consistency`
+chạy đúng hai module đỏ-vì-sửa-tài-liệu — chốt chặn duy nhất đúng chỗ là chạy
+lại *sau* khi mọi file đã chốt.
+
+**`G5` đóng 4/4.** Dòng "PR làm tụt retrieval → CI đỏ" trả bằng nhánh
+`ci-demo/retrieval-regression`; dòng "một query trace end-to-end trong Langfuse
+kèm cost" đã trả từ `W5-06`. ⚠️ Nhánh demo chạy bằng trigger `push`, **không**
+bằng một PR thật — không có credential GitHub để mở PR.
+
+**Nợ mới**: `TD-81` (smoke không phủ tầng rerank — phần đắt nhất) · `TD-82` (vân
+tay index phụ thuộc HĐH) · `TD-83` (chưa có smoke tầng sinh).
+
+**Việc tiếp theo**: `W5-10` — nightly full eval + auto-PR promote. Nó là chỗ trả
+gọn ba món: `TD-71` (gate chưa ghi phán quyết ngược vào bundle — **đang chặn**
+auto-promote), `TD-82` (đúc lại manifest, phải làm cùng lúc), và `TD-83` (smoke
+tầng sinh có secret).
