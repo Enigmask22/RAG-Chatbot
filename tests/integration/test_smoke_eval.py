@@ -22,11 +22,13 @@ from typing import Any
 import pytest
 
 from pipeline.eval.smoke import (
+    DEFAULT_BUNDLE,
     SMOKE_PREFIX,
     FrozenEmbedder,
     SmokeFixture,
     compare_to_baseline,
     load_fixture,
+    retrieval_options,
     run_smoke,
     seed_collection,
 )
@@ -37,10 +39,9 @@ FIXTURE = Path("data/eval/smoke/smoke_v1.jsonl.gz")
 BASELINE = Path("data/eval/smoke/baseline.json")
 COLLECTION = "rag_smoke_pytest"
 
-# Đúng tham số bundle `0.2.1` đang phục vụ, và job CI dùng cùng bộ này. Một
-# smoke chạy tham số mặc định trong khi production chạy tham số khác là một
-# cổng gác một cấu hình không tồn tại.
-PRODUCTION_OPTIONS = {"k": 1, "candidate_k": 20, "weights": (1.0, 0.25)}
+# Đọc từ **manifest bundle**, không gõ lại: một bản sao thứ hai của cấu hình
+# production biến cổng thành cổng của một hệ thống không tồn tại.
+PRODUCTION_OPTIONS = retrieval_options(DEFAULT_BUNDLE)
 
 
 @pytest.fixture(scope="module")
@@ -90,7 +91,15 @@ class TestTheFrozenIndexReproducesTheBaseline:
     ) -> None:
         """Chính là job `smoke-eval`, chạy trong tiến trình test."""
         result = run_smoke(_retriever(store), fixture, top_k=baseline["top_k"])
-        assert compare_to_baseline(result, baseline, tolerance=0.02) == []
+        assert (
+            compare_to_baseline(result, baseline, tolerance=0.02, options=PRODUCTION_OPTIONS) == []
+        )
+
+    def test_the_options_come_from_the_bundle_not_from_this_file(self) -> None:
+        """⭐ Cổng gác cả **cấu hình**: đổi `components.retrieval.options` trong
+        manifest là đổi `retrieval_options`, và bộ ấy nằm trong baseline."""
+        assert retrieval_options(DEFAULT_BUNDLE) == PRODUCTION_OPTIONS
+        assert isinstance(PRODUCTION_OPTIONS["weights"], tuple)
 
     def test_the_numbers_are_stable_across_two_runs(
         self, store: Any, fixture: SmokeFixture
@@ -129,7 +138,10 @@ class TestTheGateHasTeeth:
         label: str,
         overrides: dict[str, Any],
     ) -> None:
-        result = run_smoke(_retriever(store, **overrides), fixture, top_k=10)
+        retriever = _retriever(store, **overrides)
+        result = run_smoke(retriever, fixture, top_k=10)
+        # ⚠️ KHÔNG truyền `options`: nếu truyền thì cổng đỏ vì tham số đổi,
+        # và bài này sẽ xanh mà không chứng minh được rằng **con số** đã tụt.
         failures = compare_to_baseline(result, baseline, tolerance=0.02)
         assert failures, f"{label} không làm cổng đỏ — cổng đang trang trí"
 

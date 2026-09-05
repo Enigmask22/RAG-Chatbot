@@ -43,7 +43,7 @@ import gzip
 import json
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,6 +59,7 @@ from .metrics import ndcg_at_k, recall_at_k, reciprocal_rank
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "DEFAULT_BUNDLE",
     "SMOKE_PREFIX",
     "FrozenEmbedder",
     "SmokeFixture",
@@ -66,6 +67,7 @@ __all__ = [
     "SmokeResult",
     "UnknownTextError",
     "load_fixture",
+    "retrieval_options",
     "run_smoke",
 ]
 
@@ -80,6 +82,30 @@ thành thứ nhìn thấy được.
 
 FIXTURE_VERSION = 1
 DEFAULT_TOP_K = 10
+DEFAULT_BUNDLE = Path("bundles/rag-bundle-v0.2.1/manifest.json")
+
+
+def retrieval_options(manifest_path: Path) -> dict[str, Any]:
+    """Tham số nhánh hybrid, đọc từ **manifest bundle đang phục vụ**.
+
+    ## ⭐ Cổng phải gác cả cấu hình, không chỉ mã
+
+    Bản đầu ghim `k=1, candidate_k=20, weights=(1.0, 0.25)` thẳng trong file
+    này. Nó gác được mọi thay đổi *mã* của tầng truy hồi — và mù hoàn toàn với
+    một PR đổi `components.retrieval.options` trong bundle, tức đúng loại thay
+    đổi dễ làm nhất và khó thấy nhất. Một cổng mang bản sao thứ hai của cấu
+    hình production sẽ gác một hệ thống không tồn tại kể từ lần hai bản sao
+    lệch nhau.
+
+    `weights` về `tuple` chứ không giữ `list`: `QdrantHybridRetriever` đưa nó
+    vào `name`, và một `list` cho ra chuỗi khác — tức baseline không khớp vì
+    một kiểu dữ liệu, không vì một phép đo.
+    """
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    options = dict(manifest["components"]["retrieval"]["options"])
+    if isinstance(options.get("weights"), list):
+        options["weights"] = tuple(options["weights"])
+    return options
 
 
 class UnknownTextError(KeyError):
@@ -313,8 +339,17 @@ def run_smoke(retriever: Any, fixture: SmokeFixture, *, top_k: int = DEFAULT_TOP
 # ------------------------------------------------------------------- ngưỡng
 
 
+def _plain_options(options: Mapping[str, Any]) -> dict[str, Any]:
+    """JSON không có `tuple`, nên so hai bên phải cùng một hình dạng."""
+    return {k: list(v) if isinstance(v, tuple) else v for k, v in sorted(options.items())}
+
+
 def compare_to_baseline(
-    result: SmokeResult, baseline: dict[str, Any], *, tolerance: float
+    result: SmokeResult,
+    baseline: dict[str, Any],
+    *,
+    tolerance: float,
+    options: dict[str, Any] | None = None,
 ) -> list[str]:
     """Danh sách vi phạm. Rỗng = qua.
 
@@ -326,6 +361,16 @@ def compare_to_baseline(
     """
     failures: list[str] = []
     expected = baseline.get("metrics", {})
+    if options is not None and _plain_options(options) != baseline.get("retrieval_options"):
+        # ⭐ So **bộ tham số**, không so `retriever.name`: cái tên mang cả tên
+        # collection, thứ khác nhau giữa CI (`rag_smoke_ci`) và test
+        # (`rag_smoke_pytest`) — nó trộn *chỗ chạy* với *cách chạy*, và cổng chỉ
+        # quan tâm cái sau. Một thay đổi cấu hình đi qua cổng thành một dòng nói
+        # rõ trường nào đổi, thay vì thành "vài phần nghìn dao động".
+        failures.append(
+            f"tham số truy hồi đổi: {_plain_options(options)} vs "
+            f"{baseline.get('retrieval_options')} trong baseline"
+        )
     if result.n_queries != baseline.get("n_queries"):
         failures.append(
             f"số câu đổi: {result.n_queries} vs {baseline.get('n_queries')} trong baseline — "
@@ -357,6 +402,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--fixture", type=Path, default=Path("data/eval/smoke/smoke_v1.jsonl.gz"))
     parser.add_argument("--baseline", type=Path, default=Path("data/eval/smoke/baseline.json"))
     parser.add_argument("--collection", default="rag_smoke_ci")
+    parser.add_argument(
+        "--bundle",
+        type=Path,
+        default=DEFAULT_BUNDLE,
+        help="manifest bundle để lấy tham số nhánh hybrid — xem `retrieval_options`",
+    )
     parser.add_argument("--qdrant-url", default=None)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
     parser.add_argument(
@@ -397,9 +448,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     written = seed_collection(store, fixture)
     logger.info("đã ghi %d point vào %s", written, args.collection)
 
-    # ⚠️ Đúng tham số của bundle đang phục vụ. Một smoke chạy tham số mặc định
-    # trong khi production chạy tham số khác là một cổng gác cấu hình không tồn tại.
-    retriever = QdrantHybridRetriever(store, k=1, candidate_k=20, weights=(1.0, 0.25))
+    options = retrieval_options(args.bundle)
+    logger.info("tham số truy hồi đọc từ %s: %s", args.bundle, options)
+    retriever = QdrantHybridRetriever(store, **options)
     result = run_smoke(retriever, fixture, top_k=args.top_k)
     for name, value in sorted(result.metrics.items()):
         logger.info("%-22s %.4f", name, value)
@@ -419,6 +470,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "built_at": fixture.built_at,
                     "top_k": args.top_k,
                     "retriever": retriever.name,
+                    "retrieval_options": _plain_options(options),
                     "n_queries": result.n_queries,
                     "metrics": result.metrics,
                 },
@@ -432,7 +484,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
-    failures = compare_to_baseline(result, baseline, tolerance=args.tolerance)
+    failures = compare_to_baseline(result, baseline, tolerance=args.tolerance, options=options)
     if failures:
         for line in failures:
             logger.error("TỤT: %s", line)
