@@ -28,7 +28,10 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # `ci-demo/**` là không gian tên để **chứng minh cổng đỏ được** mà không
+    # cần mở PR — `G5` đòi bằng chứng ấy, và một cổng chỉ từng được nhìn ở
+    # trạng thái xanh là một cổng chưa ai biết có gác hay không.
+    branches: [main, 'ci-demo/**']
   workflow_dispatch:
 
 concurrency:
