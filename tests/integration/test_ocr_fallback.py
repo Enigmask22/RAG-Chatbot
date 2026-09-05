@@ -24,7 +24,9 @@ from rag_core.loaders import (
     load_document,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.weights]
+"""`weights` vì nó tải trọng số EasyOCR/docling, không vì nó cần một service —
+hai lý do khác nhau để một bài chậm, và CI đối xử với chúng khác nhau."""
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "loaders"
 SCANNED = FIXTURES / "scanned-page.pdf"

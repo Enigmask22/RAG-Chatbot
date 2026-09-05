@@ -203,6 +203,16 @@ markers = [
     # chạy**, không chỉ vài service lẻ. Loại khỏi cả `make test` lẫn
     # `make test-integration` vì một lượt của nó tốn hàng phút.
     "e2e: cần `make up-api` (image serving + toàn bộ compose) — chạy bằng `make smoke`",
+    # `W5-09`. Khác `integration` ở **lý do** chậm: không phải service ngoài mà
+    # là trọng số model phải tải về (docling layout/tableformer, EasyOCR). Vẫn
+    # nằm trong `make test` ở máy đã `make install` — nhưng CI nhanh loại ra,
+    # vì cài `ingestion` trên runner là ~4 GB và vài phút tải trọng số cho một
+    # bộ test không đo gì thuộc về diff.
+    #
+    # ⚠️ Đây là **lỗ duy nhất** của tầng CI nhanh, nên nó bị khoá bằng
+    # `tests/unit/test_ci_tiers.py`: thêm một module `weights` mà không sửa
+    # danh sách khai báo ở đó thì đỏ.
+    "weights: cần trọng số model tải về — loại khỏi tầng CI nhanh",
 ]
 
 [tool.coverage.run]

@@ -184,6 +184,14 @@ gate:  ## `W5-05`: gate phát hành cho một bundle (BUNDLE=0.2.1). Exit 1=FAIL
 		--html plans/reports/runs/gate-$(BUNDLE).html \
 		--json plans/reports/runs/gate-$(BUNDLE).json
 
+.PHONY: smoke-eval
+smoke-eval:  ## `W5-09`: smoke eval truy hồi trên index đóng băng (không model, $$0)
+	$(PY) python -m pipeline.eval.smoke
+
+.PHONY: smoke-fixture
+smoke-fixture:  ## `W5-09`: dựng lại fixture đóng băng — CẦN index thật + GPU
+	$(PY) python -m pipeline.eval.smoke_fixture
+
 .PHONY: eval-compare
 eval-compare:  ## So hai lần chạy eval có kiểm định (BASE=baseline CAND=chunk550)
 	$(PY) python -m pipeline.eval.compare $(BASE) $(CAND) \

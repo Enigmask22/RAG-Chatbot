@@ -28,6 +28,13 @@ from pipeline.indexing.corpus_loader import ParsePinError, load_documents
 from rag_core.loaders import ParseFingerprint, load_document
 from rag_core.loaders.docling_backend import component_versions
 
+pytestmark = pytest.mark.weights
+"""Ba module này parse tài liệu thật bằng docling, tức chúng cần **trọng số
+model tải về** — xem marker `weights` trong `pyproject.toml`. Vẫn chạy trong
+`make test` ở máy đã `make install`; CI nhanh loại chúng ra và
+`tests/unit/test_ci_tiers.py` khoá danh sách ấy lại."""
+
+
 MARKDOWN = "# Tiêu đề\n\nMột đoạn văn bản về đầu tư công.\n"
 
 

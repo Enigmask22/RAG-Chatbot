@@ -143,6 +143,28 @@ def schema_problems(
     return problems
 
 
+def _qdrant_vector(stored: Mapping[str, Any]) -> dict[str, Any]:
+    """Named-vector dict → dạng client hiểu, dựng lại `SparseVector` nếu cần.
+
+    Vector đọc từ Qdrant về là dict thuần; đọc từ file JSON/npz cũng là dict
+    thuần. Cả hai đi qua đây nên chỉ có **một** chỗ biết hình dạng ấy.
+    """
+    from qdrant_client import models
+
+    out: dict[str, Any] = {}
+    for name, value in stored.items():
+        if isinstance(value, dict) and "indices" in value:
+            out[name] = models.SparseVector(
+                indices=[int(i) for i in value["indices"]],
+                values=[float(v) for v in value["values"]],
+            )
+        elif hasattr(value, "indices") and hasattr(value, "values"):
+            out[name] = value
+        else:
+            out[name] = [float(x) for x in value]
+    return out
+
+
 def points_to_chunks(points: Sequence[Any], *, mode: RetrievalMode) -> list[RetrievedChunk]:
     """Dựng `RetrievedChunk` từ point của Qdrant, gán điểm vào đúng nhánh.
 
@@ -489,6 +511,49 @@ class QdrantDenseRetriever(Retriever):
                 continue  # pragma: no cover - point ghi bởi phiên bản vector vô danh
             found[str(chunk_id)] = dict(vectors)
         return found
+
+    def upsert_precomputed(
+        self,
+        chunks: Sequence[Chunk],
+        vectors: Mapping[str, Mapping[str, Any]],
+        *,
+        batch_size: int = 128,
+    ) -> int:
+        """Ghi chunk kèm vector **đã có sẵn**, không gọi provider lần nào.
+
+        ## Vì sao cần cặp đôi của `fetch_vectors`
+
+        `fetch_vectors` đọc vector ra được từ `W3-07`, nhưng đường ghi tương ứng
+        (`upsert_reusing`) chỉ mượn được vector của point **đang nằm trong cùng
+        collection**. Không có đường nào đưa vector từ *bên ngoài* vào — nên một
+        index nhỏ dựng lại từ file là không làm được nếu không có model.
+
+        `W5-09` cần đúng điều đó: CI dựng một index 300 chunk từ vector đã đóng
+        băng, trên một runner không có GPU và không có 2,2 GB trọng số. Vector
+        thiếu ⇒ **ném**, không rơi về embed: người gọi ở đây cố ý không có model,
+        nên một lần rơi về im lặng là một `RuntimeError` khó hiểu ở tầng dưới.
+        """
+        from qdrant_client import models
+
+        if not chunks:
+            return 0
+        missing = [c.chunk_id for c in chunks if c.chunk_id not in vectors]
+        if missing:
+            raise KeyError(f"thiếu vector đúc sẵn cho {len(missing)} chunk, ví dụ {missing[:3]}")
+        written = 0
+        for start in range(0, len(chunks), batch_size):
+            batch = list(chunks[start : start + batch_size])
+            points = [
+                models.PointStruct(
+                    id=chunk_point_id(chunk.chunk_id),
+                    vector=_qdrant_vector(vectors[chunk.chunk_id]),
+                    payload=self._payload(chunk),
+                )
+                for chunk in batch
+            ]
+            self.client.upsert(collection_name=self.collection, points=points, wait=True)
+            written += len(points)
+        return written
 
     def upsert(self, chunks: Sequence[Chunk], *, batch_size: int = 128) -> int:
         """Ghi chunk vào collection. Gọi lại với cùng chunk thì không sinh bản trùng."""

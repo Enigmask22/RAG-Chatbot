@@ -28,3 +28,20 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+
+      # `W5-09`. Hai module test rẻ nhất trong repo (<1 s cộng lại) và là hai
+      # module đỏ vì **sửa tài liệu** chứ không phải vì sửa mã:
+      #   · `test_checklist_dashboard` — bảng đếm §1 lệch với §2–§9;
+      #   · `test_ci_tiers` — workflow CI và danh sách marker lệch nhau.
+      #
+      # ⚠️ Chúng có mặt ở đây vì một lỗi thật: commit `W5-08` báo "2 225 xanh"
+      # trong khi hai bài này đang đỏ. Bộ test chạy **trước** lần sửa
+      # CHECKLIST.md cuối cùng, rồi con số cũ đi vào commit message. Phép đo
+      # đúng lúc lấy, cũ lúc báo cáo — và chỉ có một chốt chặn chữa được nó:
+      # chạy lại **sau** khi mọi file đã chốt, tức ở đây.
+      - id: docs-consistency
+        name: bảng đếm CHECKLIST + tầng CI
+        entry: uv run pytest tests/unit/test_checklist_dashboard.py tests/unit/test_ci_tiers.py
+        language: system
+        pass_filenames: false
+        files: '^(plans/CHECKLIST\.md|\.github/workflows/.*|pyproject\.toml|tests/.*)$'

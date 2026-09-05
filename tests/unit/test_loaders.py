@@ -29,6 +29,13 @@ from rag_core.loaders import (
 )
 from rag_core.loaders.plain import load_plain
 
+pytestmark = pytest.mark.weights
+"""Ba module này parse tài liệu thật bằng docling, tức chúng cần **trọng số
+model tải về** — xem marker `weights` trong `pyproject.toml`. Vẫn chạy trong
+`make test` ở máy đã `make install`; CI nhanh loại chúng ra và
+`tests/unit/test_ci_tiers.py` khoá danh sách ấy lại."""
+
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "loaders"
 
 PDF = FIXTURES / "two-column.pdf"

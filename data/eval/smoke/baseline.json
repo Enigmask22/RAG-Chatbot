@@ -1,0 +1,12 @@
+{
+  "fixture": "smoke_v1.jsonl.gz",
+  "built_at": "2026-09-05T13:13:08.755757+00:00",
+  "top_k": 10,
+  "retriever": "qdrant-hybrid:rag_smoke_ci:rrf1-c20-w1:0.25",
+  "n_queries": 30,
+  "metrics": {
+    "smoke_mrr": 0.831111,
+    "smoke_ndcg@10": 0.847642,
+    "smoke_recall@10": 0.933333
+  }
+}

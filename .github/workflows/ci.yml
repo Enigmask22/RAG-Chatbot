@@ -1,0 +1,203 @@
+# CI của RAG Platform — `W5-09`.
+#
+# ## ⭐⭐ Bốn tầng, và cái bị bỏ ra phải là một con số
+#
+# Bộ test đầy đủ không chạy được trên một runner GitHub: `weights` cần ~4 GB
+# docling/EasyOCR cộng trọng số tải về, `gpu` cần GPU, `e2e` cần image 7,35 GB.
+# Bỏ chúng ra là bắt buộc. Bỏ chúng ra **mà không nói** là biến CI thành một
+# con dấu xanh chứng nhận một thứ không ai đo.
+#
+# Nên tập bị bỏ được khai thành marker (`weights`), và
+# `tests/unit/test_ci_tiers.py` đọc **chính file này** rồi đòi:
+#   1. mọi tổ hợp marker chạy được đều nằm trong ít nhất một tầng;
+#   2. tập không chạy đúng bằng tập đã khai, không hơn.
+# Thêm một module `weights` mà quên khai ⇒ đỏ.
+#
+# ## Vì sao không có job nào gọi LLM
+#
+# `TD-41` đo được `temp=0` ở DeepSeek **không** tất định; một cổng chặn PR dựa
+# trên nó sẽ đỏ vì lý do không nằm trong diff. Thêm nữa PR từ fork không thấy
+# secret, tức cổng biến mất đúng lúc cần nhất. Phần cần model chạy ở eval đêm
+# (`W5-10`), nơi độ nhiễu được xử lý bằng kiểm định chứ không bằng một ngưỡng.
+#
+# Chỗ trống ấy được lấp bằng `smoke-eval`: index đóng băng, không model, $0,
+# tất định — xem `pipeline/eval/smoke.py`.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Đẩy commit mới lên cùng một PR thì huỷ lượt chạy cũ. Không có dòng này thì
+  # một PR sửa 5 lần chiếm 5 slot runner cho 4 kết quả không ai đọc.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.9.11"
+  # ⚠️ Ghim đúng bản ở máy đã đo. `uv` giải phụ thuộc, nên một bản khác có thể
+  # chọn bộ wheel khác — đúng cơ chế đã làm hỏng image ở `W5-01` (`TD-62`).
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ---------------------------------------------------------------- tầng 1
+  lint:
+    name: lint (ruff + mypy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ⭐⭐ `--all-extras` TRỪ torch, và đó là một quyết định đã đo.
+      #
+      # Với bộ nhẹ (`--extra dev` + serving/llm/pipeline/qdrant), `mypy` báo
+      # **10 lỗi** — docling, transformers, huggingface_hub, mlflow không có
+      # trên đĩa nên `import` không phân giải được, cộng hai `unused-ignore`
+      # theo chiều ngược lại. Tức phán quyết của `make lint` không phải một
+      # tính chất của mã, nó là tính chất của mã **cộng một môi trường**.
+      #
+      # torch thì khác: nó nằm trong `ignore_missing_imports` của
+      # `pyproject.toml`, nên sự có mặt của nó **không thể** đổi kết quả — đã
+      # đo: 0 lỗi cả khi có lẫn khi không. Bỏ nó ra tiết kiệm ~4 GB wheel CUDA
+      # mà không đổi thứ đang được gác.
+      - name: Cài phụ thuộc (đủ extras, trừ torch)
+        run: uv sync --all-extras --no-install-package torch --no-install-package torchvision
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  # ---------------------------------------------------------------- tầng 2
+  unit:
+    name: unit (không cần service)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Cài phụ thuộc
+        run: uv sync --extra dev --extra serving --extra llm --extra pipeline --extra qdrant
+      - name: pytest
+        run: uv run pytest -m "not integration and not gpu and not e2e and not weights"
+
+  # ---------------------------------------------------------------- tầng 3
+  integration:
+    name: integration (Qdrant + Postgres + Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.15.1
+        ports: ["6333:6333"]
+      postgres:
+        # Cùng major với `infra/docker-compose.yml`. Lệch major nghĩa là CI gác
+        # một Postgres khác cái đang phục vụ, và RLS là thứ đổi theo phiên bản.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag_local_dev_only
+          POSTGRES_DB: rag
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rag"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # ⚠️ Không có `POSTGRES_DSN`: `Settings` **ghép** DSN từ sáu trường rời
+      # (xem `settings._dsn`). Đặt một biến tên `POSTGRES_DSN` ở đây sẽ bị
+      # `extra="ignore"` nuốt im lặng, và CI sẽ nối vào một Postgres không tồn tại.
+      QDRANT_URL: http://127.0.0.1:6333
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag_local_dev_only
+      POSTGRES_DB: rag
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Cài phụ thuộc
+        run: uv sync --extra dev --extra serving --extra llm --extra pipeline --extra qdrant
+      - name: Đợi Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:6333/readyz && exit 0
+            sleep 2
+          done
+          echo "Qdrant không sẵn sàng"; exit 1
+      - name: alembic upgrade head
+        run: uv run alembic -c alembic.ini upgrade head
+      - name: pytest
+        run: uv run pytest -m "integration and not weights"
+
+  # ---------------------------------------------------------------- tầng 4
+  smoke-eval:
+    name: smoke eval truy hồi (index đóng băng)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.15.1
+        ports: ["6333:6333"]
+    env:
+      QDRANT_URL: http://127.0.0.1:6333
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Cài phụ thuộc
+        run: uv sync --extra dev --extra pipeline --extra qdrant
+      - name: Đợi Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:6333/readyz && exit 0
+            sleep 2
+          done
+          echo "Qdrant không sẵn sàng"; exit 1
+      # Đây là cổng mà `G5` đòi: một PR làm tụt truy hồi phải đỏ ở đây.
+      - name: smoke eval
+        run: uv run python -m pipeline.eval.smoke --out smoke-result.json
+      - name: Tải kết quả lên
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-eval
+          path: smoke-result.json
+          if-no-files-found: warn
