@@ -39,23 +39,6 @@ ADMIN_KEY = "rag_acme_feedback_admin"
 OTHER_KEY = "rag_globex_feedback_key"
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _selector_loop() -> Iterator[None]:
-    """Xem `test_tracing.py::_selector_loop` — cùng lý do, cùng cách chữa."""
-    import asyncio
-    import sys
-
-    if not sys.platform.startswith("win"):
-        yield
-        return
-    previous = asyncio.get_event_loop_policy()
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    try:
-        yield
-    finally:
-        asyncio.set_event_loop_policy(previous)
-
-
 class _CountingSink:
     """Đứng thay `LangfuseSink`: đếm điểm thay vì gửi chúng đi."""
 

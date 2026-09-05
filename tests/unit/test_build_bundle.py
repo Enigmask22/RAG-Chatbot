@@ -11,6 +11,7 @@ nguồn (config, báo cáo build, lượt eval) **không nói về cùng một i
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -224,16 +225,76 @@ def test_the_committed_sample_bundle_still_loads() -> None:
     assert bundle.eval.retrieval_metrics["ndcg@10"] == pytest.approx(0.6888, abs=1e-4)
 
 
-def test_the_sample_bundle_matches_the_real_index_config() -> None:
-    """Ghim rằng bundle mẫu được sinh từ artifact thật, không phải gõ tay."""
+def _real_config() -> Any:
+    from pipeline.indexing.config import load_index_config
+
+    return load_index_config(Path("configs/indexing/bgem3-contextual.yaml"))
+
+
+def test_the_sample_bundle_matches_the_real_chunking_config() -> None:
+    """Ghim rằng bundle mẫu được sinh từ artifact thật, không phải gõ tay.
+
+    Dùng `chunking_fingerprint` vì nó **không** băm đường dẫn nào, tức nó giống
+    nhau trên mọi hệ điều hành. Vế `fingerprint` tách xuống bài dưới — xem
+    `TD-82`.
+    """
     if not SAMPLE.is_file():  # pragma: no cover
         pytest.skip("chưa sinh bundle mẫu")
     raw = json.loads(SAMPLE.read_text(encoding="utf-8"))
-    from pipeline.indexing.config import load_index_config
+    assert (
+        raw["components"]["chunking"]["chunking_fingerprint"] == _real_config().chunking_fingerprint
+    )
 
-    config = load_index_config(Path("configs/indexing/bgem3-contextual.yaml"))
-    assert raw["components"]["index"]["fingerprint"] == config.fingerprint
-    assert raw["components"]["chunking"]["chunking_fingerprint"] == config.chunking_fingerprint
+
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason=(
+        "TD-82: `IndexConfig.fingerprint` băm cả `contexts_path`, và `Path` "
+        r"serialise ra `\` trên Windows / `/` trên POSIX — cùng một config cho "
+        "HAI vân tay. Bundle đã commit mang giá trị của Windows."
+    ),
+)
+def test_the_sample_bundle_matches_the_real_index_config() -> None:
+    if not SAMPLE.is_file():  # pragma: no cover
+        pytest.skip("chưa sinh bundle mẫu")
+    raw = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    assert raw["components"]["index"]["fingerprint"] == _real_config().fingerprint
+
+
+def test_the_index_fingerprint_is_still_path_separator_dependent() -> None:
+    """⚠️ Ghim **món nợ**, không ghim hành vi đúng — `TD-82`.
+
+    ## Vì sao một lỗi lại được khoá bằng test thay vì sửa ngay
+
+    `fingerprint` là trường chứng minh *"index này được build bằng đúng config
+    này"*, và `W4-02`/`TD-38` dựng phép kiểm `runtime_drift` lên trên nó. Sửa
+    nó **đổi giá trị**, tức ba manifest đã commit (`0.1.0`, `0.2.0`, `0.2.1`)
+    cộng `index_fingerprint` nằm trong các artifact eval đã lưu đều thành sai —
+    một lần đúc lại bundle, không phải một dòng diff.
+
+    Nên hôm nay nó là nợ có tên, và bài này đỏ vào **đúng ngày ai đó sửa**.
+
+    ## Vì sao không so hai fingerprint với nhau
+
+    Cách hiển nhiên — dựng một config thứ hai với đường dẫn viết bằng `/` rồi
+    đòi hai fingerprint khác nhau — **không chạy được**: `Path("a/b")` và
+    `Path("a\b")` là cùng một object trên Windows. Khác biệt chỉ tồn tại
+    *giữa hai hệ điều hành*, nên bài test phải ghim đúng hai mắt xích tạo ra
+    nó: đường dẫn serialise theo nền tảng, và chuỗi ấy đi thẳng vào hàm băm.
+    """
+    import inspect
+
+    config = _real_config()
+    blob = config.contextual.model_dump_json()
+    assert ("\\\\" in blob) == (os.name == "nt"), (
+        f"`contexts_path` serialise ra {blob!r} — nếu nó đã được chuẩn hoá thì "
+        "TD-82 vừa được sửa: đúc lại ba manifest bundle rồi xoá bài test này"
+    )
+    source = inspect.getsource(type(config).fingerprint.fget)
+    assert "contextual" in source, (
+        "`fingerprint` thôi băm `contextual` — TD-82 có thể đã được sửa theo "
+        "hướng khác; kiểm lại ba manifest bundle"
+    )
 
 
 # ---------------------------------------------------------------------------

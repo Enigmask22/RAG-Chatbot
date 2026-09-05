@@ -49,23 +49,6 @@ _METRIC_NAME = re.compile(r"\brag_[a-z_]+\b")
 `histogram_quantile` là của Prometheus, không phải của chúng ta."""
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _selector_loop() -> Iterator[None]:
-    """Xem `test_tracing.py::_selector_loop` — cùng lý do, cùng cách chữa."""
-    import asyncio
-    import sys
-
-    if not sys.platform.startswith("win"):
-        yield
-        return
-    previous = asyncio.get_event_loop_policy()
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    try:
-        yield
-    finally:
-        asyncio.set_event_loop_policy(previous)
-
-
 @pytest.fixture(scope="module")
 def metrics_workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("metrics")

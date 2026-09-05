@@ -42,6 +42,7 @@ WEIGHTS_MODULES = {
     "tests/unit/test_loaders.py",
     "tests/unit/test_parse_pin.py",
     "tests/unit/test_scan_detection.py",
+    "tests/unit/test_structure_chunker.py",
 }
 """Toàn bộ lỗ của tầng CI nhanh, viết ra thành một danh sách.
 
@@ -153,13 +154,21 @@ class TestEveryTestBelongsToATier:
         """Tính chất **kín**: một tầng nhận bài `weights` sẽ đỏ vì thiếu 4 GB
         phụ thuộc, tức đỏ vì hạ tầng chứ không vì diff — thứ dạy người ta bỏ
         qua màu đỏ."""
+        others = sorted(markers - set(NOT_RUN_IN_CI))
         violations = []
         for blocked in NOT_RUN_IN_CI:
-            active = frozenset({blocked})
-            for job, expr in tiers.items():
-                if _matches(expr, active, markers):
-                    violations.append(f"{job} nhận `{blocked}` qua biểu thức {expr!r}")
-        assert not violations, "; ".join(violations)
+            # ⚠️ Phải quét MỌI tổ hợp chứa `blocked`, không chỉ `{blocked}` một
+            # mình. Bản đầu chỉ thử singleton và nó xanh — trong khi
+            # `test_reranked_retriever.py` mang `{integration, gpu}` và biểu
+            # thức `integration and not weights` nhận nó. Repro trên Linux tìm
+            # ra 9 bài chết vì CUDA; bài canh này thì không.
+            for size in range(len(others) + 1):
+                for combo in itertools.combinations(others, size):
+                    active = frozenset({blocked, *combo})
+                    for job, expr in tiers.items():
+                        if _matches(expr, active, markers):
+                            violations.append(f"{job} nhận {sorted(active)} qua biểu thức {expr!r}")
+        assert not violations, "; ".join(sorted(set(violations))[:6])
 
     def test_every_name_in_a_tier_expression_is_a_registered_marker(
         self, tiers: dict[str, str], markers: set[str]

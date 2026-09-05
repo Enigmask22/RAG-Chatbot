@@ -164,36 +164,6 @@ class Recorder:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _selector_loop() -> Iterator[None]:
-    """⚠️ Trên Windows, `TestClient` dựng vòng lặp qua `asyncio.run`, và mặc định
-    ở đó là `ProactorEventLoop` — thứ `psycopg` async **từ chối** chạy trên
-    (`InterfaceError: cannot use the 'ProactorEventLoop'`).
-
-    Đường production không gặp vì `serving/__main__.py` tự chạy `Server.serve()`
-    trên một `SelectorEventLoop` — và docstring ở đó ghi rõ rằng **đổi policy
-    không đủ cho uvicorn**, vì `uvicorn/loops/asyncio.py` trả thẳng một
-    `loop_factory` chứ không hỏi policy.
-
-    Ở đây thì đủ, và khác biệt đáng ghi: `TestClient` dựng vòng lặp qua
-    `anyio.start_blocking_portal` → `asyncio.run`, và `asyncio.run` **có** đi
-    qua policy. Hai đường vào khác nhau, hai cách chữa khác nhau cho cùng một
-    lỗi — đo được cả hai, không suy từ một cái ra cái kia.
-    """
-    import asyncio
-    import sys
-
-    if not sys.platform.startswith("win"):
-        yield
-        return
-    previous = asyncio.get_event_loop_policy()
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    try:
-        yield
-    finally:
-        asyncio.set_event_loop_policy(previous)
-
-
 @pytest.fixture(scope="module")
 def tracing_workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("tracing")

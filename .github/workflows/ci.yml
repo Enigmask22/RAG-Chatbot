@@ -160,7 +160,13 @@ jobs:
       - name: alembic upgrade head
         run: uv run alembic -c alembic.ini upgrade head
       - name: pytest
-        run: uv run pytest -m "integration and not weights"
+        # ⚠️ `not gpu` là bắt buộc, không thừa: `test_reranked_retriever.py`
+        # mang `integration` ở module và `gpu` ở lớp, nên một biểu thức chỉ loại
+        # `weights` vẫn nhận nó — rồi 9 bài chết vì runner không có CUDA.
+        # Loại TẤT CẢ marker mà CI không chạy được, kể cả tổ hợp chưa tồn tại
+        # hôm nay: một biểu thức "trừ đúng cái đang có" là một biểu thức phải
+        # sửa lại vào đúng ngày ai đó thêm marker thứ hai lên một bài.
+        run: uv run pytest -m "integration and not weights and not gpu and not e2e"
 
   # ---------------------------------------------------------------- tầng 4
   smoke-eval:

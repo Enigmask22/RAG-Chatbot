@@ -313,7 +313,11 @@ class TestBaDinhDangNguonRaCungMotSectionPath:
     `W3-03` **không** dựng quy tắc độ sâu thứ hai bằng cách dò `#`.
     """
 
+    # `weights` bên cạnh `integration`: bài này gọi `load_document` trên `.docx`
+    # và `.html`, tức nó cần docling + trọng số layout — không cần một service
+    # nào. Hai lý do chậm khác nhau, và CI đối xử với chúng khác nhau (`W5-09`).
     @pytest.mark.integration
+    @pytest.mark.weights
     def test_ba_cap_va_khop_voi_section_path_at(self, name: str) -> None:
         from rag_core.loaders import load_document
 
