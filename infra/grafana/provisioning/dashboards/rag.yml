@@ -1,0 +1,16 @@
+# Nạp mọi dashboard JSON trong `infra/grafana/dashboards/` — `W5-07`.
+apiVersion: 1
+
+providers:
+  - name: rag
+    type: file
+    folder: RAG
+    # ⚠️ `false`: bảng là **mã**, không phải trạng thái runtime. Cho phép sửa
+    # trong giao diện thì bản trong git và bản đang chạy tách đôi ngay lần đầu
+    # có ai kéo một panel, và không ai biết bản nào đúng.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      # Giữ nguyên cấu trúc thư mục thay vì gộp phẳng — chỗ này mới có một file,
+      # nhưng `W5-08`/`W6-05` sẽ thêm bảng của chúng.
+      foldersFromFilesStructure: false

@@ -92,8 +92,13 @@ class TestTree:
         trace = Trace()
         with trace.span("s") as span:
             assert not span.closed
-        assert span.closed
-        assert span.duration_ms is not None
+        # `Span.__exit__` khai `Literal[False]`, nên mypy biết khối `with` không
+        # nuốt ngoại lệ và coi mọi dòng sau nó là **đến được**. Đọc `span` từ
+        # `trace` thay vì từ biến của `with` giữ đúng ý mà không cần `type: ignore`.
+        closed = trace.find("s")
+        assert closed is not None
+        assert closed.closed
+        assert closed.duration_ms is not None
 
     def test_an_exception_marks_the_span_error_and_still_propagates(self) -> None:
         trace = Trace()
@@ -514,7 +519,7 @@ class _Reranked:
         self.reranker: Any = _Reranker()
 
     def retrieve(self, query: str, top_k: int = 10, *, filters: Any = None) -> list[Any]:
-        pool = self.base.retrieve(query, 50, filters=filters)
+        pool: list[Any] = self.base.retrieve(query, 50, filters=filters)
         self.reranker.score(query, [h.chunk.chunk_id for h in pool])
         return pool
 

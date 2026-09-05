@@ -57,6 +57,7 @@ COMPOSE := docker compose -f infra/docker-compose.yml --env-file .env
 # đủ biến của nó, và một `.env` thiếu một dòng không được phép làm nó lệch
 # cấu hình so với lần dựng trước.
 LANGFUSE := docker compose -f infra/docker-compose.langfuse.yml
+METRICS := docker compose -f infra/docker-compose.metrics.yml
 
 # Clone sạch chưa có `.env`; compose sẽ chết vì `--env-file`. Tự tạo từ mẫu để
 # `make up` chạy được ngay, secret vẫn phải điền tay sau.
@@ -87,6 +88,19 @@ down-langfuse:  ## Tắt Langfuse (giữ nguyên volume dữ liệu)
 .PHONY: logs-langfuse
 logs-langfuse:  ## Xem log Langfuse
 	$(LANGFUSE) logs -f --tail=100
+
+.PHONY: metrics-token
+metrics-token:  ## `W5-07`: cấp khoá cho Prometheus scrape /metrics (chạy MỘT lần)
+	$(PY) python -m serving.core.auth mint --tenant metrics --rpm 600 --token-file secrets/metrics-token
+
+.PHONY: up-metrics
+up-metrics:  ## `W5-07`: bật Prometheus + Grafana (bảng "RAG Health" ở :3001)
+	@mkdir -p secrets
+	$(METRICS) up -d --wait
+
+.PHONY: down-metrics
+down-metrics:  ## Tắt Prometheus + Grafana (giữ nguyên volume dữ liệu)
+	$(METRICS) down
 
 .PHONY: down
 down:  ## Tắt hạ tầng (giữ nguyên volume dữ liệu)

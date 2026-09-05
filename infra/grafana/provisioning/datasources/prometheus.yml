@@ -1,0 +1,20 @@
+# Nguồn dữ liệu khai từ file, không bấm trong giao diện — `W5-07`.
+#
+# `uid` cố định (`rag-prom`) là điều kiện để dashboard JSON tham chiếu được nó.
+# Grafana tự sinh uid ngẫu nhiên khi tạo qua UI, và một dashboard commit vào git
+# với uid ngẫu nhiên chỉ mở được trên đúng cái Grafana đã sinh ra nó.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: rag-prom
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Phải khớp `scrape_interval` của Prometheus: Grafana dùng nó làm bước
+      # tối thiểu cho `$__rate_interval`, và khai sai thì mọi `rate()` trên
+      # cửa sổ ngắn trả về khoảng trống thay vì số.
+      timeInterval: 15s

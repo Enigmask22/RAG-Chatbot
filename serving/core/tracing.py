@@ -59,6 +59,7 @@ from typing import Any, Literal, Protocol
 
 __all__ = [
     "NONCE_MASK",
+    "FanoutSink",
     "Span",
     "SpanKind",
     "Trace",
@@ -243,6 +244,40 @@ class TraceSink(Protocol):
     """Nơi cây span đi tới. Hợp đồng: **không chặn**, và **không ném**."""
 
     def submit(self, trace: Trace) -> None: ...
+
+
+@dataclass
+class FanoutSink:
+    """Một cây span, nhiều người tiêu thụ. `W5-07`.
+
+    ## ⭐⭐ Thứ tự ở đây là một quyết định, không phải một danh sách
+
+    `MetricsSink` phải đứng **trước** `LangfuseSink`. Sink thứ hai vứt trace khi
+    hàng đợi đầy — có chủ đích, xem docstring của nó — và hàng đợi đầy đúng vào
+    lúc hệ thống bận nhất. Đảo thứ tự thì bộ đếm RED cũng mất đúng phần tải cao,
+    và một bảng thiếu đúng lúc có sự cố là một bảng nói ngược.
+
+    Ràng buộc kèm theo: sink đứng trước phải **rẻ và đồng bộ**. `MetricsSink`
+    chỉ cộng số nguyên trong bộ nhớ nên nó đủ điều kiện; một sink ghi đĩa hay
+    gọi mạng thì không, và nó phải xuống cuối hàng.
+
+    Một sink ném không được phép chặn sink sau nó — cả hai đã hứa không ném, và
+    ở đây là chỗ lời hứa ấy được cưỡng chế.
+    """
+
+    sinks: tuple[TraceSink, ...]
+
+    def submit(self, trace: Trace) -> None:
+        for sink in self.sinks:
+            try:
+                sink.submit(trace)
+            except Exception:
+                logger.warning(
+                    "tracing: sink %s từ chối trace %s",
+                    type(sink).__name__,
+                    trace.id,
+                    exc_info=True,
+                )
 
 
 @dataclass

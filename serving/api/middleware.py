@@ -38,6 +38,7 @@ import uuid
 from typing import Any
 
 from serving.core.logging import bind_request_id, reset_request_id
+from serving.core.metrics import route_label
 
 __all__ = ["REQUEST_ID_HEADER", "RequestContextMiddleware"]
 
@@ -70,10 +71,21 @@ def _incoming_request_id(scope: dict[str, Any]) -> str | None:
 
 
 class RequestContextMiddleware:
-    """Gắn `request_id` cho mọi request, dội nó về header, và ghi một dòng access."""
+    """Gắn `request_id` cho mọi request, dội nó về header, và ghi một dòng access.
 
-    def __init__(self, app: Any) -> None:
+    `W5-07` thêm một việc thứ tư: đếm **mọi** request vào `rag_http_*`.
+
+    ⭐⭐ Phải ở đây chứ không ở tầng lượt chat, và lý do là một chế độ hỏng cụ
+    thể. Bộ đếm dựng từ cây span chỉ thấy những lượt `/chat` đã **qua được
+    auth**; nên nếu khoá API hỏng hàng loạt — file khoá nạp sai, hạn mức chặn
+    tất cả — thì bảng hiện ra là **traffic bằng 0**, thứ trông y hệt một đêm
+    yên tĩnh. Middleware là lớp ngoài cùng, nên nó là chỗ duy nhất phân biệt
+    được "không ai hỏi" với "ai cũng bị chặn".
+    """
+
+    def __init__(self, app: Any, *, metrics: Any = None) -> None:
         self.app = app
+        self.metrics = metrics
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -110,6 +122,19 @@ class RequestContextMiddleware:
             # ⚠️ Đo ở đây nên với phản hồi dạng dòng, `duration_ms` là **thời
             # gian tới token cuối**, không phải thời gian tới byte đầu. Hai con
             # số ấy khác nhau rất xa ở SSE; `W4-06` phải log thêm TTFB riêng.
+            elapsed = time.perf_counter() - start
+            if self.metrics is not None:
+                # ⚠️ Nuốt exception: một `route_label` chưa biết đường dẫn mới,
+                # hay một registry hỏng, không được phép biến một `200` đã gửi
+                # xong thành một traceback trong log của mọi request.
+                try:
+                    route = route_label(scope.get("path", ""))
+                    self.metrics.http_requests.labels(
+                        method=scope.get("method", "?"), route=route, status=str(status)
+                    ).inc()
+                    self.metrics.http_duration.labels(route=route).observe(elapsed)
+                except Exception:
+                    logger.warning("metrics: không ghi được số đo HTTP", exc_info=True)
             logger.info(
                 "%s %s → %d",
                 scope.get("method", "?"),
@@ -122,7 +147,7 @@ class RequestContextMiddleware:
                     # nhất trong mọi loại log.
                     "http_path": scope.get("path"),
                     "http_status": status,
-                    "duration_ms": round((time.perf_counter() - start) * 1000, 2),
+                    "duration_ms": round(elapsed * 1000, 2),
                 },
             )
             reset_request_id(token)

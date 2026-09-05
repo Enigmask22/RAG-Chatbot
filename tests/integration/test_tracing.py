@@ -229,7 +229,7 @@ def app(tracing_workspace: Path, database: Any) -> Iterator[tuple[TestClient, Re
     )
     api = create_app(
         settings=settings,
-        build_runtime=lambda bundle: (FakeReranked(), None),
+        build_runtime=_fake_runtime,
         probe_factory=lambda registry: _always_ready(),
     )
     recorder = Recorder()
@@ -240,20 +240,35 @@ def app(tracing_workspace: Path, database: Any) -> Iterator[tuple[TestClient, Re
         yield client, recorder
 
 
+def _fake_runtime(bundle: Any) -> tuple[Any, Any]:
+    """Chuỗi truy hồi giả mang **đúng hình dạng** chuỗi thật (`.base` +
+    `.reranker`), nên `instrument_retriever` chạy đúng nhánh của production."""
+    return FakeReranked(), None
+
+
 def _always_ready() -> Any:
     from serving.core.probes import ReadinessProbes
 
     return ReadinessProbes(checks={})
 
 
-def _ask(client: TestClient, message: str = "RRF là gì?", **body: Any) -> httpx.Response:
+def _ask(
+    client: TestClient, message: str = "RRF là gì?", *, key: str = KEY, **body: Any
+) -> httpx.Response:
+    """Một lượt `/chat` đọc tới khung cuối.
+
+    `key` mở ra vì `test_metrics_endpoint.py` dùng lại hàm này với kho khoá của
+    nó — hai module dựng hai app riêng để bộ đếm Prometheus của bên này không
+    đếm request của bên kia.
+    """
     response = client.post(
         "/chat",
         json={"message": message, **body},
-        headers={"Authorization": f"Bearer {KEY}"},
+        headers={"Authorization": f"Bearer {key}"},
     )
     response.read()
-    return response
+    result: httpx.Response = response
+    return result
 
 
 def _names(trace: Trace) -> list[str]:
@@ -474,7 +489,7 @@ class TestTracingStatus:
         from serving.core.langfuse import LangfuseSink
 
         client, _ = app
-        client.app.state.trace_sink = LangfuseSink(  # type: ignore[attr-defined]
+        client.app.state.trace_sink = LangfuseSink(
             host="http://127.0.0.1:3000",
             public_key="pk",
             secret_key="sk",
@@ -486,7 +501,7 @@ class TestTracingStatus:
 
     def test_it_says_so_plainly_when_tracing_is_off(self, app: Any) -> None:
         client, _ = app
-        client.app.state.trace_sink = None  # type: ignore[attr-defined]
+        client.app.state.trace_sink = None
         body = client.get("/admin/tracing", headers={"Authorization": f"Bearer {ADMIN_KEY}"}).json()
         assert body == {
             "enabled": False,

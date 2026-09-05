@@ -65,6 +65,15 @@ serving = [
     # **từ chính image này**, và đó là cách duy nhất bảo đảm migration và đoạn mã
     # giả định nó đã chạy được ship cùng nhau.
     "alembic>=1.13",
+    # `W5-07`. ⭐ Ở đây dùng thư viện, khác quyết định của `W5-06` (viết tay
+    # client Langfuse) — và phép thử phân biệt hai chỗ là **dữ liệu người dùng
+    # có đi qua không**. Gói tin Langfuse mang nguyên văn prompt, nên phải kiểm
+    # soát từng byte rời khỏi tiến trình (`tracing.redact`). Số đo Prometheus
+    # không mang một ký tự nào của người dùng — chỉ tên metric, nhãn có tập hữu
+    # hạn, và số. Không còn lý do để viết tay, mà định dạng phơi bày thì có đủ
+    # thứ tinh vi (thứ tự `le`, `+Inf`, `_sum`/`_count`, escaping) để một bản tự
+    # viết là một khoản nợ không đổi lại được gì.
+    "prometheus-client>=0.20",
 ]
 dev = [
     "pytest>=8.2",

@@ -207,6 +207,15 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI m�
     new.add_argument("--file", type=Path, default=Path("secrets/api-keys.json"))
     new.add_argument("--scope", action="append", default=[], help=f"vd. --scope {ADMIN_SCOPE}")
     new.add_argument("--rpm", type=int, default=60)
+    new.add_argument(
+        "--token-file",
+        type=Path,
+        default=None,
+        help=(
+            "Ghi key thô ra file này thay vì chỉ in ra màn hình. Dành cho tiến "
+            "trình hạ tầng đọc key từ đĩa (Prometheus `credentials_file`)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     raw_key = mint(
@@ -215,7 +224,18 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI m�
     print(f"tenant   : {args.tenant}")
     print(f"scopes   : {args.scope or '(không)'}")
     print(f"kho      : {args.file}")
-    print(f"\nAPI key (chỉ hiện MỘT lần, không đọc lại được):\n\n    {raw_key}\n")
+    if args.token_file is not None:
+        # ⚠️⚠️ Ghi key **thô** ra đĩa. Không tránh được: Prometheus đọc bearer
+        # token từ một file (`credentials_file`), và một scraper không gõ được
+        # mật khẩu. Điều kiện đi kèm là ai gọi cờ này phải biết ba điều — file
+        # nằm trong thư mục **không commit**, quyền đọc nó là quyền gọi API, và
+        # thu hồi nghĩa là xoá dòng tương ứng trong kho khoá **rồi khởi động
+        # lại server** (kho chỉ nạp lúc khởi động, `W4-04`).
+        args.token_file.parent.mkdir(parents=True, exist_ok=True)
+        args.token_file.write_text(raw_key, encoding="utf-8")
+        print(f"token    : đã ghi ra {args.token_file} (KHÔNG commit file này)")
+    else:
+        print(f"\nAPI key (chỉ hiện MỘT lần, không đọc lại được):\n\n    {raw_key}\n")
     return 0
 
 

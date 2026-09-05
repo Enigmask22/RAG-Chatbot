@@ -1,0 +1,104 @@
+# Prometheus + Grafana cho Serving Plane — `W5-07`.
+#
+#     make metrics-token    # cấp khoá cho scraper (một lần)
+#     make up-metrics       # lên, chờ healthy
+#     make down-metrics     # xuống, GIỮ dữ liệu
+#
+# Grafana: http://127.0.0.1:3001  (admin / admin_local_dev_only)
+# Prometheus: http://127.0.0.1:9090
+#
+# ## ⭐ Vì sao tách khỏi `docker-compose.langfuse.yml`
+#
+# Cả hai đều là "quan sát", nhưng chúng hỏng theo hai chiều ngược nhau và được
+# gỡ bằng hai câu hỏi khác nhau:
+#
+# | | Langfuse | Prometheus |
+# |---|---|---|
+# | chiều | API **đẩy** đi | Prometheus **kéo** về |
+# | hỏng thì hỏi | *"hàng đợi của tôi có đầy không"* (`/admin/tracing`) | *"target có `up` không"* |
+# | API tắt ⇒ | không có gì xảy ra | `up == 0`, và đó là **tín hiệu** |
+#
+# Gộp chúng thì `make up-metrics` đánh thức ClickHouse + MinIO, và một
+# `docker compose down` gỡ luôn phần kia. Cổng 3001 chứ không 3000 vì Langfuse
+# đã giữ 3000.
+#
+# ⚠️ Mật khẩu dưới đây là mật khẩu **local, công khai, chỉ để dev** — cùng quy
+# ước với stack Langfuse.
+
+name: rag-metrics
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 15 ngày là quá đủ cho một máy dev, và nó là trần đĩa có thể nói ra được
+      # thay vì một thư mục lớn dần mãi.
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Khoá scraper. `required: false` không tồn tại cho volume, nên thư mục
+      # phải có sẵn — `.gitkeep` giữ nó. Thiếu file `metrics-token` bên trong
+      # thì job hiện `up == 0` kèm 401, đúng như ý.
+      - ../secrets:/run/secrets:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      # Mạng của `rag-platform`, để scrape thẳng `api:8000` khi API chạy bằng
+      # `--profile api`. `external: true` nghĩa là file này KHÔNG tạo nó — nó
+      # phải có sẵn, tức `make up` đã chạy. Chưa có thì `up-metrics` báo lỗi
+      # ngay và nói tên mạng còn thiếu, thay vì lên rồi scrape vào hư không.
+      - rag-platform
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    restart: unless-stopped
+    depends_on:
+      prometheus: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin_local_dev_only
+      # Tắt hẳn phần gọi ra ngoài: một bảng điều khiển local không có lý do gì
+      # để kiểm tra phiên bản mới hay gửi số liệu phân tích.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      # ⭐⭐ Provisioning từ file, KHÔNG bấm trong giao diện. Một bảng dựng bằng
+      # tay sống trong SQLite của Grafana và biến mất cùng volume; bảng ở đây
+      # nằm trong git, nên nó review được, diff được, và `W5-09` dựng lại được
+      # mà không có ai bấm. Đúng lý lẽ đã dùng cho `LANGFUSE_INIT_*` ở `W5-06`.
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+networks:
+  default: {}
+  rag-platform:
+    external: true
+    name: rag-platform_default
+
+volumes:
+  prometheus_data:
+  grafana_data:

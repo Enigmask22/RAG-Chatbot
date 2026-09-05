@@ -1,0 +1,90 @@
+{
+  "note": "Hiệu chỉnh `looks_like_refusal` với nhãn REFUSAL của judge (W5-02), cache đóng băng, $0. Từ khoá được BỔ SUNG chỉ bằng cách nhìn ca bỏ sót ở nửa A; con số đáng tin là nửa B (giữ ngoài).",
+  "split": "sha256(query_id) % 2 — A = hiệu chỉnh, B = giữ ngoài",
+  "before": {
+    "note": "danh sách từ khoá bản đầu, toàn bộ 242 câu",
+    "precision": 0.8378,
+    "recall": 0.6327,
+    "f1": 0.7209,
+    "judge_rate": 0.2025,
+    "heuristic_rate": 0.1529,
+    "bias_absolute": -0.0496,
+    "bias_relative": -0.2449,
+    "tp": 31,
+    "fp": 6,
+    "fn": 18,
+    "tn": 187,
+    "n": 242
+  },
+  "after_tune_all": {
+    "n": 242,
+    "tp": 45,
+    "fp": 6,
+    "fn": 4,
+    "tn": 187,
+    "precision": 0.8824,
+    "recall": 0.9184,
+    "f1": 0.9,
+    "judge_rate": 0.2025,
+    "heuristic_rate": 0.2107,
+    "bias_absolute": 0.0083,
+    "bias_relative": 0.0408,
+    "misses_sample": [
+      "Based on the provided context, the World Bank's Vietnam Development Report 2006 notes that fee exemptions are effective at increas",
+      "Dựa trên các nguồn được cung cấp, không có nguồn nào đề cập đến việc các biện pháp giám sát trong chiến lược du lịch Việt Nam nên "
+    ],
+    "false_alarms_sample": [
+      "Dựa trên ngữ cảnh được cung cấp, tôi không tìm thấy thông tin so sánh trực tiếp giữa thị trường Nhật Bản với ba thị trường Mỹ, EU ",
+      "Based on the provided context, the World Bank's \"Taking Stock\" report describes a comprehensive reform program with three basic co"
+    ]
+  },
+  "after_tune_A_used_for_tuning": {
+    "n": 120,
+    "tp": 25,
+    "fp": 3,
+    "fn": 2,
+    "tn": 90,
+    "precision": 0.8929,
+    "recall": 0.9259,
+    "f1": 0.9091,
+    "judge_rate": 0.225,
+    "heuristic_rate": 0.2333,
+    "bias_absolute": 0.0083,
+    "bias_relative": 0.037,
+    "misses_sample": [
+      "Based on the provided context, the JETRO survey data mentioned in the World Bank report 'Vibrant Vietnam' gives figures for China ",
+      "Based on the provided context, the World Bank report from June 2010 does not state a final GDP growth rate for the entire year of "
+    ],
+    "false_alarms_sample": [
+      "Based on the provided context, the World Bank's \"Taking Stock\" report describes a comprehensive reform program with three basic co",
+      "Dựa trên các nguồn được cung cấp, tôi không tìm thấy thông tin cụ thể về \"thách thức chính về chi phí quy định\" mà ngành xe tải ph"
+    ]
+  },
+  "after_tune_B_held_out": {
+    "n": 122,
+    "tp": 20,
+    "fp": 3,
+    "fn": 2,
+    "tn": 97,
+    "precision": 0.8696,
+    "recall": 0.9091,
+    "f1": 0.8889,
+    "judge_rate": 0.1803,
+    "heuristic_rate": 0.1885,
+    "bias_absolute": 0.0082,
+    "bias_relative": 0.0455,
+    "misses_sample": [
+      "Based on the provided context, the World Bank's Vietnam Development Report 2006 notes that fee exemptions are effective at increas",
+      "Dựa trên các nguồn được cung cấp, không có nguồn nào đề cập đến việc các biện pháp giám sát trong chiến lược du lịch Việt Nam nên "
+    ],
+    "false_alarms_sample": [
+      "Dựa trên ngữ cảnh được cung cấp, tôi không tìm thấy thông tin so sánh trực tiếp giữa thị trường Nhật Bản với ba thị trường Mỹ, EU ",
+      "Based on the provided context, the CGE model assumes that a one percent decrease in air pollution augments labor productivity by 0"
+    ]
+  },
+  "judge": {
+    "model": "deepseek-v4-flash",
+    "cache": ".cache\\judge-w5.sqlite3",
+    "frozen": true
+  }
+}

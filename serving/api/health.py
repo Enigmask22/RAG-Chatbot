@@ -32,8 +32,9 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from serving.core.metrics import CONTENT_TYPE_LATEST
 from serving.core.probes import ReadinessProbes
 from serving.core.registry import BundleRegistry
 
@@ -89,3 +90,48 @@ async def ready(response: Response, registry: RegistryDep, probes: ProbesDep) ->
     if not ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"ready": ok, "checks": checks, **registry.status()}
+
+
+@router.get("/metrics")
+def metrics(request: Request) -> Response:
+    """Bản phơi bày Prometheus — `W5-07`.
+
+    ## ⭐⭐ Endpoint này **có** xác thực, và đó là lựa chọn ngược quy ước
+
+    Quy ước Prometheus là `/metrics` mở, vì nó thường nằm trên một cổng nội bộ
+    mà chỉ scraper với tới được. Ở đây không có cổng ấy: cùng một tiến trình,
+    cùng một cổng 8000, và `W4-13` publish nó ra `127.0.0.1:8000`.
+
+    Nên `/metrics` **không** nằm trong `PUBLIC_PATHS`. Nó cần một khoá hợp lệ —
+    và `AuthMiddleware` cho nó đúng thế, không hơn: đường dẫn không bắt đầu
+    bằng `/admin` nên không đòi scope admin, vì scraper là một tiến trình hạ
+    tầng chứ không phải một người vận hành.
+
+    ⚠️ Điều kiện đi kèm: **không nhãn nào ở đây được mang tên tenant** — xem
+    docstring `serving/core/metrics.py`. Một khoá hợp lệ bất kỳ đọc được endpoint
+    này, kể cả khoá của tenant khác; nếu nhãn có `tenant` thì mọi khách hàng đọc
+    được danh sách khách hàng.
+
+    ⭐ Hai gauge được **làm mới ngay tại đây** thay vì cập nhật lúc chúng đổi.
+    Chúng là *trạng thái*, không phải *sự kiện*: phiên bản bundle đang phục vụ
+    và độ dài hàng đợi trace đúng ở thời điểm scrape, không đúng ở thời điểm
+    một request nào đó tình cờ chạm vào chúng. Với một gauge, "mới nhất lúc
+    được hỏi" là định nghĩa đúng.
+    """
+    bag = getattr(request.app.state, "metrics", None)
+    if bag is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chưa bật số đo")
+
+    registry: BundleRegistry = request.app.state.registry
+    version = registry.status().get("active")
+    if version:
+        bag.bundle.labels(version=version).set(1)
+
+    sink = getattr(request.app.state, "trace_sink", None)
+    status_of = getattr(sink, "status", None)
+    if callable(status_of):
+        for key, value in status_of().items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                bag.trace_sink.labels(state=key).set(value)
+
+    return Response(content=bag.render(), media_type=CONTENT_TYPE_LATEST)

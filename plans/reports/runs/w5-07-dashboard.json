@@ -1,0 +1,121 @@
+{
+  "measured_at": "2026-09-05T11:21:15.321260+00:00",
+  "window": "[10m]",
+  "panels": {
+    "scrape_up": {
+      "expr": "max(up{job=\"rag-serving\"})",
+      "value": 1.0
+    },
+    "http_rps": {
+      "expr": "sum(rate(rag_http_requests_total[10m]))",
+      "value": 0.03061054236300103
+    },
+    "pct_over_budget_3s5": {
+      "expr": "1 - (sum(rate(rag_chat_turn_duration_seconds_bucket{le=\"3.5\"}[10m])) / clamp_min(sum(rate(rag_chat_turn_duration_seconds_count[10m])),0.0001))",
+      "value": 0.5555555555555556
+    },
+    "p50_turn_s": {
+      "expr": "histogram_quantile(0.50, sum by (le) (rate(rag_chat_turn_duration_seconds_bucket[10m])))",
+      "value": 4.25
+    },
+    "p95_turn_s": {
+      "expr": "histogram_quantile(0.95, sum by (le) (rate(rag_chat_turn_duration_seconds_bucket[10m])))",
+      "value": 15.49999999999999
+    },
+    "rerank_share": {
+      "expr": "sum(rate(rag_stage_duration_seconds_sum{stage=\"rerank\"}[10m])) / clamp_min(sum(rate(rag_stage_duration_seconds_sum{stage=\"retrieval\"}[10m])),0.0001)",
+      "value": 0.9359388601428474
+    },
+    "cache_hit_rate": {
+      "expr": "sum(rate(rag_cache_lookups_total{result=~\"hit|replay\"}[10m])) / clamp_min(sum(rate(rag_cache_lookups_total[10m])),0.0001)",
+      "value": 0.22222222222222224
+    },
+    "retrieval_empty_rate": {
+      "expr": "sum(rate(rag_retrieval_empty_total[10m])) / clamp_min(sum(rate(rag_retrieval_hits_count[10m])),0.0001)",
+      "value": 0.0
+    },
+    "refusal_estimated": {
+      "expr": "sum(rate(rag_refusals_suspected_total[10m])) / clamp_min(sum(rate(rag_chat_turns_total[10m])),0.0001)",
+      "value": 0.5052339971905213
+    },
+    "uncited_rate": {
+      "expr": "sum(rate(rag_answers_total{cited=\"no\"}[10m])) / clamp_min(sum(rate(rag_answers_total[10m])),0.0001)",
+      "value": 0.2857142857142857
+    },
+    "usd_per_hour": {
+      "expr": "sum(rate(rag_llm_cost_usd_total[10m])) * 3600",
+      "value": 0.06246033578495428
+    },
+    "usd_per_turn": {
+      "expr": "sum(rate(rag_llm_cost_usd_total[10m])) / clamp_min(sum(rate(rag_chat_turns_total[10m])),0.0001)",
+      "value": 0.0016828000000000001
+    },
+    "unpriced_steps": {
+      "expr": "sum(increase(rag_llm_unpriced_steps_total[10m]))",
+      "value": 0.0
+    },
+    "stage_p95_s": {
+      "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(rag_stage_duration_seconds_bucket[10m])))",
+      "value": {
+        "stage=cache.lookup": 0.03453378756766848,
+        "stage=embed.query": 0.03453378756766848,
+        "stage=retrieval": 0.9750000000000001,
+        "stage=retrieve.hybrid": 0.09375000000000001,
+        "stage=prompt": 0.009500000000000001,
+        "stage=understand": 0.0095,
+        "stage=completion": 4.875,
+        "stage=citations": 0.009500000000000001,
+        "stage=cache.replay": null,
+        "stage=rerank": 0.9750000000000001
+      }
+    },
+    "stage_mean_s": {
+      "expr": "sum by (stage) (rate(rag_stage_duration_seconds_sum[10m])) / clamp_min(sum by (stage) (rate(rag_stage_duration_seconds_count[10m])),0.0001)",
+      "value": {
+        "stage=understand": 7.316666666666668e-05,
+        "stage=cache.lookup": 0.01490299999999999,
+        "stage=embed.query": 0.0130855,
+        "stage=retrieval": 0.7398119999999999,
+        "stage=retrieve.hybrid": 0.047009999999999996,
+        "stage=rerank": 0.6924188000000001,
+        "stage=prompt": 6.539999999999999e-05,
+        "stage=completion": 3.5226372,
+        "stage=citations": 0.00014939999999999997,
+        "stage=cache.replay": 0.0
+      }
+    },
+    "turns_by_outcome": {
+      "expr": "sum by (outcome) (rag_chat_turns_total)",
+      "value": {
+        "outcome=404": 1.0,
+        "outcome=stop": 7.0,
+        "outcome=cache": 1.0
+      }
+    },
+    "http_by_status": {
+      "expr": "sum by (route,status) (rag_http_requests_total)",
+      "value": {
+        "route=/ready,status=200": 1.0,
+        "route=/metrics,status=200": 6.0,
+        "route=/chat,status=401": 1.0,
+        "route=/chat,status=404": 1.0,
+        "route=/chat,status=200": 8.0
+      }
+    },
+    "trace_sink": {
+      "expr": "rag_trace_sink",
+      "value": {
+        "instance=host.docker.internal:8000,job=rag-serving,service=rag-serving,state=queued": 0.0,
+        "instance=host.docker.internal:8000,job=rag-serving,service=rag-serving,state=sent": 9.0,
+        "instance=host.docker.internal:8000,job=rag-serving,service=rag-serving,state=failed": 0.0,
+        "instance=host.docker.internal:8000,job=rag-serving,service=rag-serving,state=dropped": 0.0
+      }
+    },
+    "bundle": {
+      "expr": "rag_bundle_info",
+      "value": {
+        "instance=host.docker.internal:8000,job=rag-serving,service=rag-serving,version=0.2.1": 1.0
+      }
+    }
+  }
+}

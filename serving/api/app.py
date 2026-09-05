@@ -56,10 +56,12 @@ from serving.core.chat import ChatService
 from serving.core.instrument import instrument_retriever
 from serving.core.langfuse import build_sink
 from serving.core.logging import configure_logging
+from serving.core.metrics import MetricsSink, RagMetrics
 from serving.core.probes import Check, ReadinessProbes
 from serving.core.ratelimit import RateLimiter
 from serving.core.registry import BundleRegistry, RuntimeBuilder
 from serving.core.runtime import QdrantRuntimeBuilder
+from serving.core.tracing import FanoutSink, TraceSink
 from serving.core.understanding import QueryUnderstanding
 
 if TYPE_CHECKING:
@@ -407,10 +409,18 @@ def create_app(
         # Đẩy nốt hàng đợi trace trước khi tiến trình đi. Có trần thời gian —
         # xem `LangfuseSink.close`: một Langfuse chết không được phép giữ
         # container không tắt được.
-        if trace_sink is not None:
-            trace_sink.close()
+        if langfuse_sink is not None:
+            langfuse_sink.close()
 
-    trace_sink = build_sink(resolved)
+    # ⭐⭐ `MetricsSink` đứng **trước** `LangfuseSink` — xem `FanoutSink`.
+    # Langfuse vứt trace khi hàng đợi đầy, và hàng đợi đầy đúng lúc tải cao;
+    # đảo thứ tự thì bảng RED mất đúng phần cần nhìn nhất.
+    metrics = RagMetrics()
+    langfuse_sink = build_sink(resolved)
+    sinks: list[TraceSink] = [MetricsSink(metrics)]
+    if langfuse_sink is not None:
+        sinks.append(langfuse_sink)
+    trace_sink: TraceSink = FanoutSink(tuple(sinks))
     api = FastAPI(
         title="RAG serving",
         version="0.1.0",
@@ -419,7 +429,11 @@ def create_app(
     )
     api.state.registry = registry
     api.state.probes = probe_factory(registry)
-    api.state.trace_sink = trace_sink
+    api.state.metrics = metrics
+    # ⚠️ `state.trace_sink` là cái **Langfuse**, không phải cái fanout: nó tồn
+    # tại để `/admin/tracing` và `/metrics` hỏi `status()` (hàng đợi đầy chưa,
+    # vứt bao nhiêu). Một `FanoutSink` không có hàng đợi nào để khai.
+    api.state.trace_sink = langfuse_sink
     llm = build_llm(resolved)
     api.state.chat = ChatService(
         registry=registry,
@@ -444,7 +458,7 @@ def create_app(
     api.add_middleware(AuthMiddleware, keys=api.state.keys, limiter=api.state.limiter)
     # ASGI thuần, không `BaseHTTPMiddleware` — lý do ở docstring của
     # `middleware.py`, nó liên quan trực tiếp tới SSE của `W4-06`.
-    api.add_middleware(RequestContextMiddleware)
+    api.add_middleware(RequestContextMiddleware, metrics=metrics)
     api.include_router(health.router)
     api.include_router(admin.router)
     api.include_router(chat.router)

@@ -1,0 +1,69 @@
+# Prometheus cho Serving Plane — `W5-07`.
+#
+# ## ⭐ Scrape đi qua cổng đã publish, không qua mạng compose
+#
+# Prometheus nằm ở project `rag-metrics`, API nằm ở project `rag-platform` — hai
+# network khác nhau, nên không có tên service nào để trỏ tới. Cùng hoàn cảnh với
+# Langfuse ở `W5-06`, chỉ ngược chiều: ở đó API **đẩy** đi, ở đây Prometheus
+# **kéo** về. Đích là `host.docker.internal`, tức cổng 8000 trên máy chủ — nên
+# cấu hình này chạy được với cả `uv run python -m serving` trên host lẫn
+# container `api` của `--profile api`.
+#
+# ## ⭐⭐ `/metrics` có xác thực, nên scraper phải có khoá
+#
+# Quy ước Prometheus là `/metrics` mở vì nó thường ở một cổng nội bộ. Ở đây
+# không có cổng nội bộ nào — cùng tiến trình, cùng cổng 8000. Xem docstring
+# `serving/api/health.py::metrics`.
+#
+#     make metrics-token     # cấp khoá và ghi ra secrets/metrics-token
+#
+# ⚠️ Chưa có file khoá thì Prometheus vẫn chạy và job hiện `up == 0` kèm 401.
+# Đó là hành vi **đúng** và nó được giữ có chủ đích: bảng nói ra rằng nó không
+# đọc được số đo, thay vì hiện một biểu đồ trống trông như "không có traffic".
+# Panel "Scrape sống?" trên dashboard tồn tại đúng vì lý do này.
+
+global:
+  # 15 s: đủ mịn để thấy một sự cố trong vòng một phút, đủ thưa để không tự
+  # thành tải. Với một máy dev một worker thì mỗi lần scrape là một request
+  # `/metrics` đi qua đúng `AuthMiddleware` mà nó đang đo.
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: local
+
+scrape_configs:
+  - job_name: rag-serving
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      # File do `make metrics-token` sinh ra. Prometheus đọc **lại** file này ở
+      # mỗi lần scrape, nên xoay khoá không cần khởi động lại Prometheus (nhưng
+      # vẫn cần khởi động lại API — kho khoá chỉ nạp lúc khởi động, `W4-04`).
+      credentials_file: /run/secrets/metrics-token
+    static_configs:
+      # ⭐⭐ HAI đích cho MỘT job, và một trong hai luôn `down`. Có chủ đích.
+      #
+      # API chạy được ở hai chỗ, và không chỗ nào với tới được chỗ kia:
+      #
+      #   * `api:8000` — service của `--profile api`. Prometheus nối vào mạng
+      #     `rag-platform_default` (xem `networks:` ở compose) nên gọi thẳng
+      #     bằng tên service. Đây là hình dạng production.
+      #   * `host.docker.internal:8000` — `uv run python -m serving` trên máy
+      #     chủ. ⚠️ Chỉ với tới được khi server nghe `--host 0.0.0.0`; mặc định
+      #     là `127.0.0.1` và từ container thì đó là *"connection refused"*.
+      #     Đây là một lần đo thật: mặc định loopback là đúng cho một máy dev,
+      #     và nó làm API **vô hình** với scraper trong container — triệu chứng
+      #     trông như "Prometheus hỏng" chứ không như "server nghe hẹp".
+      #
+      # Vì thế panel "Scrape sống?" dùng `max(up{job="rag-serving"})`: câu hỏi
+      # là *"có đọc được số đo từ ÍT NHẤT một chỗ không"*, không phải *"cả hai
+      # chỗ có chạy không"*. Đổi nó thành `min` thì bảng đỏ vĩnh viễn và không
+      # ai nhìn nó nữa.
+      - targets: ["api:8000", "host.docker.internal:8000"]
+        labels:
+          service: rag-serving
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

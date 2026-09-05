@@ -4,7 +4,9 @@
 > file này cho biết **đang làm dở tới đâu** và **lệnh nào để tiếp tục**.
 > Trạng thái chính thức của từng task vẫn nằm ở [`CHECKLIST.md`](CHECKLIST.md).
 >
-> **Phiên mới nhất: 2026-09-05 (13) (cuối file)** — `W5-06` xong, **`W5` 6/11**. Langfuse tự dựng (6 container, project riêng) + trace đủ tầng: một lượt `/chat` cho **7 span** kèm `$0,001299`, đọc lại bằng `GET /api/public/traces/{id}` chứ không bằng ảnh chụp. ⭐⭐ **"Truy hồi 725 ms" hoá ra là 44,8 ms tìm + 685,3 ms xếp lại** — cross-encoder chiếm **92,8%** ngân sách truy hồi, Qdrant hybrid 6,1%; cả `W2` tối ưu đúng 6%. ⭐⭐ **Request đầu sau deploy tốn 10,7× thời gian rerank** (7 353 ms) vì kernel CUDA khởi tạo ở `score()` đầu tiên trong khi `/ready` đã xanh → `TD-72`. ⭐⭐ **Trace hữu ích nhất trong bảy là của một request hỏng** — nó tồn tại vì trace mở **trước** `prepare()`. ⭐⭐ **Prompt trong trace mang `nonce` của `W4-12`** sang một hệ thống thứ hai; che theo hình dạng, 0/7 trace rò. ⭐ `TD-55` trả xong: phần khung `done` không thấy = **19,92%**. ⭐⭐ Lỗi thật: **proxy uỷ quyền tự đệ quy tới chết khi bị `copy.copy`**. Tiêm 26/26 đỏ nhưng lượt một có 3 phép sống sót, 2 là lỗ thật. 3 nợ mới `TD-72`…`TD-74`.
+> **Phiên mới nhất: 2026-09-05 (14) (cuối file)** — `W5-07` xong, **`W5` 7/11**. Bảng **RAG Health** (28 panel) chạy thật; mỗi ô đọc lại bằng chính PromQL của nó. ⭐⭐ **Bảng trực tuyến không đo được thứ eval đo**: `W5-02` chấm từ chối bằng nhãn judge, bảng phải dùng từ khoá — nên ô ấy tên `refusals_suspected` và `HELP` tự khai là ước lượng. ⭐⭐ **Rồi đo luôn xem nó chệch bao nhiêu ($0)**: đối chiếu 242 nhãn judge — bản đầu **F1 0,721, lệch −24,5%** (bảng làm hệ thống trông *tốt hơn* thực tế), nguyên nhân lớn nhất là **một chữ**; sau khi bổ sung, đo trên nửa **giữ ngoài**: **F1 0,889, lệch +4,5%**. ⭐⭐ **Bảng và trace đọc cùng một phép đo** — xác nhận độc lập rerank chiếm **93,6%** truy hồi (vs 92,8% của `W5-06`). ⭐⭐ **Metric có nhãn không tồn tại cho tới lần quan sát đầu**, nên *"No data"* mang hai nghĩa. ⭐⭐ Lỗi thật từ một phép tiêm **sống sót**: câu trả lời từ cache không bao giờ được quét từ chối. Bảng nói **55,6% lượt vượt ngân sách 3,5 s** và **$0,0016828/câu** (số đo cost/query đầu tiên). Tiêm 22/22 đỏ. 3 nợ mới `TD-75`…`TD-77`.
+>
+> Phiên trước: **2026-09-05 (13)** — `W5-06` xong, **`W5` 6/11**. Langfuse tự dựng (6 container, project riêng) + trace đủ tầng: một lượt `/chat` cho **7 span** kèm `$0,001299`, đọc lại bằng `GET /api/public/traces/{id}` chứ không bằng ảnh chụp. ⭐⭐ **"Truy hồi 725 ms" hoá ra là 44,8 ms tìm + 685,3 ms xếp lại** — cross-encoder chiếm **92,8%** ngân sách truy hồi, Qdrant hybrid 6,1%; cả `W2` tối ưu đúng 6%. ⭐⭐ **Request đầu sau deploy tốn 10,7× thời gian rerank** (7 353 ms) vì kernel CUDA khởi tạo ở `score()` đầu tiên trong khi `/ready` đã xanh → `TD-72`. ⭐⭐ **Trace hữu ích nhất trong bảy là của một request hỏng** — nó tồn tại vì trace mở **trước** `prepare()`. ⭐⭐ **Prompt trong trace mang `nonce` của `W4-12`** sang một hệ thống thứ hai; che theo hình dạng, 0/7 trace rò. ⭐ `TD-55` trả xong: phần khung `done` không thấy = **19,92%**. ⭐⭐ Lỗi thật: **proxy uỷ quyền tự đệ quy tới chết khi bị `copy.copy`**. Tiêm 26/26 đỏ nhưng lượt một có 3 phép sống sót, 2 là lỗ thật. 3 nợ mới `TD-72`…`TD-74`.
 >
 > Phiên trước: **2026-09-05 (12)** — `W5-05` xong, **`W5` 5/11**. `make gate BUNDLE=0.2.1` → **INCOMPARABLE, exit 2**; `--no-champion` → **FAIL, exit 1** (`citation_accuracy` 0,8308 < 0,85 · `p95_end_to_end_ms` 4706 > 3500). ⭐⭐ **"Không so được" là phán quyết THỨ BA**, không phải một kiểu FAIL — FAIL bảo sửa hệ thống, INCOMPARABLE bảo sửa phép đo. ⭐⭐ **Trường sinh ra để bảo đảm danh tính đang mang một bí danh**: `deepseek-chat@2026-09` ở cả hai bundle cũ, lọt vào vì nó được **gõ tay**. ⭐⭐ **Gate cho qua một hệ thống vượt ngân sách 34% vì hai con số cùng tên** — `p95_latency_ms` là truy hồi thuần (759 ms), ngân sách 3500 ms là end-to-end; đo lại trên 242 request thật: **p95 = 4706 ms**. Tiêm 18/18 đỏ. 3 nợ mới `TD-69`…`TD-71`.
 >
@@ -3948,3 +3950,129 @@ một danh sách metric đã biết là đáng đo, vì trace vừa chỉ ra ch�
 trong tổng thời gian, `prepare_ms`, `dropped` của sink, và tỉ lệ request đầu
 sau deploy. Sau đó `W5-09` (CI) là chỗ gate của `W5-05` có răng, và `G5` còn
 dòng *"mở 1 PR cố ý làm tụt retrieval → CI phải đỏ"*.
+
+---
+
+## 2026-09-05 (14) — `W5-07`: bảng "RAG Health", và một ô không đo được thứ nó nói
+
+**Trạng thái**: `W5` **7/11** · 54 `[x]` backlog gốc + 7 `NEW` · **2 201 test**
+bộ mặc định xanh (3 skip, +44) · **275 test integration xanh** (+21) · `make lint`
+sạch cả ba lệnh · chi phí **$0,0135** (9 lượt `/chat` thật) + **$0** cho phần
+hiệu chỉnh.
+
+```
+Scrape sống?                  1
+% lượt vượt ngân sách 3,5 s   55,6 %      ← quá nửa
+p50 / p95 một lượt            4,25 s / 15,5 s
+rerank / truy hồi             93,6 %
+cache hit rate                22,2 %
+từ chối (ước lượng)           50,5 %
+USD / câu                     $0,0016828  ← ngân sách ≤ $0,005 ✅
+bước chưa định giá được       0
+```
+
+**⭐⭐ Bảng trực tuyến không đo được thứ mà eval đo, và phải nói ra.** DoD viết
+"refusal rate". `W5-02` đo đại lượng ấy bằng một **nhãn của judge**, và docstring
+của `score_refusal` nói thẳng vì sao không dùng từ khoá: *"một danh sách từ khoá
+sẽ bắt được đúng những cách nói tôi nghĩ ra được"*. Gọi judge mỗi request thì
+thêm một lời gọi model vào đường có người đang đợi. Nên ô ấy là một **ước lượng
+có dán nhãn**: metric tên `rag_refusals_suspected_total`, dòng `HELP` viết
+*"ƯỚC LƯỢNG… KHÔNG phải phép đo của W5-02"*, và có test ghim câu chữ ấy. Lý lẽ:
+*một ước lượng chệch nhưng ổn định thì vô dụng để nói **mức**, và hoàn toàn dùng
+được để nói **đạo hàm***.
+
+**⭐⭐ Rồi thì đo luôn xem nó chệch bao nhiêu — và một chữ là nguyên nhân.** Nói
+"chệch nhưng ổn định" mà không có số cũng chỉ là một lời khai. `W5-02` để lại
+242 câu trả lời **và** nhãn judge của chúng trong cache đóng băng, nên phép hiệu
+chỉnh tốn **$0**:
+
+| | P | R | F1 | judge | ước lượng | lệch |
+|---|---:|---:|---:|---:|---:|---:|
+| bản đầu (n=242) | 0,838 | **0,633** | 0,721 | 20,3% | 15,3% | **−24,5%** |
+| sau bổ sung, nửa **giữ ngoài** (n=122) | 0,870 | **0,909** | **0,889** | 18,0% | 18,9% | **+4,5%** |
+
+Chia bằng `sha256(query_id) % 2`; từ khoá bổ sung **chỉ** chọn từ nửa A, số báo
+cáo là nửa B chưa từng nhìn (F1 nửa A 0,909 vs nửa B 0,889 — chênh 0,02, nên cải
+thiện không phải fit vào tập chỉnh).
+
+Nguyên nhân lớn nhất của 18 ca bỏ sót là **một chữ**: danh sách có
+`"không đủ thông tin"`, model viết `"không có đủ thông tin"` — chữ *có* chen vào
+giữa nên chuỗi con không khớp, và hai chuỗi đứng cạnh nhau trông như cái sau đã
+bao cái trước. Phần còn lại là dạng tiếng Anh phổ biến nhất mà danh sách bỏ sót
+hoàn toàn.
+
+⚠️ **Hướng của độ chệch quan trọng hơn độ lớn.** Bản đầu báo **thiếu** một phần
+tư số lần từ chối — bảng làm hệ thống trông **tốt hơn** thực tế, đúng hướng tệ
+nhất, cùng họ với `TD-55`.
+
+**⭐⭐ Bảng và trace đọc CÙNG một phép đo.** `MetricsSink` là một `TraceSink`, không
+phải một bộ đồng hồ thứ hai — nên bảng Grafana và trace Langfuse không thể nói
+hai điều khác nhau về cùng một request. Phần thưởng đo được ngay: `rerank / truy
+hồi` = **93,6%** ở đây so với **92,8%** mà `W5-06` đo trên mẫu khác, hai lần chạy
+cách nhau mấy giờ. ⚠️ Điều kiện: `MetricsSink` chạy **trước** `LangfuseSink` —
+Langfuse vứt trace khi hàng đợi đầy, và hàng đợi đầy đúng lúc tải cao; đảo thứ
+tự thì bảng RED mất đúng phần cần nhìn nhất. Có test đọc mã nguồn để ghim.
+
+**⭐⭐ Hai tầng RED, và tầng dưới không thay được tầng trên.** `rag_http_*` đo ở
+middleware nên nó thấy cả 401/429/404; bộ đếm dựng từ cây span chỉ thấy lượt đã
+qua auth. Một mình tầng dưới thì sự cố khoá API hiện ra là **traffic bằng 0**,
+thứ trông y hệt một đêm yên tĩnh.
+
+**⭐⭐ Một metric có nhãn không tồn tại cho tới lần quan sát đầu tiên.** Bài test
+hợp đồng với bảng đỏ ngay lần đầu với ba metric — không cái nào bị đổi tên,
+chúng chỉ chưa được chạm tới, nên Grafana vẽ *"No data"*. Ba chữ ấy mang **hai**
+nghĩa: "chưa xảy ra" (tin tốt) và "đã đổi tên, bảng chưa sửa" (hỏng lặng lẽ).
+Khai trước mọi tổ hợp nhãn **đóng** ở 0 để chỉ còn nghĩa thứ hai.
+
+**⭐ Bài test đọc dashboard JSON, không đọc một danh sách viết tay.** Một danh
+sách viết tay chỉ chứng minh mã khớp với chính nó. Bài này bóc mọi biểu thức
+PromQL trong `rag-health.json` và đối chiếu với bản phơi bày thật — nó tìm ra ba
+thiếu sót ngay lần chạy đầu.
+
+**⭐ Dùng thư viện ở đây, viết tay ở `W5-06` — phép thử là dữ liệu người dùng có
+đi qua không.** Gói tin Langfuse mang nguyên văn prompt nên phải kiểm soát từng
+byte (`tracing.redact`); số đo Prometheus không mang một ký tự nào của người
+dùng. Không còn lý do viết tay, mà định dạng phơi bày thì đủ tinh vi để một bản
+tự viết là nợ thuần.
+
+**⭐ `/metrics` có xác thực và không nhãn nào mang tenant.** Quy ước là để mở vì
+nó thường ở cổng nội bộ — ở đây không có cổng ấy. Một khoá hợp lệ bất kỳ đọc
+được endpoint này, kể cả khoá tenant khác, nên nhãn có `tenant` nghĩa là mọi
+khách hàng đọc được danh sách khách hàng.
+
+**⭐⭐ Lỗi thật, tìm ra bởi một phép tiêm SỐNG SÓT: câu trả lời từ cache không bao
+giờ được quét từ chối.** Phép quét nằm trong nhánh `kind == "generation"`, nên
+`cache.replay` rơi ra ngoài — mẫu số có tính lượt cache còn tử số không thể tăng
+cho chúng, tức lệch xuống đúng bằng tỉ lệ trúng cache (đo được 22,2%). Phép tiêm
+"sống" vì đổi luật thành *quét mọi span* gần như không đổi hành vi, và điều đó
+chỉ đúng khi luật hiện tại đang bỏ sót gần hết những gì đáng quét.
+
+**⭐ Nghe `127.0.0.1` làm API vô hình với scraper trong container** —
+`connection refused` từ Prometheus trông như "Prometheus hỏng" chứ không như
+"server nghe hẹp". Job có hai đích và panel dùng `max(up{...})`.
+
+**Tiêm lỗi 22/22 đỏ**, lượt một một phép sống sót và nó là lỗi thật ở trên.
+
+**Nợ mới**: `TD-75` (`prometheus_client` giữ số đo trong **một** tiến trình —
+worker thứ hai làm bảng tụt một nửa không báo; buộc phải trả cùng `TD-63`) ·
+`TD-76` (p95 từ histogram là nội suy trong bucket, không phải phép đo — báo 15,5 s
+trong khi lượt chậm nhất thật ~10 s) · `TD-77` (bộ dò từ chối hiệu chỉnh trên
+**một** corpus và **một** model; phải chạy lại trong `W5-11` và F1 phải là một
+cột của bảng ablation).
+
+**⚠️ Đính chính cho phiên (13).** Báo cáo `W5-06` viết *"`make lint` sạch cả ba
+lệnh"*. Không đúng: tôi chạy `mypy serving/ packages/ pipeline/`, còn `make lint`
+chạy `mypy` **không tham số** — tức gồm cả `tests/`. Lệnh thật đỏ **8 lỗi** ở ba
+file test của `W5-06`/`W5-07` (`unreachable` sau một `with` khai
+`__exit__ -> Literal[False]`, `Returning Any`, `build_runtime` là lambda không
+khớp Protocol, và hai `type: ignore` thừa). Đã sửa hết ở commit này; `make lint`
+giờ sạch thật cả ba lệnh.
+
+Bài học không phải "quên chạy" mà là **thay một lệnh bằng một lệnh hẹp hơn rồi
+báo cáo bằng tên của lệnh rộng**. Cùng họ với mọi lỗi đo lường trong `W5`: cái
+được báo và cái được làm không phải một thứ.
+
+**Việc tiếp theo**: `W5-08` — feedback endpoint 👍/👎 → Postgres → Langfuse score.
+Nó có sẵn hai chỗ cắm: `trace.id` đã nằm trong khung `meta` được không (chưa —
+cần thêm), và `TD-50` đang chờ đúng hạng mục này để quyết cột citations trong
+Postgres. Sau đó `W5-09` (CI) là chỗ gate của `W5-05` có răng.
