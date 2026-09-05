@@ -259,6 +259,20 @@ async def test_a_midstream_failure_becomes_an_error_frame_not_a_silent_stop() ->
 
 
 @pytest.mark.asyncio
+async def test_the_error_frame_keeps_the_providers_words_server_side() -> None:
+    """`NEW-08`/`AU-03`: lời của `LLMError` mang tên route và lỗi HTTP thô của
+    provider — chuyện nội bộ. Khung `error` cho client chỉ nói: hỏng, nhận
+    được bao nhiêu chữ, và `trace_id` để đối chiếu; nguyên văn nằm ở log và ở
+    status của span `completion` trong trace."""
+    events = await _drain(_service(FakeLLM(["a", "b", "c"], fail_after=2)), _turn())
+    frame = events[-1][1]
+
+    assert "provider đứt" not in frame["detail"], "lời của provider rò ra client"
+    assert "LLMError" not in frame["detail"]
+    assert frame["trace_id"], "client cần trace_id để báo lỗi có địa chỉ"
+
+
+@pytest.mark.asyncio
 async def test_the_partial_answer_is_still_saved_when_the_stream_breaks() -> None:
     service = _service(FakeLLM(["a", "b", "c"], fail_after=2))
     await _drain(service, _turn())
@@ -764,18 +778,24 @@ class TestCacheEligibility:
     """Luật thuần: lượt nào được chạm cache."""
 
     def test_a_first_turn_retrieval_question_is_eligible(self) -> None:
-        assert cache_eligible(_plan(), [])
+        assert cache_eligible(_plan(), [], None)
 
     def test_history_disqualifies(self) -> None:
         """Cùng câu chữ giữa hai hội thoại khác nhau KHÔNG phải cùng câu hỏi."""
-        assert not cache_eligible(_plan(), [ChatMessage(role="user", content="trước đó")])
+        assert not cache_eligible(_plan(), [ChatMessage(role="user", content="trước đó")], None)
 
     def test_a_rewritten_question_disqualifies(self) -> None:
-        assert not cache_eligible(_plan(rewritten=True), [])
+        assert not cache_eligible(_plan(rewritten=True), [], None)
 
     def test_non_retrieval_routes_disqualify(self) -> None:
-        assert not cache_eligible(_plan("chào", route="no_retrieval"), [])
-        assert not cache_eligible(_plan("?", route="clarify"), [])
+        assert not cache_eligible(_plan("chào", route="no_retrieval"), [], None)
+        assert not cache_eligible(_plan("?", route="clarify"), [], None)
+
+    def test_client_filters_disqualify(self) -> None:
+        """`NEW-08`/`AU-02`: câu hỏi bó trong một filter KHÔNG phải câu hỏi ấy
+        trên toàn corpus — trả câu trả lời cache của lượt không filter là vi
+        phạm phạm vi dữ liệu client yêu cầu, không phải một cache hit."""
+        assert not cache_eligible(_plan(), [], MetadataFilter(tenant_id="acme"))
 
 
 @pytest.mark.asyncio
@@ -841,7 +861,14 @@ class TestCacheNamespace:
         """Một câu trả lời sinh dưới `chat-system@v1` KHÔNG phải câu trả lời
         của `chat-system@v2`: đổi prompt phải invalidate cache như đổi bundle,
         và cách rẻ nhất là cùng cơ chế — version nằm trong khoá."""
-        assert cache_namespace("0.2.0") == "0.2.0+chat-system@v2"
+        assert cache_namespace("0.2.0", 5) == "0.2.0+chat-system@v2+k5"
+
+    def test_two_top_k_are_two_namespaces(self) -> None:
+        """`NEW-08`/`AU-02`: cùng câu hỏi với `top_k=5` và `top_k=20` là hai
+        lượt sinh trên hai bộ ngữ cảnh — câu trả lời của lượt này KHÔNG được
+        phát lại cho lượt kia. Vào namespace (không phải điều kiện loại) để
+        client dùng `top_k` khác mặc định một cách nhất quán vẫn có cache."""
+        assert cache_namespace("0.2.0", 5) != cache_namespace("0.2.0", 20)
 
     @pytest.mark.asyncio
     async def test_store_writes_into_the_prompt_scoped_namespace(self) -> None:
@@ -852,7 +879,7 @@ class TestCacheNamespace:
         await _drain(service, _turn(cache_vector=np.ones(4, dtype=np.float32)))
         await asyncio.sleep(0)
 
-        assert cache.stored[0]["bundle"] == "0.2.0+chat-system@v2"
+        assert cache.stored[0]["bundle"] == "0.2.0+chat-system@v2+k5"
 
 
 # ---------------------------------------------------------------------------
@@ -923,3 +950,71 @@ async def test_a_no_retrieval_turn_has_no_context_markers() -> None:
     await _drain(_service(llm), turn)
 
     assert "<<<NGUON" not in llm.seen[-1].content
+
+
+# ---------------------------------------------------------------------------
+# `NEW-08`/`AU-06` — chọn đường "một forward pass" đúng lúc, và chỉ đúng lúc
+# ---------------------------------------------------------------------------
+
+from rag_core.retrieval import QdrantHybridRetriever, RerankedRetriever  # noqa: E402
+from rag_core.retrieval.qdrant_store import QdrantDenseRetriever  # noqa: E402
+from serving.core.chat import wants_precomputed  # noqa: E402
+
+
+class _HybridCapable:
+    def embed_query(self, text: str) -> Any: ...
+    def embed_query_hybrid(self, text: str) -> Any: ...
+
+
+class _DenseOnly:
+    def embed_query(self, text: str) -> Any: ...
+
+
+class TestWantsPrecomputed:
+    """`isinstance` với CLASS THẬT chứ không duck-typing: truyền một cặp vector
+    vào một retriever hiểu sai nó là loại lỗi *trông vẫn chạy*."""
+
+    def _hybrid(self) -> QdrantHybridRetriever:
+        return object.__new__(QdrantHybridRetriever)
+
+    def test_a_bare_hybrid_retriever_qualifies(self) -> None:
+        assert wants_precomputed(self._hybrid(), _HybridCapable())
+
+    def test_a_reranked_wrapper_over_hybrid_qualifies(self) -> None:
+        wrapped = object.__new__(RerankedRetriever)
+        wrapped.base = self._hybrid()
+        assert wants_precomputed(wrapped, _HybridCapable())
+
+    def test_a_dense_retriever_does_not(self) -> None:
+        dense = object.__new__(QdrantDenseRetriever)
+        assert not wants_precomputed(dense, _HybridCapable())
+
+    def test_an_embedder_without_the_hybrid_method_does_not(self) -> None:
+        assert not wants_precomputed(self._hybrid(), _DenseOnly())
+
+    def test_a_test_fake_never_qualifies(self) -> None:
+        """Mọi retriever giả trong test rơi về đường cũ — hành vi của các bài
+        từ `W4-10` không đổi một byte."""
+
+        class Fake:
+            name = "fake"
+
+        assert not wants_precomputed(Fake(), _HybridCapable())
+
+
+@pytest.mark.asyncio
+async def test_the_cache_is_stored_under_the_top_k_that_produced_the_answer() -> None:
+    """`NEW-08`/`AU-02`, đầu GHI: lượt chạy với `top_k=20` phải ghi vào
+    namespace `+k20` — đọc và ghi lệch namespace là một cache không bao giờ
+    hit mà không ai thấy."""
+    service = _service(FakeLLM(deltas=("Đáp án.",)))
+    cache = RecordingCache()
+    service.cache = cache  # type: ignore[assignment]
+
+    await _drain(
+        service,
+        _turn(cache_vector=np.ones(4, dtype=np.float32), resolved_top_k=20),
+    )
+    await asyncio.sleep(0)
+
+    assert cache.stored[0]["bundle"] == "0.2.0+chat-system@v2+k20"

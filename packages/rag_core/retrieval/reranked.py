@@ -26,7 +26,7 @@ thật, không phải giả thiết: `W2-04` đã gặp đúng vấn đề này 
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..schemas import RetrievalMode, RetrievedChunk
 from .base import Retriever
@@ -88,8 +88,25 @@ class RerankedRetriever(Retriever):
         top_k: int = 10,
         *,
         filters: FilterSpec = None,
+        precomputed: Any | None = None,
     ) -> list[RetrievedChunk]:
-        pool = self.base.retrieve(query, self._depth(top_k), filters=filters)
+        # `NEW-08`/`AU-06`: chuyển tiếp vector embed sẵn xuống nhánh nền — chỉ
+        # khi có, vì không phải nhánh nền nào cũng nhận kwarg này (dense/sparse
+        # thuần thì không); truyền `None` xuống một nhánh không nhận là
+        # `TypeError` thay vì hành vi cũ.
+        if precomputed is not None:
+            # Hợp đồng của người gọi (xem `wants_precomputed` phía serving):
+            # chỉ truyền khi nhánh nền là hybrid — `Retriever` trừu tượng không
+            # khai kwarg này nên mypy đúng khi cằn nhằn, và ignore là lời khai
+            # tường minh của hợp đồng ấy.
+            pool = self.base.retrieve(
+                query,
+                self._depth(top_k),
+                filters=filters,
+                precomputed=precomputed,  # type: ignore[call-arg]
+            )
+        else:
+            pool = self.base.retrieve(query, self._depth(top_k), filters=filters)
         if not pool:
             return []
         scores = self.reranker.score(query, [hit.chunk.content for hit in pool])

@@ -274,3 +274,107 @@ class TestForwarding:
     def test_no_blanket_getattr_forwarding(self) -> None:
         branch = build_branch(_store(), "hybrid")
         assert not hasattr(branch, "upsert")
+
+
+# ---------------------------------------------------------------------------
+# `NEW-08`/`AU-06` — vector embed sẵn: một forward pass cho cả cache lẫn truy hồi
+# ---------------------------------------------------------------------------
+
+
+class _RefusingSecondPass(HashingEmbeddingProvider):
+    """Embedder NỔ nếu bị hỏi embed — bằng chứng rằng `precomputed` được dùng.
+
+    Serving embed một lần cho tra cache; bản cũ để `retrieve()` embed lại đúng
+    chuỗi ấy lần hai (+12,6 ms và giữ khoá model `TD-63` hai lần mỗi lượt).
+    """
+
+    def embed_query_hybrid(self, text: str) -> Any:
+        raise AssertionError("forward pass thứ hai cho cùng một query")
+
+
+class _EmptyBatchClient:
+    """Qdrant giả trả hai nhánh rỗng — đủ cho bài kiểm 'ai embed'."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def query_batch_points(self, collection_name: str, requests: list[Any]) -> list[Any]:
+        self.calls += 1
+
+        class _Resp:
+            def __init__(self) -> None:
+                self.points: list[Any] = []
+
+        return [_Resp(), _Resp()]
+
+
+class TestPrecomputedVectors:
+    def _retriever(self) -> QdrantHybridRetriever:
+        store = QdrantDenseRetriever(
+            _RefusingSecondPass(dimension=64, sparse=True),
+            collection="rag_test_hybrid",
+            client=_EmptyBatchClient(),  # type: ignore[arg-type]
+        )
+        return QdrantHybridRetriever(store)
+
+    def test_a_precomputed_pair_skips_the_second_forward_pass(self) -> None:
+        pair = HashingEmbeddingProvider(dimension=64, sparse=True).embed_query_hybrid("câu hỏi")
+        assert pair is not None
+        # Client rỗng nên kết quả rỗng — điểm của bài là KHÔNG nổ ở embedder.
+        assert self._retriever().retrieve("câu hỏi", 5, precomputed=pair) == []
+
+    def test_without_precomputed_the_embedder_is_still_the_source(self) -> None:
+        """Đối chứng: bỏ `precomputed` thì đường cũ phải còn nguyên — nếu bài
+        trên xanh vì embedder không bao giờ được hỏi thì bài này đỏ."""
+        with pytest.raises(AssertionError, match="thứ hai"):
+            self._retriever().retrieve("câu hỏi", 5)
+
+    def test_reranked_forwards_the_pair_to_its_base(self) -> None:
+        recorded: dict[str, Any] = {}
+
+        class _Base(Retriever):
+            name = "base"
+
+            def retrieve(
+                self,
+                query: str,
+                top_k: int = 10,
+                *,
+                filters: Any = None,
+                precomputed: Any = None,
+            ) -> list[RetrievedChunk]:
+                recorded["precomputed"] = precomputed
+                return []
+
+        class _Reranker:
+            name = "rr"
+
+            def score(self, query: str, texts: list[str]) -> list[float]:
+                return []
+
+        from rag_core.retrieval import RerankedRetriever
+
+        RerankedRetriever(_Base(), _Reranker()).retrieve("q", 5, precomputed=("d", "s"))  # type: ignore[arg-type]
+        assert recorded["precomputed"] == ("d", "s")
+
+    def test_reranked_leaves_a_strict_base_alone_when_there_is_no_pair(self) -> None:
+        """Nhánh nền KHÔNG nhận kwarg này (dense/sparse thuần) vẫn phải gọi
+        được như cũ — chuyển tiếp `precomputed=None` vô điều kiện là TypeError."""
+
+        class _StrictBase(Retriever):
+            name = "strict"
+
+            def retrieve(
+                self, query: str, top_k: int = 10, *, filters: Any = None
+            ) -> list[RetrievedChunk]:
+                return []
+
+        class _Reranker:
+            name = "rr"
+
+            def score(self, query: str, texts: list[str]) -> list[float]:
+                return []
+
+        from rag_core.retrieval import RerankedRetriever
+
+        assert RerankedRetriever(_StrictBase(), _Reranker()).retrieve("q", 5) == []  # type: ignore[arg-type]

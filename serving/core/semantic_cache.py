@@ -56,12 +56,20 @@ def embedder_of(retriever: Any) -> Any | None:
     Duck-typing có chủ đích: `RerankedRetriever.base` → `.store.embeddings`.
     Không thấy thì trả `None` và cache tự tắt — một retriever giả trong test
     không có embedder là chuyện bình thường, không phải lỗi cấu hình.
+
+    ⚠️ `NEW-08`/`AU-13`: kiểm cả `.embeddings` TRỰC TIẾP trên candidate, vì
+    `QdrantDenseRetriever` không có `.store` — chính nó **là** store. Trước
+    sửa này, một bundle `mode: dense` làm cache tắt câm lặng (trả `None`,
+    không log) — latent vì chưa bundle nào dùng dense thuần, nhưng "tắt không
+    tiếng động" là kiểu hỏng tệ nhất của một tầng tăng tốc.
     """
     for candidate in (retriever, getattr(retriever, "base", None)):
-        store = getattr(candidate, "store", None)
-        embeddings = getattr(store, "embeddings", None)
-        if embeddings is not None and hasattr(embeddings, "embed_query"):
-            return embeddings
+        if candidate is None:
+            continue
+        for holder in (getattr(candidate, "store", None), candidate):
+            embeddings = getattr(holder, "embeddings", None)
+            if embeddings is not None and hasattr(embeddings, "embed_query"):
+                return embeddings
     return None
 
 

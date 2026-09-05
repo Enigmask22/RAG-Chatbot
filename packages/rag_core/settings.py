@@ -12,6 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote_plus
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -252,8 +253,12 @@ class Settings(BaseSettings):
         return self._dsn(self.postgres_app_user, self.postgres_app_password.get_secret_value())
 
     def _dsn(self, user: str, password: str) -> str:
+        # ⚠️ `quote_plus` cho cả user lẫn password (`NEW-08`/`AU-04`): một mật
+        # khẩu chứa `@` trong f-string trần làm SQLAlchemy parse phần sau `@`
+        # thành **host** — kết nối đi sang máy khác mà không có lỗi nào cảnh
+        # báo, và DSN migration còn mang quyền superuser.
         return (
-            f"postgresql+psycopg://{user}:{password}"
+            f"postgresql+psycopg://{quote_plus(user)}:{quote_plus(password)}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 

@@ -1,0 +1,17 @@
+{
+  "probe": "new08-td64-rescore",
+  "created_at": "2026-09-05T15:37:22.357592+00:00",
+  "run": "plans/reports/runs/w5-answers-v1.jsonl",
+  "matcher": "citations._quote_matches (ellipsis-aware, NEW-08)",
+  "n_quotes": 396,
+  "verified_old": 329,
+  "citation_validity_old": 0.8308,
+  "verified_new": 343,
+  "citation_validity_new": 0.8662,
+  "rescued_by_ellipsis": 14,
+  "dropped_by_new_matcher": 0,
+  "missing_chunks": 0,
+  "threshold": 0.85,
+  "verdict": "PASS",
+  "note": "W5-02 đếm 19 lỗi ellipsis; 14 được cứu — 5 quote còn lỗi khác bên trong mảnh (chép sai chữ). 10 lỗi gắn nhầm số nguồn giữ nguyên: đó là lỗi thật, không phải từ chối oan."
+}

@@ -7,6 +7,7 @@ sẽ không chạy.
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
 
@@ -294,6 +295,36 @@ class TestEncode:
         events = encode_trace(_finished_trace())
         assert events[0]["type"] == "trace-create"
         assert events[0]["body"]["sessionId"] == "conv1"
+
+    def test_pii_in_the_question_never_reaches_langfuse(self) -> None:
+        """`NEW-08`/`AU-05`: `RedactingFilter` chỉ phủ logging — câu hỏi người
+        dùng vào `trace.input` không qua nó. Mà `TD-73` đã ghi: mọi tenant vào
+        MỘT project Langfuse, tenant ở đó là nhãn chứ không phải hàng rào — tức
+        đây là mặt phẳng mà PII phải bị chặn ở biên, kể cả trong span con và
+        trong `statusMessage` (một exception có thể mang nguyên câu hỏi)."""
+        trace = Trace(
+            name="chat",
+            session_id="conv1",
+            user_id="acme",
+            input="Số của tôi là 0912345678, email toi@example.com",
+        )
+        with trace.span("understand", input="gọi lại 0912345678 giúp"):
+            pass
+        trace.finish(output="đã ghi nhận toi@example.com")
+
+        blob = json.dumps(encode_trace(trace), ensure_ascii=False)
+        assert "0912345678" not in blob
+        assert "toi@example.com" not in blob
+
+    def test_ids_survive_redaction_untouched(self) -> None:
+        """`redact_pii` thay chuỗi chữ số dài — áp bừa lên cả cây thì một
+        `trace_id` toàn số bị thay và điểm số không bao giờ gắn được vào
+        trace. Redact chỉ đụng các trường nội dung; id phải nguyên vẹn."""
+        trace = _finished_trace()
+        events = encode_trace(trace)
+        assert events[0]["body"]["id"] == trace.id
+        span_ids = {e["body"]["id"] for e in events[1:]}
+        assert span_ids == {span.id for span in trace.spans}
 
     def test_every_span_becomes_one_event(self) -> None:
         trace = _finished_trace()
@@ -589,3 +620,83 @@ class TestInstrument:
         from serving.core.instrument import instrument_retriever
 
         assert len(instrument_retriever(_Reranked()).retrieve("q", 5)) == 1  # type: ignore[arg-type]
+
+
+class TestPrecomputedThroughTheTracedChain:
+    """`NEW-08`/`AU-06`, hồi hai — lỗi mà PROBE bắt được chứ không phải test.
+
+    Production bọc cả chuỗi truy hồi bằng `TracedRetriever` (`W5-06`), nên
+    `retriever.base` của server thật là `TracedRetriever(hybrid)` chứ không
+    phải `QdrantHybridRetriever`: bản đầu của `wants_precomputed` isinstance
+    trên class trần — mọi unit test xanh, còn server thật lặng lẽ đi đường
+    embed-đôi cũ. Hai bài dưới dựng ĐÚNG chuỗi mà `instrument_retriever` dựng.
+    """
+
+    def _real_chain(self) -> Any:
+        from rag_core.embedding import HashingEmbeddingProvider
+        from rag_core.retrieval import (
+            QdrantDenseRetriever,
+            QdrantHybridRetriever,
+            RerankedRetriever,
+        )
+        from serving.core.instrument import instrument_retriever
+
+        store = QdrantDenseRetriever(
+            HashingEmbeddingProvider(dimension=16, sparse=True),
+            collection="rag_test_traced",
+        )
+
+        class _Reranker:
+            name = "rr-fake"
+
+            def score(self, query: str, texts: list[str]) -> list[float]:
+                return [0.0] * len(texts)
+
+        return instrument_retriever(RerankedRetriever(QdrantHybridRetriever(store), _Reranker()))  # type: ignore[arg-type]
+
+    def test_an_instrumented_chain_still_qualifies_for_precomputed(self) -> None:
+        from serving.core.chat import wants_precomputed
+        from serving.core.semantic_cache import embedder_of
+
+        chain = self._real_chain()
+        embedder = embedder_of(chain)
+        assert embedder is not None, "lớp bọc phải để embedder_of đào xuyên qua"
+        assert wants_precomputed(chain, embedder), (
+            "chuỗi production LUÔN bị bọc — không nhận ra nó là đường "
+            "embed-một-lần không bao giờ chạy thật"
+        )
+
+    def test_the_traced_layer_forwards_the_pair_to_its_inner(self) -> None:
+        from serving.core.instrument import TracedRetriever
+
+        recorded: dict[str, Any] = {}
+
+        class _Inner:
+            name = "inner"
+
+            def retrieve(
+                self,
+                query: str,
+                top_k: int = 10,
+                *,
+                filters: Any = None,
+                precomputed: Any = None,
+            ) -> list[Any]:
+                recorded["precomputed"] = precomputed
+                return []
+
+        traced = TracedRetriever(_Inner(), "retrieve")  # type: ignore[arg-type]
+        traced.retrieve("q", 5, precomputed=("d", "s"))
+        assert recorded["precomputed"] == ("d", "s")
+
+    def test_the_traced_layer_leaves_a_strict_inner_alone_when_there_is_no_pair(self) -> None:
+        from serving.core.instrument import TracedRetriever
+
+        class _StrictInner:
+            name = "strict"
+
+            def retrieve(self, query: str, top_k: int = 10, *, filters: Any = None) -> list[Any]:
+                return []
+
+        traced = TracedRetriever(_StrictInner(), "retrieve")  # type: ignore[arg-type]
+        assert traced.retrieve("q", 5) == []

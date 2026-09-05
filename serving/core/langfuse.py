@@ -43,6 +43,7 @@ from typing import Any
 
 import httpx
 
+from rag_core.generation.guardrails import redact_pii
 from serving.core.tracing import Span, Trace
 
 __all__ = ["LangfuseSink", "Score", "build_sink", "encode_score", "score_id"]
@@ -50,6 +51,32 @@ __all__ = ["LangfuseSink", "Score", "build_sink", "encode_score", "score_id"]
 logger = logging.getLogger(__name__)
 
 _INGESTION_PATH = "/api/public/ingestion"
+
+
+def _redact(value: Any) -> Any:
+    """`redact_pii` đệ quy trên mọi chuỗi trong một cấu trúc JSON-được.
+
+    ## ⚠️ `NEW-08`/`AU-05`: Langfuse là biên phải redact, không phải Postgres
+
+    `RedactingFilter` chỉ phủ Python logging; câu hỏi người dùng đi vào
+    `trace.input` và comment feedback đi vào `score.comment` **không** qua nó.
+    Mà `TD-73` đã ghi: mọi tenant vào MỘT project Langfuse, tenant ở đó là nhãn
+    chứ không phải hàng rào — tức đây chính là mặt phẳng mà PII của khách này
+    đọc được bởi người xem project. Postgres thì ngược lại: có RLS, và người
+    dùng phải đọc lại được nguyên văn câu của mình — nên redact ở nguồn là sai
+    chỗ, redact ở biên xuất là đúng chỗ.
+
+    Chỉ áp lên các trường mang **nội dung người dùng** (input/output/comment/
+    statusMessage), không áp lên id/tên — `redact_pii` thay chuỗi chữ số dài,
+    và một `trace_id` bị thay là một điểm số không bao giờ gắn được vào trace.
+    """
+    if isinstance(value, str):
+        return redact_pii(value)
+    if isinstance(value, dict):
+        return {k: _redact(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_redact(v) for v in value]
+    return value
 
 
 def _iso(value: Any) -> str | None:
@@ -93,8 +120,8 @@ def encode_trace(trace: Trace) -> list[dict[str, Any]]:
                 "userId": trace.user_id,
                 "sessionId": trace.session_id,
                 "timestamp": _iso(trace.start_time),
-                "input": trace.input,
-                "output": trace.output,
+                "input": _redact(trace.input),
+                "output": _redact(trace.output),
                 "tags": trace.tags,
                 "metadata": {
                     **trace.metadata,
@@ -116,11 +143,11 @@ def encode_trace(trace: Trace) -> list[dict[str, Any]]:
             "name": span.name,
             "startTime": _iso(span.start_time),
             "endTime": _iso(span.end_time),
-            "input": span.input,
-            "output": span.output,
+            "input": _redact(span.input),
+            "output": _redact(span.output),
             "metadata": {**span.metadata, "duration_ms": span.duration_ms},
             "level": span.level,
-            "statusMessage": span.status_message,
+            "statusMessage": _redact(span.status_message),
         }
         if span.kind == "generation":
             body["model"] = span.model
@@ -182,7 +209,10 @@ def encode_score(score: Score) -> list[dict[str, Any]]:
                 "name": score.name,
                 "value": score.value,
                 "dataType": score.data_type,
-                "comment": score.comment,
+                # Comment feedback đã redact ở nguồn (`record_feedback`), nhưng
+                # biên này không được *phụ thuộc* vào điều đó — hai lớp rẻ hơn
+                # một lần rò.
+                "comment": _redact(score.comment),
             },
         }
     ]

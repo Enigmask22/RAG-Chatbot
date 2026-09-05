@@ -74,6 +74,7 @@ from rag_core.generation import (
 )
 from rag_core.llm import BudgetExceeded, ChatMessage, LLMError, StreamingLLM
 from rag_core.retrieval.filters import MetadataFilter
+from rag_core.retrieval.hybrid import QdrantHybridRetriever
 from rag_core.schemas import RetrievedChunk
 from serving.core.auth import Principal, tenant_filter
 from serving.core.registry import ActiveBundle, BundleRegistry, NoBundleLoadedError
@@ -145,7 +146,7 @@ SYSTEM_PROMPT = CHAT_SYSTEM.text
 NO_RETRIEVAL_SYSTEM_PROMPT = CHAT_NO_RETRIEVAL.text
 
 
-def cache_namespace(bundle_version: str) -> str:
+def cache_namespace(bundle_version: str, top_k: int) -> str:
     """`W4-11`: version prompt phải nằm trong namespace cache như bundle_version.
 
     Registry vừa biến prompt thành một biến số có version thì semantic cache
@@ -153,19 +154,75 @@ def cache_namespace(bundle_version: str) -> str:
     phải câu trả lời của `chat-system@v2`, và phát lại nó là phát lại kết quả
     của một hệ thống đã không còn tồn tại — đúng kiểu hỏng mà namespace-theo-
     bundle của `W4-10` sinh ra để chặn, chỉ là ở một trục khác.
+
+    ## ⚠️ `NEW-08`/`AU-02`: `top_k` cũng là một biến số của câu trả lời
+
+    Cùng một câu hỏi với `top_k=5` và `top_k=20` là hai lượt sinh trên hai bộ
+    ngữ cảnh khác nhau — trả lời của lượt này cho lượt kia là vi phạm hợp đồng
+    của chính tham số API. `top_k` đi vào **namespace** (không phải điều kiện
+    loại): một client dùng `top_k` khác mặc định một cách nhất quán vẫn giữ
+    được cache của riêng nó.
     """
-    return f"{bundle_version}+{CHAT_SYSTEM.spec}"
+    return f"{bundle_version}+{CHAT_SYSTEM.spec}+k{top_k}"
 
 
-def cache_eligible(plan: QueryPlan, history: Sequence[ChatMessage]) -> bool:
+def cache_eligible(
+    plan: QueryPlan, history: Sequence[ChatMessage], filters: MetadataFilter | None
+) -> bool:
     """Lượt nào được phép chạm cache. `W4-10`.
 
     Chỉ lượt ĐẦU hội thoại, tự đủ nghĩa, có truy hồi: câu hỏi giữa hội thoại
     mang nghĩa từ lịch sử, và hai người dùng có cùng một câu chữ giữa hai hội
     thoại khác nhau thì KHÔNG có cùng một câu hỏi. Bản viết lại cũng loại —
     nó phụ thuộc lịch sử theo định nghĩa.
+
+    ⚠️ `NEW-08`/`AU-02`: request mang `filters` của client cũng loại. Một câu
+    hỏi bó trong `doc_type=circular` KHÔNG phải câu hỏi ấy trên toàn corpus —
+    trả câu trả lời cache của lượt không filter là vi phạm phạm vi dữ liệu
+    được yêu cầu. Loại thay vì băm filter vào khoá: cache này bảo thủ có chủ
+    đích (xem docstring `semantic_cache.py`), giá trị của nó nằm ở câu hỏi
+    lặp nguyên văn không filter — ca có filter hiếm tới mức một khoá riêng
+    chỉ nuôi entry chết. (`filters` ở đây là của CLIENT, trước khi
+    `tenant_filter()` bọc — hàng rào tenant giống nhau cho mọi lượt của một
+    tenant nên không cần vào khoá.)
     """
-    return plan.retrieves and not history and not plan.rewritten
+    return plan.retrieves and not history and not plan.rewritten and filters is None
+
+
+def _unwrap_traced(candidate: Any) -> Any:
+    """Bóc lớp `TracedRetriever` của `W5-06` (giữ `_inner`), nếu có."""
+    inner = getattr(candidate, "_inner", None)
+    return candidate if inner is None else inner
+
+
+def wants_precomputed(retriever: Any, embedder: Any) -> bool:
+    """Lượt này có dùng chung MỘT forward pass cho cache lẫn truy hồi không.
+
+    `NEW-08`/`AU-06`. Hai điều kiện, cả hai đều cần:
+
+    * nhánh nền (xuyên qua lớp wrap của reranker **và** lớp trace của
+      `W5-06`) là `QdrantHybridRetriever` — retriever khác không nhận kwarg
+      `precomputed`;
+    * embedder có `embed_query_hybrid` — provider base trả `None` là chuyện
+      của người gọi (rơi về `embed_query`), nhưng không có method thì thôi.
+
+    `isinstance` chứ không duck-typing: truyền một cặp vector vào một retriever
+    hiểu sai nó là loại lỗi *trông vẫn chạy* — thứ đắt nhất để tìm lại.
+
+    ⚠️ Phải bóc `TracedRetriever` ở CẢ HAI tầng: production bọc cả chuỗi
+    (`instrument_retriever` bọc reranked lẫn nhánh nền của nó), nên
+    `retriever.base` của server thật là một `TracedRetriever(hybrid)` chứ
+    không phải `QdrantHybridRetriever`. Bản đầu thiếu bước bóc này: mọi unit
+    test trên class trần xanh, còn trên server thật `isinstance` fail lặng lẽ
+    và đường embed-một-lần không bao giờ chạy — probe đo sống
+    (`probes/new08-au06-single-embed.json`) là thứ bắt được nó, không phải
+    test.
+    """
+    outer = _unwrap_traced(retriever)
+    target = _unwrap_traced(getattr(outer, "base", outer))
+    return isinstance(target, QdrantHybridRetriever) and callable(
+        getattr(embedder, "embed_query_hybrid", None)
+    )
 
 
 _PENDING: set[asyncio.Task[None]] = set()
@@ -235,6 +292,9 @@ class ChatTurn:
     cache_vector: Any | None = None
     """Vector câu hỏi đã embed cho lần tra cache TRƯỢT — giữ lại để ghi cache
     sau khi stream thành công, khỏi embed lần thứ ba."""
+    resolved_top_k: int = 5
+    """`top_k` đã chốt cho lượt này (`NEW-08`/`AU-02`) — thành phần của
+    `cache_namespace`, và phải là CÙNG một giá trị ở đầu tra lẫn đầu ghi."""
     nonce: str = field(default_factory=context_nonce)
     """`W4-12`: mã phiên bọc mỗi khối ngữ cảnh. MỖI LƯỢT một mã mới — một mã cố
     định là một mã cuối cùng sẽ nằm trong một tài liệu nào đó, và từ giây ấy nó
@@ -546,7 +606,9 @@ class ChatService:
         # giảm thành miss; đường đầy đủ không phụ thuộc cache sống hay chết.
         cached: CachedAnswer | None = None
         cache_vector: Any | None = None
-        if self.cache is not None and cache_eligible(plan, history):
+        precomputed: Any | None = None
+        resolved_top_k = top_k or self.top_k
+        if self.cache is not None and cache_eligible(plan, history, filters):
             embedder = embedder_of(snapshot.retriever)
             if embedder is not None:
                 with trace.span("cache.lookup", input=plan.question) as span:
@@ -557,12 +619,35 @@ class ChatService:
                     # `QdrantHybridRetriever.retrieve` và tách nó ra đòi sửa
                     # `rag_core`. Xem docstring `serving/core/instrument.py`.
                     with trace.span("embed.query") as embed_span:
-                        cache_vector = await asyncio.to_thread(embedder.embed_query, plan.question)
-                        embed_span.end(embedder=getattr(embedder, "name", None))
+                        # ⭐ `NEW-08`/`AU-06`: MỘT forward pass cho cả tra cache
+                        # lẫn truy hồi. Bản cũ gọi `embed_query` ở đây rồi —
+                        # khi miss — `retrieve()` tự gọi `embed_query_hybrid`
+                        # trên đúng chuỗi ấy lần nữa: +12,6 ms và giữ khoá
+                        # model (`TD-63`, thứ đã gây 503 dưới tải) HAI lần mỗi
+                        # lượt. Với BGE-M3 phần dense của hai đường trùng nhau
+                        # (prefix rỗng có chủ ý, cùng `_forward`, cùng L2).
+                        # Chỉ đi đường này khi nhánh nền là hybrid — retriever
+                        # khác không nhận kwarg `precomputed`.
+                        if wants_precomputed(snapshot.retriever, embedder):
+                            # `None` vẫn có thể trả về (default của provider
+                            # base) — khi ấy rơi xuống `embed_query` như cũ.
+                            precomputed = await asyncio.to_thread(
+                                embedder.embed_query_hybrid, plan.question
+                            )
+                        if precomputed is not None:
+                            cache_vector = precomputed[0]
+                        else:
+                            cache_vector = await asyncio.to_thread(
+                                embedder.embed_query, plan.question
+                            )
+                        embed_span.end(
+                            embedder=getattr(embedder, "name", None),
+                            shared_with_retrieval=precomputed is not None,
+                        )
                     assert cache_vector is not None
                     cached = await self.cache.lookup(
                         principal.tenant_id,
-                        cache_namespace(snapshot.version),
+                        cache_namespace(snapshot.version, resolved_top_k),
                         plan.question,
                         cache_vector,
                     )
@@ -577,6 +662,9 @@ class ChatService:
 
         contexts: list[RetrievedChunk] = []
         if plan.retrieves and cached is None:
+            retrieve_kwargs: dict[str, Any] = {"filters": scoped}
+            if precomputed is not None:
+                retrieve_kwargs["precomputed"] = precomputed
             contexts = list(
                 await asyncio.to_thread(
                     # ⚠️ `retrieve()` là **đồng bộ** và tốn hàng trăm mili giây
@@ -587,8 +675,8 @@ class ChatService:
                     # của `admin.py` là `def` chứ không `async def`.
                     snapshot.retriever.retrieve,
                     plan.question,
-                    top_k or self.top_k,
-                    filters=scoped,
+                    resolved_top_k,
+                    **retrieve_kwargs,
                 )
             )
 
@@ -617,6 +705,7 @@ class ChatService:
             max_tokens=self.max_tokens,
             cached=cached,
             cache_vector=cache_vector if cached is None else None,
+            resolved_top_k=resolved_top_k,
         )
 
     # ---------------------------------------------------------- nửa dưới
@@ -893,11 +982,17 @@ class ChatService:
                 status=f"{type(exc).__name__}: {exc}",
                 model=served_model,
             )
+            # ⚠️ `NEW-08`/`AU-03`: lời của `LLMError` mang tên route, lỗi HTTP
+            # thô của provider, có khi cả mẩu body — tất cả là chuyện nội bộ.
+            # Client chỉ cần biết: tầng sinh hỏng, đã nhận được bao nhiêu chữ,
+            # và `trace_id` để đối chiếu. Chi tiết đầy đủ nằm ở log (dòng
+            # warning trên) và ở trace (status của span `completion`).
             yield ChatEvent(
                 "error",
                 {
-                    "detail": f"{type(exc).__name__}: {exc}",
+                    "detail": "tầng sinh gặp lỗi giữa chừng — thử lại sau",
                     "partial_chars": len("".join(emitted)),
+                    "trace_id": turn.trace.id,
                 },
             )
         else:
@@ -962,7 +1057,7 @@ class ChatService:
                 store_task = asyncio.get_running_loop().create_task(
                     self.cache.store(
                         turn.principal.tenant_id,
-                        cache_namespace(turn.bundle_version),
+                        cache_namespace(turn.bundle_version, turn.resolved_top_k),
                         turn.plan.question,
                         turn.cache_vector,
                         text="".join(emitted),
@@ -1153,6 +1248,10 @@ class ChatService:
                         # được khi có cả hai.
                         retrieved_sources=turn.persisted_sources(),
                         citations_verified=citations,
+                        # `NEW-08`/`AU-07`: khoá nối thật tới câu hỏi — hàng
+                        # user đã ghi từ `_open_turn`, còn hàng này ghi trong
+                        # task nền, nên `created_at` không phải một thứ tự.
+                        user_message_id=turn.user_message_id,
                         trace_id=turn.trace.id,
                         latency_ms=int((time.perf_counter() - turn.started) * 1000.0),
                         model=model,

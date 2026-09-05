@@ -170,6 +170,47 @@ class TestVerifyAgainstTheRightChunk:
         report = _verify('{"n": 1, "quote": "đạt  7,09\\nphần trăm"}')
         assert report.citations[0].verified is True
 
+
+class TestEllipsisQuotes:
+    """`NEW-08`/`TD-64`: dấu lược là "bỏ một quãng", không phải chữ.
+
+    `W5-02` đo được matcher chuỗi-con từ chối oan **19/67** lỗi cấp quote —
+    toàn bộ là hai mẩu nguyên văn nối bằng `...`, một cách trích dẫn hợp lệ
+    trong văn viết. Đây là phép đo mà docstring `citations.py` đòi trước khi
+    nới bất kỳ quy tắc nào.
+    """
+
+    def test_two_real_segments_joined_by_an_ellipsis_are_verified(self) -> None:
+        report = _verify('{"n": 1, "quote": "Tăng trưởng đạt ... cao hơn năm trước"}')
+        assert report.citations[0].verified is True
+
+    def test_the_unicode_and_bracketed_forms_count_too(self) -> None:
+        for mark in ("…", "[...]", "[…]"):
+            report = _verify(f'{{"n": 1, "quote": "Tăng trưởng {mark} năm 2024"}}')
+            assert report.citations[0].verified is True, mark
+
+    def test_segments_in_the_wrong_order_are_rejected(self) -> None:
+        """Thứ tự là phần giữ độ chặt: hai mẩu có thật nhưng đảo chiều là một
+        câu mà chunk không nói."""
+        report = _verify('{"n": 1, "quote": "cao hơn năm trước ... Tăng trưởng đạt"}')
+        assert report.citations[0].verified is False
+
+    def test_one_fabricated_segment_rejects_the_whole_quote(self) -> None:
+        report = _verify('{"n": 1, "quote": "Tăng trưởng đạt ... GDP giảm 3 phần trăm"}')
+        assert report.citations[0].verified is False
+
+    def test_a_quote_that_is_only_an_ellipsis_says_nothing(self) -> None:
+        """Trước sửa này `"..." in content` có thể `True` — một quote không
+        nói gì cả mà được đóng dấu verified."""
+        report = _verify('{"n": 1, "quote": "..."}')
+        assert report.citations[0].verified is False
+
+    def test_overlapping_segments_cannot_be_counted_twice(self) -> None:
+        """`find` tiếp tục từ cuối mảnh trước: hai mảnh trỏ vào CÙNG một đoạn
+        chunk không được tính là hai bằng chứng."""
+        report = _verify('{"n": 1, "quote": "đạt 7,09 phần trăm ... đạt 7,09 phần trăm"}')
+        assert report.citations[0].verified is False
+
     def test_case_differences_do_reject(self) -> None:
         """Đổi hoa thường là SỬA CHỮ — đúng loại 'sửa nhẹ' mà xác minh tồn tại
         để bắt. Nới quy tắc này phải kèm phép đo cho thấy nó từ chối oan."""

@@ -105,16 +105,26 @@ class TracedRetriever(Retriever):
         top_k: int = 10,
         *,
         filters: FilterSpec = None,
+        precomputed: Any | None = None,
     ) -> list[RetrievedChunk]:
+        # `NEW-08`/`AU-06`: chuyển tiếp vector embed sẵn — cùng luật với
+        # `RerankedRetriever`: chỉ truyền khi có, vì inner có thể là một nhánh
+        # không nhận kwarg này. ⚠️ Thiếu chuyển tiếp ở đây thì đường
+        # embed-một-lần chết NGAY Ở LỚP NGOÀI CÙNG của production (mọi
+        # retriever đang phục vụ đều bị bọc `W5-06`) trong khi mọi unit test
+        # trên class trần vẫn xanh — đúng lỗi mà probe đo sống đã bắt được.
+        kwargs: dict[str, Any] = {"filters": filters}
+        if precomputed is not None:
+            kwargs["precomputed"] = precomputed
         trace = current_trace()
         if trace is None:
-            return self._inner.retrieve(query, top_k, filters=filters)
+            return self._inner.retrieve(query, top_k, **kwargs)
         with trace.span(
             self._span_name,
             input={"query": query, "top_k": top_k},
             retriever=self._inner.name,
         ) as span:
-            hits = self._inner.retrieve(query, top_k, filters=filters)
+            hits = self._inner.retrieve(query, top_k, **kwargs)
             span.end(
                 output={"hits": hits_summary(hits)},
                 n_hits=len(hits),

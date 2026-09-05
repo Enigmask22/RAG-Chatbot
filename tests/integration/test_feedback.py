@@ -510,3 +510,158 @@ class TestTheEdges:
             await record_feedback(
                 sessions, principal, message_id=meta["answer_message_id"], rating=0
             )
+
+
+# ---------------------------------------------------------------------------
+# `NEW-08`/`AU-07` — ghép câu hỏi bằng khoá thật, không bằng đồng hồ
+# ---------------------------------------------------------------------------
+
+
+def _insert_conversation(database: Any, conv_id: str) -> None:
+    from sqlalchemy import text
+
+    with database.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO conversation (id, tenant_id, bundle_version)"
+                " VALUES (:id, 'acme', '0.1.0')"
+            ),
+            {"id": conv_id},
+        )
+
+
+def _insert_message(
+    database: Any,
+    *,
+    id: str,
+    conv_id: str,
+    role: str,
+    content: str,
+    offset_s: int,
+    user_message_id: str | None = None,
+) -> None:
+    """Ghi thẳng bằng engine chủ (bỏ qua app) với `created_at` TƯỜNG MINH —
+    kịch bản chồng lấn cần kiểm soát đồng hồ, không được phó mặc cho `now()`."""
+    from sqlalchemy import text
+
+    with database.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO message (id, tenant_id, conversation_id, role, content,"
+                " created_at, user_message_id) VALUES (:id, 'acme', :conv, :role, :content,"
+                " now() + make_interval(secs => :offset), :umid)"
+            ),
+            {
+                "id": id,
+                "conv": conv_id,
+                "role": role,
+                "content": content,
+                "offset": offset_s,
+                "umid": user_message_id,
+            },
+        )
+
+
+def _queue(client: TestClient) -> list[dict[str, Any]]:
+    body = client.get("/admin/feedback", headers={"Authorization": f"Bearer {ADMIN_KEY}"}).json()
+    items: list[dict[str, Any]] = body["items"]
+    return items
+
+
+class TestQuestionAnswerPairing:
+    def test_the_saved_answer_row_carries_the_user_message_key(
+        self, app: Any, database: Any
+    ) -> None:
+        """Hàng trợ lý phải mang id của ĐÚNG câu hỏi nó trả lời — giá trị đã
+        có sẵn trên `ChatTurn` từ `W4-06`, giờ được ghi xuống (`0005`)."""
+        from sqlalchemy import text
+
+        client, _ = app
+        meta = _turn(client)
+
+        with database.connect() as conn:
+            stored = conn.execute(
+                text("SELECT user_message_id FROM message WHERE id = :id"),
+                {"id": meta["answer_message_id"]},
+            ).scalar()
+        assert stored == meta["message_id"]
+
+    def test_overlapping_turns_do_not_swap_questions(self, app: Any, database: Any) -> None:
+        """Kịch bản hai lượt chồng nhau, dựng đúng thứ tự ghi thật: user_A và
+        user_B ghi ngay (hai request song song), assistant_A ghi SAU CÙNG
+        (task nền của lượt chậm hơn). Suy luận "user muộn nhất trước answer"
+        chọn B — sai; khoá `user_message_id` phải chọn A. Không có khoá, ứng
+        viên golden mang câu hỏi B dán lên câu trả lời của A, sai không dấu
+        vết."""
+        client, _ = app
+        _insert_conversation(database, "convrace")
+        _insert_message(
+            database, id="user_a", conv_id="convrace", role="user", content="Câu hỏi A?", offset_s=0
+        )
+        _insert_message(
+            database, id="user_b", conv_id="convrace", role="user", content="Câu hỏi B?", offset_s=1
+        )
+        _insert_message(
+            database,
+            id="ans_a",
+            conv_id="convrace",
+            role="assistant",
+            content="Trả lời cho A.",
+            offset_s=2,
+            user_message_id="user_a",
+        )
+
+        assert _rate(client, "ans_a", -1).status_code == 201
+        mine = [i for i in _queue(client) if i["message_id"] == "ans_a"]
+        assert mine, "câu 👎 phải nằm trong hàng đợi"
+        assert mine[0]["question"] == "Câu hỏi A?", "khoá thật phải thắng suy luận thời gian"
+
+    def test_a_legacy_row_still_pairs_by_the_old_heuristic(self, app: Any, database: Any) -> None:
+        """Hàng ghi trước `0005` không có khoá — đường ghép cũ vẫn phải chạy.
+        Bài này ghim rằng fallback TỒN TẠI, không ghim rằng nó đúng: rủi ro
+        chọn nhầm là thuộc tính của dữ liệu cũ, không xoá được bằng code mới."""
+        client, _ = app
+        _insert_conversation(database, "convold")
+        _insert_message(
+            database,
+            id="old_user",
+            conv_id="convold",
+            role="user",
+            content="Câu hỏi cũ?",
+            offset_s=0,
+        )
+        _insert_message(
+            database,
+            id="old_ans",
+            conv_id="convold",
+            role="assistant",
+            content="Trả lời cũ.",
+            offset_s=1,
+        )
+
+        assert _rate(client, "old_ans", -1).status_code == 201
+        mine = [i for i in _queue(client) if i["message_id"] == "old_ans"]
+        assert mine and mine[0]["question"] == "Câu hỏi cũ?"
+
+
+class TestCommentRedaction:
+    def test_pii_in_a_comment_is_redacted_before_it_is_stored(self, app: Any) -> None:
+        """`NEW-08`/`AU-05`: cột comment chảy đi ba ngả (review queue, điểm
+        Langfuse, file ứng viên golden sẽ sống trong git) — redact TẠI NGUỒN."""
+        client, _ = app
+        meta = _turn(client)
+
+        response = _rate(
+            client,
+            meta["answer_message_id"],
+            -1,
+            reason="other",
+            comment="gọi tôi 0912345678 hoặc toi@example.com nhé",
+        )
+        assert response.status_code == 201
+
+        mine = [i for i in _queue(client) if i["message_id"] == meta["answer_message_id"]]
+        assert mine, "lượt vừa chấm phải trong hàng đợi"
+        comment = mine[0]["comment"]
+        assert "0912345678" not in comment
+        assert "toi@example.com" not in comment

@@ -45,6 +45,8 @@ from .rrf import RRF_K, reciprocal_rank_fusion
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from ..embedding.base import FloatArray
+    from ..embedding.sparse import SparseVector
     from .qdrant_store import QdrantDenseRetriever
 
 __all__ = ["DEFAULT_CANDIDATE_K", "QdrantHybridRetriever"]
@@ -96,10 +98,20 @@ class QdrantHybridRetriever(Retriever):
         top_k: int = 10,
         *,
         filters: FilterSpec = None,
+        precomputed: tuple[FloatArray, SparseVector] | None = None,
     ) -> list[RetrievedChunk]:
+        """Truy hồi hybrid. `precomputed` = cặp vector đã embed sẵn cho ĐÚNG
+        `query` này — `NEW-08`/`AU-06`: tầng serving embed một lần cho cả tra
+        cache lẫn truy hồi, thay vì hai forward pass cho cùng một chuỗi (mỗi
+        pass ~12,6 ms và một lần giữ khoá model). Người truyền chịu trách
+        nhiệm cặp vector đúng là của `query`; ở đây không có cách nào kiểm."""
         from qdrant_client import models
 
-        hybrid = self.store.embeddings.embed_query_hybrid(query)
+        hybrid = (
+            precomputed
+            if precomputed is not None
+            else self.store.embeddings.embed_query_hybrid(query)
+        )
         if hybrid is None:  # pragma: no cover - bug provider, xem `__init__`
             raise RuntimeError(
                 f"Provider {self.store.embeddings.name!r} khai sparse_vocab_size="

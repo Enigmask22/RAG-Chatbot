@@ -55,6 +55,7 @@ trần thật. Chỗ đúng là một bộ đếm dùng chung (Redis) ở `W4-10
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
@@ -398,13 +399,24 @@ class LLMRouter(LLMProvider):
                         charged = True
                         self._log_served(route, chunk.final.model, chunk.final.usage.cost_usd)
                     yield chunk
+            except (asyncio.CancelledError, GeneratorExit):
+                # ⭐⭐ `NEW-08`/`AU-01`: đường huỷ phải TỰ đặt `outcome`, vì nó
+                # không đi qua `except Exception` nào mà `finally` thì vẫn gọi
+                # `breaker.record(outcome)` với giá trị khởi tạo `"failure"`.
+                # Khách đóng tab không phải bằng chứng nhà cung cấp hỏng — ba
+                # người bỏ ngang liên tiếp mà mở mạch 30 giây cho một route
+                # khoẻ mạnh là một sự cố tự gây, kích hoạt đúng lúc tải cao
+                # (provider chậm là lúc người ta hay bỏ nhất).
+                outcome = "neutral"
+                raise
             except BudgetExceeded:
                 outcome = "neutral"
                 raise
             except Exception as exc:
                 # `CancelledError`/`GeneratorExit` là `BaseException`, nên chúng
-                # **không** rơi vào đây: người dùng đóng tab thì đường huỷ đi
-                # tiếp nguyên vẹn, chỉ có khối `finally` chạy để ghi tiền.
+                # **không** rơi vào đây — chúng có nhánh riêng ở trên, vừa để đi
+                # tiếp nguyên vẹn, vừa để cầu dao ghi `neutral` thay vì giá trị
+                # khởi tạo. Khối `finally` vẫn chạy để ghi tiền.
                 outcome = "neutral" if isinstance(exc, PermanentLLMError) else "failure"
                 if emitted:
                     # ⭐⭐ Đã gửi token đi rồi thì **không** còn đường lui.

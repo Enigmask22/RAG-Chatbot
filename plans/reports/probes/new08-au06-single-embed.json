@@ -1,0 +1,16 @@
+{
+  "turn1_counts": {
+    "embed_query_hybrid": 1,
+    "embed_query": 0
+  },
+  "turn2_counts_cumulative": {
+    "embed_query_hybrid": 2,
+    "embed_query": 0
+  },
+  "turn1_frames": 768,
+  "turn2_cached_marker_seen": false,
+  "verdict_turn1": "PASS",
+  "verdict_turn2": "PASS",
+  "note": "Chốt bù cho mutation M14 (dây nối prepare không có test service-level). Lượt 1 (miss): 1 forward pass cho cả cache lookup lẫn truy hồi — trước NEW-08 là 2. Lượt 2 cùng câu: +1 cho lookup. 'turn2_cached_marker_seen: false' là giới hạn của probe (pattern dò marker không khớp khung meta), không phải bằng chứng miss; tính chất AU-06 (một embed/lượt) đúng cho cả hai lượt bất kể hit/miss. Lượt chạy ĐẦU của probe bắt được lỗi thật: wants_precomputed isinstance trên class trần fail với chuỗi bị TracedRetriever (W5-06) bọc — đã sửa (_unwrap_traced + forwarding ở TracedRetriever).",
+  "bundle": "0.2.1"
+}

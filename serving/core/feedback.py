@@ -55,6 +55,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import func
 
+from rag_core.generation.guardrails import redact_pii
 from serving.core.auth import Principal
 from serving.core.langfuse import Score
 from serving.db.engine import atenant_session
@@ -125,7 +126,12 @@ async def record_feedback(
     if reason is not None and reason not in FEEDBACK_REASONS:
         raise ValueError(f"reason không hợp lệ: {reason!r}")
     if comment is not None:
-        comment = comment.strip()[:_MAX_COMMENT] or None
+        # ⚠️ `NEW-08`/`AU-05`: redact TẠI NGUỒN, vì cột này chảy đi ba ngả —
+        # review queue, điểm Langfuse, và file xuất ứng viên golden (thứ sẽ
+        # sống trong git). Email/số điện thoại người dùng gõ vào ô góp ý không
+        # được phép theo dòng ấy ra ngoài. Redact trước khi cắt: placeholder
+        # dài hơn chuỗi gốc, cắt trước là có thể cắt đôi một placeholder.
+        comment = redact_pii(comment).strip()[:_MAX_COMMENT] or None
 
     async with atenant_session(sessions, principal.tenant_id) as session:
         message = await session.scalar(select(Message).where(Message.id == message_id))
@@ -311,35 +317,56 @@ async def review_queue(
 
 
 async def _questions_for(session: AsyncSession, answers: Sequence[Message]) -> dict[str, Message]:
-    """Câu hỏi đứng ngay trước mỗi câu trả lời, ghép trong Python.
+    """Câu hỏi mà mỗi câu trả lời trả lời, ghép trong Python.
 
     ⭐ Hai truy vấn thay vì một `LATERAL` cho mỗi hàng: hàng đợi review có trần
     50 hàng, và một `LATERAL` ở đây là thứ chạy đúng cho tới ngày ai đó bỏ trần.
-    Ghép theo `created_at` chứ không theo id — id là uuid, không có thứ tự.
+
+    ## `NEW-08`/`AU-07`: join theo `user_message_id`, không đoán theo đồng hồ
+
+    Bản đầu chọn user message **muộn nhất** có `created_at <=` answer — đúng
+    khi các lượt tuần tự, sai khi hai lượt cùng hội thoại chồng nhau (hàng user
+    ghi ngay ở `_open_turn`, hàng assistant ghi trong task nền sau khi stream
+    xong): user_B chen vào giữa là ứng viên golden mang câu hỏi B dán lên câu
+    trả lời của A. Từ `0005`, hàng assistant mang khoá thật; suy luận thời
+    gian chỉ còn là **fallback cho hàng ghi trước `0005`** — với đúng các hàng
+    ấy, rủi ro cũ là thuộc tính của dữ liệu, không xoá được bằng code mới.
     """
     if not answers:
         return {}
-    conversation_ids = {a.conversation_id for a in answers}
-    rows = (
-        await session.scalars(
-            select(Message)
-            .where(Message.conversation_id.in_(conversation_ids), Message.role == "user")
-            .order_by(Message.created_at, Message.id)
-        )
-    ).all()
-    by_conversation: dict[str, list[Message]] = {}
-    for row in rows:
-        by_conversation.setdefault(row.conversation_id, []).append(row)
+    by_key = [a for a in answers if a.user_message_id is not None]
+    legacy = [a for a in answers if a.user_message_id is None]
 
     paired: dict[str, Message] = {}
-    for answer in answers:
-        earlier = [
-            m
-            for m in by_conversation.get(answer.conversation_id, [])
-            if m.created_at <= answer.created_at
-        ]
-        if earlier:
-            paired[answer.id] = earlier[-1]
+    if by_key:
+        wanted = {a.user_message_id for a in by_key}
+        rows = (await session.scalars(select(Message).where(Message.id.in_(wanted)))).all()
+        questions_by_id = {row.id: row for row in rows}
+        for answer in by_key:
+            question = questions_by_id.get(answer.user_message_id or "")
+            if question is not None:
+                paired[answer.id] = question
+
+    if legacy:
+        conversation_ids = {a.conversation_id for a in legacy}
+        rows = (
+            await session.scalars(
+                select(Message)
+                .where(Message.conversation_id.in_(conversation_ids), Message.role == "user")
+                .order_by(Message.created_at, Message.id)
+            )
+        ).all()
+        by_conversation: dict[str, list[Message]] = {}
+        for row in rows:
+            by_conversation.setdefault(row.conversation_id, []).append(row)
+        for answer in legacy:
+            earlier = [
+                m
+                for m in by_conversation.get(answer.conversation_id, [])
+                if m.created_at <= answer.created_at
+            ]
+            if earlier:
+                paired[answer.id] = earlier[-1]
     return paired
 
 

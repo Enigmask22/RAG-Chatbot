@@ -178,6 +178,21 @@ class Message(Base, _Tenanted):
     không sinh block, và cho mọi hàng ghi trước `0004`.
     """
 
+    user_message_id: Mapped[str | None] = mapped_column(String(32))
+    """Id hàng message NGƯỜI DÙNG mà câu trả lời này trả lời — `NEW-08`/`AU-07`.
+
+    ⭐ Khoá nối thật, thay cho suy luận "user message muộn nhất trước
+    `created_at` của answer". Suy luận ấy đúng khi các lượt tuần tự và sai khi
+    hai lượt cùng hội thoại chồng nhau: user ghi ngay lúc `_open_turn`, còn
+    assistant ghi trong task nền SAU khi stream xong — đa tab hoặc client
+    retry là đủ để ứng viên golden mang câu hỏi B dán lên câu trả lời của A,
+    sai không dấu vết. Giá trị có sẵn trên `ChatTurn.user_message_id` từ
+    `W4-06`; cột này chỉ là việc ghi nó xuống.
+
+    `NULL` cho message người dùng, và cho mọi hàng assistant ghi trước `0005`
+    (đường ghép cũ vẫn là fallback cho đúng các hàng ấy).
+    """
+
     trace_id: Mapped[str | None] = mapped_column(String(32))
     """Trace `W5-06` đã quan sát lượt sinh ra hàng này.
 

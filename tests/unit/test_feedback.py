@@ -218,6 +218,21 @@ class TestScore:
 
     def test_the_comment_joins_reason_and_free_text(self) -> None:
         assert _score_comment("wrong", "sai số liệu") == "wrong · sai số liệu"
+
+    def test_pii_in_a_comment_is_redacted_at_the_langfuse_boundary(self) -> None:
+        """`NEW-08`/`AU-05`: lớp thứ hai — comment đã redact ở nguồn
+        (`record_feedback`), nhưng biên xuất không được *phụ thuộc* điều đó:
+        một `Score` dựng từ đường khác vẫn phải sạch khi rời hệ thống."""
+        (event,) = encode_score(
+            Score(
+                trace_id="t1",
+                name=SCORE_NAME,
+                value=-1.0,
+                comment="gọi tôi qua 0912345678 hoặc toi@example.com",
+            )
+        )
+        assert "0912345678" not in event["body"]["comment"]
+        assert "toi@example.com" not in event["body"]["comment"]
         assert _score_comment("wrong", None) == "wrong"
         assert _score_comment(None, None) is None
 

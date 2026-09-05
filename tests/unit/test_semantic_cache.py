@@ -311,3 +311,27 @@ class TestEmbedderOf:
             pass
 
         assert embedder_of(NoStore()) is None
+
+    def test_a_retriever_that_is_its_own_store_exposes_its_embedder(self) -> None:
+        """`NEW-08`/`AU-13`: `QdrantDenseRetriever` không có `.store` — chính
+        nó LÀ store, `.embeddings` nằm trực tiếp trên nó. Trước sửa này một
+        bundle `mode: dense` làm cache tắt câm lặng (trả `None`, không log) —
+        fixture cũ có `.store` nên không bắt được, vì nó không cùng hình dạng
+        với class thật."""
+
+        class DenseShaped:
+            embeddings = _Embedder()
+
+        assert embedder_of(DenseShaped()) is DenseShaped.embeddings
+
+    def test_the_real_dense_retriever_shape_is_recognised(self) -> None:
+        """Ghim bằng CLASS THẬT, không phải fixture cùng-hình-dạng-hôm-nay:
+        nếu `QdrantDenseRetriever` đổi cấu trúc thuộc tính, bài này đỏ đúng
+        ngày đó thay vì cache lại tắt câm lần nữa."""
+        from rag_core.retrieval.qdrant_store import QdrantDenseRetriever
+
+        embedder = _Embedder()
+        dense = object.__new__(QdrantDenseRetriever)  # không cần client thật
+        dense.embeddings = embedder  # type: ignore[assignment]
+
+        assert embedder_of(dense) is embedder

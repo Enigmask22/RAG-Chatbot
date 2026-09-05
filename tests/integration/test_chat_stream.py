@@ -361,6 +361,32 @@ def test_a_failure_after_the_first_byte_can_only_be_an_error_frame(
     assert frames[-1][2]["partial_chars"] == len("Theo tài liệu ")
 
 
+def test_an_infrastructure_failure_is_a_503_that_keeps_internals_server_side(
+    database: Engine, workspace: Path
+) -> None:
+    """`NEW-08`/`AU-03`: Qdrant chết thì client nhận một 503 nói "thử lại" kèm
+    `request_id` — KHÔNG nhận tên service, port, tên collection. Chuỗi lỗi giả
+    trong harness (`BOOM_MESSAGE`) mang đúng ba thứ ấy, và bài này canh rằng
+    không mảnh nào của nó đi qua biên HTTP. Chi tiết đầy đủ vẫn ở log server
+    (`logger.exception`) và trace — chỗ của người vận hành, không phải client.
+    """
+    proc, base = _serve(workspace, CHAT_TEST_RETRIEVAL_BOOM="1")
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                f"{base}/chat", json={"message": "câu hỏi thường"}, headers=_headers()
+            )
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+    assert response.status_code == 503
+    body = json.dumps(response.json())
+    for fragment in ("qdrant", "6333", "rag_noi_bo", "ResponseHandlingException"):
+        assert fragment not in body, f"chi tiết nội bộ {fragment!r} rò ra client"
+    assert response.json()["detail"]["request_id"], "phải có request_id để đối chiếu log"
+
+
 def test_another_tenants_conversation_is_404_not_403(
     server: str,
 ) -> None:
@@ -828,8 +854,15 @@ def test_a_primary_that_dies_mid_stream_becomes_an_error_frame_not_a_spliced_ans
     assert text == "CHÍNH-0 CHÍNH-1 ", "phần đã sinh giữ nguyên, không nối thêm của nhánh khác"
     assert "Theo " not in text, "nhánh dự phòng KHÔNG được nối vào giữa stream"
     assert "error" in kinds and "done" not in kinds
-    detail = next(d for _, n, d in frames if n == "error")["detail"]
-    assert "không ai nói" in detail
+    frame = next(d for _, n, d in frames if n == "error")
+    # ⚠️ Trước `NEW-08`/`AU-03` bài này đọc LỜI của router trong `detail`
+    # ("không ai nói") để biết đúng đường lỗi đã bắn — tức nó dựa vào chính
+    # chỗ rò mà AU-03 bịt. Đường lỗi giờ chứng minh bằng HÀNH VI (ba assertion
+    # trên: text không bị nối, không done), còn detail phải KÍN: lời của
+    # router và tên lớp lỗi ở lại log server.
+    assert "không ai nói" not in frame["detail"]
+    assert "LLMError" not in frame["detail"]
+    assert frame["trace_id"], "client cần trace_id để báo lỗi có địa chỉ"
 
 
 def test_an_exhausted_daily_budget_is_429_before_a_single_byte_is_sent(

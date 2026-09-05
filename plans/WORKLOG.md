@@ -4299,3 +4299,84 @@ tay index phụ thuộc HĐH) · `TD-83` (chưa có smoke tầng sinh).
 gọn ba món: `TD-71` (gate chưa ghi phán quyết ngược vào bundle — **đang chặn**
 auto-promote), `TD-82` (đúc lại manifest, phải làm cùng lúc), và `TD-83` (smoke
 tầng sinh có secret).
+
+---
+
+## 2026-09-05 (17) — Audit toàn cục + `NEW-08`: 9 vá, một hồi quy thật, và `TD-64` đóng bằng cách sửa phép đo
+
+**Trạng thái**: `W5` 9/11 · `NEW` **8/8** · nợ: đóng ~~`TD-64`~~, giảm nhẹ
+`TD-73`, mới `TD-84` · bộ mặc định **2 291 xanh** (3 skip) · integration **282 xanh** (+ gpu 13/13) ·
+lint sạch cả `--platform linux` · tiêm **21/22 đỏ + 1 sống sót có chủ đích** · chi phí **$0** + ~$0,006 probe.
+
+**Bối cảnh**: bạn yêu cầu rà toàn bộ tồn đọng + soát mã trước khi tiếp
+`W5-10`. Ba lượt review độc lập (bảo mật · hiệu năng · đúng đắn) quét thẳng mã
+→ **21 phát hiện** `AU-01`…`AU-21`, 4 nặng nhất kiểm chéo tay trước khi tin.
+Danh mục + ~40 mục "đã kiểm, ổn": `reports/tasks/audit-pre-w510.md`.
+
+**⭐⭐ Cầu dao đếm "khách đóng tab" thành "provider hỏng" (`AU-01`).**
+`CancelledError` là `BaseException` nên không rơi vào `except Exception` nào —
+nhưng `finally` vẫn `record(outcome)` với giá trị khởi tạo `"failure"`. Comment
+ngay đó xử lý đường huỷ cho phần *tiền* và bỏ sót phần *cầu dao*: ba người bỏ
+ngang liên tiếp là mạch mở 30 giây cho một route khoẻ mạnh, đúng lúc tải cao.
+Và mutation phơi thêm một tầng: ghi `"success"` thay vì `"neutral"` cũng sai —
+nó *reset* bộ đếm, một client hay đóng tab giữ một provider hỏng thật mãi ở
+`closed`. Ranh giới ba giá trị ấy giờ có test kẹp từng cạnh.
+
+**⭐⭐ Khoá cache thiếu `top_k`/`filters` (`AU-02`) — hai trục, hai cách xử.**
+`top_k` vào *namespace* (client dùng khác mặc định nhất quán vẫn có cache);
+`filters` vào *điều kiện loại* (ca hiếm — khoá riêng chỉ nuôi entry chết).
+`ChatTurn.resolved_top_k` giữ đầu ghi trùng namespace đầu đọc — mutation M5
+chứng minh lỗ đó có thật trước khi test bịt.
+
+**⭐⭐ Một test dựa vào chính chỗ rò nó lẽ ra phải chặn (`AU-03`).** Bịt đường
+exception nội bộ rò ra client (503 + khung SSE) làm đỏ test spliced-answer —
+nó nhận diện *đường lỗi nào bắn* bằng cách đọc lời nội bộ của router trong
+`detail`. Sửa test sang chứng minh bằng **hành vi** (text không bị nối, không
+`done`) và canh luôn tính kín. ⚠️ Hồi quy này lọt qua lượt test giữa chừng vì
+tôi chạy bộ hẹp — đúng lỗi `W5-06`; trọn bộ integration bắt ngay. Giữ nguyên
+`admin.py` có chủ đích: sau scope `admin`, chi tiết lỗi là chức năng.
+
+**⭐ `TD-64` đóng bằng cách sửa PHÉP ĐO, không sửa model.** 19/67 "lỗi" quote
+là hai mẩu nguyên văn nối bằng `...` — matcher chuỗi-con coi là bịa. Docstring
+`citations.py` tự đòi "nới lỏng phải kèm số đo từ chối oan" và `W5-02` chính
+là số đo ấy. `_quote_matches`: mảnh quanh dấu lược khớp nguyên văn, đúng thứ
+tự, không chồng lấn; quote toàn dấu lược = `False`. Chấm lại 396 quote đã lưu
+($0): **0,8308 → 0,8662 ≥ 0,85 ✅**, 14 cứu / 0 rớt / 10 lỗi gắn nhầm nguồn
+giữ nguyên vì là lỗi thật. Đề xuất cũ (cấm `...` trong prompt) bị bác — cấm
+một cách trích dẫn đúng để chiều một matcher hẹp là sửa ngược.
+
+**⭐ Embed đôi (`AU-06`) + khoá nối feedback (`AU-07`) + PII (`AU-05`).**
+Một `embed_query_hybrid` cho cả cache lẫn truy hồi (kwarg `precomputed` xuyên
+reranker→hybrid; `isinstance` với class thật vì vector truyền nhầm retriever
+là lỗi *trông vẫn chạy*) — bớt 12,6 ms và MỘT lần giữ khoá `TD-63` mỗi lượt.
+Migration `0005`: hàng assistant mang `user_message_id`, `_questions_for` join
+theo khoá thật thay vì "user muộn nhất trước answer" (hai lượt chồng nhau là
+ứng viên golden mang câu hỏi B dán lên câu trả lời A); không backfill — backfill
+bằng đúng suy luận bị thay là đóng dấu khoá thật lên một phép đoán. PII redact
+ở biên Langfuse (`_redact` đệ quy, chừa id — một `trace_id` bị thay là điểm số
+không bao giờ gắn được) + comment feedback redact tại nguồn (chảy ba ngả).
+
+**⚠️ Lượt tiêm "20/20 đỏ" có một cái đỏ GIẢ.** M14 bị "giết" bởi chính test
+spliced-answer đang đỏ sẵn vì hồi quy ở trên — phiên bản mutation của bài học
+`W5-08`: phép đo đúng quy trình vẫn vô nghĩa khi nền không xanh. Tiêm lại
+riêng trên nền xanh: M14 **sống sót đúng dự đoán** (không có test
+service-level cho `prepare()`). Chốt bù là probe đo sống trên app thật — và
+**lượt probe ĐẦU bắt được một lỗi thật mà cả 27 test mới trượt qua**:
+`wants_precomputed` isinstance trên class trần fail lặng lẽ với chuỗi bị
+`TracedRetriever` (`W5-06`) bọc, tức đường embed-một-lần chưa bao giờ chạy
+trên server thật. Vá (`_unwrap_traced` + chuyển tiếp ở `TracedRetriever`) +
+2 test dựng đúng chuỗi production + 2 mutation M21/M22 đỏ. Probe sau vá:
+**PASS** — lượt miss đúng 1 forward pass, 0 `embed_query`
+(`probes/new08-au06-single-embed.json`). Bài học: chốt bù cho một mutation
+sống sót phải đo TRÊN HỆ ĐANG PHỤC VỤ, không phải thêm test cùng hình dạng
+với test đã có.
+
+**Sổ sách đối chiếu lại**: ô p95 của `G2` giờ ghi thẳng **đo được và trượt**
+(4.706 > 3.500 ms — đòn bẩy tầng sinh, thuộc `W5-11`/`W6-05`) thay vì để trống
+như thể chưa đo. Phần audit chưa vá → `TD-84`, mỗi mục kèm chỗ trả
+(`AU-12`→`W5-10` · `AU-08/09/10`→`W6-06` · `AU-11/14…17`→`W6-05`).
+
+**Việc tiếp theo**: `W5-10` — nightly full eval + auto-PR promote, gộp
+`TD-71` + `TD-82` + `AU-12` (cả ba cùng đụng manifest và con trỏ bundle, làm
+một lần). Song song: `TD-13` là việc của bạn (~1 buổi) để gỡ chữ
+"model-reviewed" khỏi golden set.

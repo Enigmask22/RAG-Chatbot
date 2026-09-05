@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Mapping, Sequence
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from typing import Any, cast
 
 import pytest
 
@@ -405,6 +405,58 @@ def test_a_permanent_4xx_falls_over_but_leaves_the_circuit_closed() -> None:
     assert router.status()["routes"][0]["consecutive_failures"] == 0
 
 
+def test_a_client_that_hangs_up_mid_stream_does_not_open_the_circuit() -> None:
+    """`NEW-08`/`AU-01`: khách đóng tab KHÔNG phải bằng chứng provider hỏng.
+
+    Đường huỷ (`aclose` → `GeneratorExit`, hay `CancelledError` khi task bị
+    huỷ) không đi qua `except Exception` nào, nhưng `finally` vẫn gọi
+    `breaker.record(outcome)` — và `outcome` khởi tạo là `"failure"`. Trước
+    sửa này, ba người dùng liên tiếp bỏ ngang một câu trả lời (đúng lúc
+    provider chậm — chính lúc người ta hay bỏ) là mạch mở 30 giây cho một
+    route hoàn toàn khoẻ mạnh: một sự cố tự gây, kích hoạt bởi client.
+    """
+    primary = FakeProvider("a", deltas=["một ", "hai ", "ba "] * 10)
+    router = _router(primary, failure_threshold=3, cooldown_s=60.0)
+
+    async def hang_up_once() -> None:
+        # Kiểu khai là `AsyncIterator` nhưng runtime là một async generator —
+        # `aclose` chính là "đóng tab" nhìn từ phía server.
+        agen = cast("AsyncGenerator[LLMChunk, None]", router.astream(MESSAGES))
+        await anext(agen)  # đã nhận chữ — như một người dùng thật
+        await agen.aclose()  # rồi đóng tab
+
+    for _ in range(3):
+        asyncio.run(hang_up_once())
+
+    status = router.status()["routes"][0]
+    assert status["state"] == "closed", "ba lần khách bỏ ngang không được mở mạch"
+    assert status["consecutive_failures"] == 0
+
+
+def test_a_cancelled_stream_still_charges_but_stays_neutral() -> None:
+    """Cùng đường huỷ, kiểm cả hai nghĩa vụ của `finally`: tiền VẪN ghi
+    (token đã tiêu thật — bất biến của `W4-08`), cầu dao thì KHÔNG."""
+    budget = DailyBudget(1.0)
+    primary = FakeProvider("a", deltas=["một ", "hai ", "ba "] * 10)
+    router = _router(primary, budget=budget, failure_threshold=1, cooldown_s=60.0)
+
+    async def cancel_mid_stream() -> None:
+        async def consume() -> None:
+            async for _ in router.astream(MESSAGES):
+                await asyncio.sleep(0)
+
+        task = asyncio.ensure_future(consume())
+        await asyncio.sleep(0)  # cho task chạy tới mẩu đầu
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(cancel_mid_stream())
+
+    assert budget.status()["spent_usd"] > 0.0, "đã sinh chữ thì phải tính tiền"
+    assert router.status()["routes"][0]["state"] == "closed"
+
+
 # ---------------------------------------------------------------------------
 # 6. DoD — log model THỰC TẾ đã phục vụ
 # ---------------------------------------------------------------------------
@@ -546,3 +598,35 @@ def test_the_budget_day_is_utc_even_when_the_machine_is_not(
 
     assert FrozenClock.now().date() == dt.date(2026, 9, 5), "giờ máy đã sang ngày mới"
     assert DailyBudget._today() == dt.date(2026, 9, 4), "ngân sách phải theo UTC"
+
+
+def test_a_cancelled_stream_does_not_reset_the_failure_counter() -> None:
+    """Huỷ là `neutral`, không phải `success`: hai lỗi thật + một khách bỏ
+    ngang + lỗi thứ ba vẫn phải mở mạch. Ghi `success` cho đường huỷ thì một
+    client hay đóng tab giữ cho một provider hỏng thật mãi mãi ở `closed`."""
+    primary = FakeProvider("a", deltas=["một ", "hai ", "ba "] * 10)
+    router = _router(primary, failure_threshold=3, cooldown_s=60.0)
+
+    async def one_failure() -> None:
+        primary.error = LLMError("HTTP 503")
+        primary.fail_after = None
+        with pytest.raises(LLMError):
+            async for _ in router.astream(MESSAGES):
+                pass
+
+    async def one_hang_up() -> None:
+        primary.error = None
+        agen = cast("AsyncGenerator[LLMChunk, None]", router.astream(MESSAGES))
+        await anext(agen)
+        await agen.aclose()
+
+    async def scenario() -> None:
+        await one_failure()
+        await one_failure()
+        await one_hang_up()  # neutral: không cộng, không XOÁ
+        await one_failure()
+
+    asyncio.run(scenario())
+    assert router.status()["routes"][0]["state"] == "open", (
+        "ba lỗi thật phải mở mạch, kể cả khi một lần khách bỏ ngang chen giữa"
+    )

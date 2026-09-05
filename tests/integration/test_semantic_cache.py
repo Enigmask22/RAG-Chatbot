@@ -110,8 +110,9 @@ def test_the_namespace_carries_a_ttl_and_the_bundle_version(
             bundle_version = frames[0][2]["bundle_version"]
             deadline = time.monotonic() + 5.0
             client_r = redis_sync.Redis.from_url(REDIS_URL)
-            # `W4-11`: namespace giờ mang cả version prompt — xem `cache_namespace`
-            key = f"semcache:acme:{cache_namespace(bundle_version)}"
+            # `W4-11`: namespace mang version prompt; `NEW-08`/`AU-02`: mang cả
+            # `top_k` (request không khai nên là mặc định 5 của `ChatRequest`).
+            key = f"semcache:acme:{cache_namespace(bundle_version, 5)}"
             # redis-py sync client khai kiểu union với Awaitable — ép int
             # cho mypy; runtime luôn là int ở client đồng bộ.
             while int(cast("int", client_r.ttl(key))) < 0 and time.monotonic() < deadline:

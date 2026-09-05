@@ -51,6 +51,36 @@ class TestSecretHandling:
         assert "mat-khau" not in repr(settings)
         assert "mat-khau" in settings.postgres_dsn
 
+    def test_a_password_with_at_sign_does_not_change_the_host(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`NEW-08`/`AU-04`: mật khẩu `s3cret@evil.com/db` trong f-string trần
+        làm SQLAlchemy parse `evil.com` thành HOST — kết nối (kể cả DSN
+        migration mang quyền superuser) đi sang máy khác mà không lỗi nào
+        cảnh báo. `quote_plus` biến mọi ký tự cấu trúc URL thành dữ liệu."""
+        from sqlalchemy.engine.url import make_url
+
+        monkeypatch.setenv("POSTGRES_PASSWORD", "s3cret@evil.com/db")
+        monkeypatch.setenv("POSTGRES_HOST", "real-host")
+        settings = _settings()
+
+        url = make_url(settings.postgres_dsn)
+        assert url.host == "real-host"
+        assert url.password == "s3cret@evil.com/db", "mật khẩu phải sống sót một vòng parse"
+
+    def test_a_user_with_url_characters_survives_the_roundtrip(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from sqlalchemy.engine.url import make_url
+
+        monkeypatch.setenv("POSTGRES_APP_USER", "svc:rag@prod")
+        monkeypatch.setenv("POSTGRES_APP_PASSWORD", "p%40ss:w/ord")
+        settings = _settings()
+
+        url = make_url(settings.postgres_app_dsn)
+        assert url.username == "svc:rag@prod"
+        assert url.password == "p%40ss:w/ord"
+
 
 class TestRequire:
     def test_passes_when_present(self, monkeypatch: pytest.MonkeyPatch) -> None:

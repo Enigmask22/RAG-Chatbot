@@ -54,6 +54,12 @@ ENV_ROUTER = "CHAT_TEST_ROUTER"
 """`fallback` = nhánh chính chết trước token đầu · `midstream` = chết sau token thứ hai · `broke` = trần chi phí đã cạn."""
 ENV_REWRITE = "CHAT_TEST_REWRITE"
 """Chuỗi mà bộ viết lại của `W4-07` trả về. Không đặt = không cấu hình bộ viết lại."""
+ENV_RETRIEVAL_BOOM = "CHAT_TEST_RETRIEVAL_BOOM"
+"""`1` = truy hồi ném lỗi hạ tầng mang chi tiết nội bộ — cho test `AU-03`."""
+
+BOOM_MESSAGE = "ResponseHandlingException: qdrant:6333/collections/rag_noi_bo timed out"
+"""Giả đúng hình dạng lỗi thật của client Qdrant: tên service, port, collection.
+Test canh rằng KHÔNG mảnh nào của chuỗi này lọt ra body 503."""
 
 
 @dataclass
@@ -74,6 +80,8 @@ class SlowRetriever:
     def retrieve(
         self, query: str, top_k: int = 10, *, filters: FilterSpec = None
     ) -> list[RetrievedChunk]:
+        if os.environ.get(ENV_RETRIEVAL_BOOM) == "1":
+            raise RuntimeError(BOOM_MESSAGE)
         time.sleep(float(os.environ.get(ENV_RETRIEVAL_MS, "0")) / 1000.0)
         return [
             RetrievedChunk(

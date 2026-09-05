@@ -141,10 +141,19 @@ async def chat(
     except Exception as exc:
         # Truy hồi nằm trong `prepare()`, nên Qdrant chết tới được đây — và đây
         # là chỗ **cuối cùng** nó còn biến thành một status đọc được bằng máy.
+        # ⚠️ `NEW-08`/`AU-03`: chi tiết exception ở lại server (log + trace).
+        # `f"{type(exc).__name__}: {exc}"` trả cho client là trả tên service
+        # nội bộ, tên collection, topology — mọi thứ một `ConnectionError` của
+        # Qdrant mang theo. Client nhận thông báo chung + `request_id` để đối
+        # chiếu với log, theo đúng mẫu `_send_error` của middleware.
         logger.exception("chuẩn bị lượt chat thất bại")
         trace.finish(level="ERROR", status=f"503 {type(exc).__name__}: {exc}")
         raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, f"{type(exc).__name__}: {exc}"
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {
+                "detail": "lỗi tạm thời khi chuẩn bị lượt chat — thử lại sau",
+                "request_id": current_request_id(),
+            },
         ) from exc
 
     async def frames() -> AsyncIterator[bytes]:

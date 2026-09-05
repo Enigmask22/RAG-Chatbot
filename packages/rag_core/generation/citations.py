@@ -19,10 +19,15 @@ Vì sao match sau **chuẩn hoá whitespace, giữ nguyên hoa thường**: stre
 markdown nên xuống dòng/khoảng trắng không ổn định, còn hoa thường đổi là *sửa
 chữ* — đúng loại "sửa nhẹ" mà xác minh tồn tại để bắt. Nới lỏng thêm quy tắc nào
 phải kèm một phép đo cho thấy quy tắc hiện tại từ chối oan.
+
+Một nới lỏng đã qua được điều kiện ấy: **dấu lược** (`NEW-08`/`TD-64`, đo ở
+`W5-02`: 19/67 lỗi cấp quote là `...` nối hai mẩu nguyên văn). Xem
+`_quote_matches` — các mảnh quanh dấu lược phải khớp nguyên văn, đúng thứ tự.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -120,6 +125,41 @@ def _normalise(value: str) -> str:
     return " ".join(value.split())
 
 
+_ELLIPSIS = re.compile(r"\.{3,}|…|\[\.\.\.\]|\[…\]")
+"""Các dạng dấu lược model dùng thật: `...`, `…`, `[...]`, `[…]`."""
+
+
+def _quote_matches(quote: str, content: str) -> bool:
+    """Quote khớp chunk — dấu lược được hiểu là "bỏ một quãng", không phải chữ.
+
+    ## `NEW-08`/`TD-64`: phép đo "từ chối oan" mà docstring module đòi
+
+    `W5-02` đo citation accuracy cấp quote 0,8308 < ngưỡng 0,85, và **19/67**
+    lỗi là model chép hai mẩu nguyên văn nối bằng `...` — một cách trích dẫn
+    hợp lệ trong văn viết, bị matcher chuỗi-con từ chối như thể quote bịa.
+    Đây đúng là phép đo mà điều kiện "nới lỏng phải kèm số" chờ.
+
+    Luật: tách quote theo dấu lược; **mọi** mảnh phải xuất hiện nguyên văn
+    (sau chuẩn hoá whitespace) trong chunk, **theo đúng thứ tự**, không chồng
+    lấn — `find` tiếp tục từ cuối mảnh trước. Thứ tự là phần giữ độ chặt:
+    hai mẩu có thật nhưng đảo chiều là một câu chunk không nói.
+
+    ⚠️ Quote chỉ toàn dấu lược (không còn mảnh nào) trả `False` — trước đây
+    `"..." in content` có thể `True` và đó là một quote không nói gì cả.
+    """
+    haystack = _normalise(content)
+    segments = [s for s in (_normalise(part) for part in _ELLIPSIS.split(quote)) if s]
+    if not segments:
+        return False
+    position = 0
+    for segment in segments:
+        found = haystack.find(segment, position)
+        if found < 0:
+            return False
+        position = found + len(segment)
+    return True
+
+
 @dataclass(frozen=True)
 class CitationReport:
     """Đầu ra xác minh, sẵn cho một khung SSE.
@@ -170,7 +210,7 @@ def verify_citations(parsed: ParsedAnswer, chunks: Sequence[Chunk]) -> CitationR
                 chunk_id=chunk.chunk_id,
                 doc_id=chunk.doc_id,
                 quote=claim.quote,
-                verified=_normalise(claim.quote) in _normalise(chunk.content),
+                verified=_quote_matches(claim.quote, chunk.content),
                 source_url=str(meta.source_url) if meta and meta.source_url else None,
                 section_path=list(chunk.section_path),
             )
