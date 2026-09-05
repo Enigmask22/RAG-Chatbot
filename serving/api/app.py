@@ -48,7 +48,7 @@ from rag_core.llm import (
     build_glm_provider,
 )
 from rag_core.settings import Settings, get_settings
-from serving.api import admin, chat, health
+from serving.api import admin, chat, feedback, health
 from serving.api.middleware import RequestContextMiddleware
 from serving.api.security import AuthMiddleware
 from serving.core.auth import ApiKeyStore
@@ -462,6 +462,7 @@ def create_app(
     api.include_router(health.router)
     api.include_router(admin.router)
     api.include_router(chat.router)
+    api.include_router(feedback.router)
     return api
 
 

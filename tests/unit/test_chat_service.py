@@ -121,14 +121,37 @@ class CapturingService(ChatService):
     """`ChatService` không chạm DB: chỉ ghi lại thứ lẽ ra đã được lưu."""
 
     saved: list[dict[str, Any]]
+    saved_full: list[dict[str, Any]]
+    """Cùng lượt ghi, nhưng đủ trường. `saved` giữ nguyên ba khoá cũ để các bài
+    từ `W4-06`/`W4-08` vẫn so sánh được bằng `==` — một bài test phải đỏ vì hành
+    vi đổi, không vì có thêm cột."""
 
-    def _schedule_save(self, turn: ChatTurn, text: str, model: str, finish_reason: str) -> None:
+    def _schedule_save(
+        self,
+        turn: ChatTurn,
+        text: str,
+        model: str,
+        finish_reason: str,
+        *,
+        citations: dict[str, Any] | None,
+    ) -> None:
         self.saved.append({"text": text, "model": model, "finish_reason": finish_reason})
+        self.saved_full.append(
+            {
+                "text": text,
+                "model": model,
+                "finish_reason": finish_reason,
+                "citations": citations,
+                "answer_message_id": turn.answer_message_id,
+                "trace_id": turn.trace.id,
+            }
+        )
 
 
 def _service(llm: Any) -> CapturingService:
     service = CapturingService(registry=None, sessions=None, llm=llm)  # type: ignore[arg-type]
     service.saved = []
+    service.saved_full = []
     return service
 
 
@@ -683,6 +706,26 @@ async def test_a_cache_hit_is_saved_to_history_as_a_cache_turn() -> None:
             "finish_reason": "cache",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_cache_hit_persists_the_sources_the_client_was_shown() -> None:
+    """⭐⭐ `W5-08`, tìm ra bởi một lượt chạy THẬT, không bởi một bài test.
+
+    Lượt trúng cache không truy hồi, nên `contexts` rỗng và `sources()` trả
+    `[]` — trong khi khung SSE phát `cached.sources`. Kết quả trước khi sửa:
+    hàng Postgres nói **0 nguồn** bên cạnh **3 citation**, và một citation trỏ
+    vào tài liệu chưa từng được đưa cho model trông y hệt một citation bịa.
+    Công cụ săn ảo giác tự chế ra một ca ảo giác.
+    """
+    service = _service(FakeLLM())
+    turn = _cached_turn()
+    await _drain(service, turn)
+
+    (row,) = service.saved_full
+    assert row["citations"] == {"block": "ok", "citations": [], "verified": 0, "total": 0}
+    assert turn.persisted_sources() == [{"n": 1, "chunk_id": "c1", "doc_id": "d1"}]
+    assert turn.sources() == [], "không có contexts — đúng, và đó là cái bẫy"
 
 
 @pytest.mark.asyncio

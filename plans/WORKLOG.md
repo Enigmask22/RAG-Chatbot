@@ -4076,3 +4076,105 @@ báo cáo bằng tên của lệnh rộng**. Cùng họ với mọi lỗi đo l�
 Nó có sẵn hai chỗ cắm: `trace.id` đã nằm trong khung `meta` được không (chưa —
 cần thêm), và `TD-50` đang chờ đúng hạng mục này để quyết cột citations trong
 Postgres. Sau đó `W5-09` (CI) là chỗ gate của `W5-05` có răng.
+
+---
+
+## 2026-09-05 (15) — `W5-08`: vòng phản hồi, và ba lỗi nó tìm ra ở những chỗ khác nhau
+
+**Trạng thái**: `W5` **8/11** · 55 `[x]` backlog gốc + 7 `NEW` · **2 225 test**
+bộ mặc định xanh (3 skip, +24) · **295** integration xanh (+20) · `make lint`
+sạch cả ba lệnh (kể cả `mypy` trần) · chi phí ~**$0,006** (4 lượt sinh thật;
+**$0,001419** là phần đo được).
+
+```
+lượt chạy thật                4 (3 trúng cache, 1 sinh 3 583 ms)
+lần bấm nút                   5   (4 câu + 1 lần đổi ý)
+hàng Postgres                 4   ← UNIQUE (tenant, message) nuốt lần đổi ý
+điểm trong Langfuse           4   ← score_id tất định, lần thứ 5 ghi đè
+hàng đợi review               3 👎 / 4 tổng
+ứng viên xuất ra              3
+dropped                       0
+```
+
+**⭐⭐ Khoá nối không được đến từ người gọi.** Điểm Langfuse gắn theo `traceId`,
+và `trace_id` **đã có sẵn** trong khung `meta` tôi vừa thêm — nhận nó từ thân
+request là một dòng mà không ai phản đối trong review. Nó mở đúng lỗ `TD-73` đã
+ghi: **tenant trong Langfuse là một nhãn, không phải một hàng rào**, nên một
+tenant gắn được 👎 lên trace của tenant khác và hàng đợi review của họ nhận rác
+mà mọi request về phía ta đều hợp lệ. Nên endpoint nhận `message_id`, đọc hàng
+ấy qua RLS, rồi lấy `trace_id` **từ hàng đó** — khoá nối thành thứ người gọi
+phải *chứng minh sở hữu* thay vì thứ họ *khai*. Lần thứ tư của cùng lý lẽ
+(`W2-06`→`W4-04`→`W4-05`), lần đầu chặn chiều **ghi sang một hệ thống khác**.
+
+**⭐⭐ Cột `citations` của `0001` chưa bao giờ chứa citations.** Docstring
+`serving/core/chat.py` mở đầu bằng cảnh báo của chính tôi ở `W4-06`: *"gộp tên
+`sources` và `citations` lại là cách chắc chắn để `W4-09` trở nên vô hình"*.
+Rồi `_save()`, cách đó **một nghìn dòng trong cùng file**, ghi
+`citations=turn.sources()`. Không có gì bắt được — một cột JSONB nhận mọi hình
+dạng và cả hai đều là "list of dict có `chunk_id`". Hệ quả: kết quả xác minh
+của `W4-09` chưa từng được ghi xuống, nên một câu trả lời đọc lại từ lịch sử
+trông y hệt nhau dù citation của nó thật hay bịa. `0004` tách
+`retrieved_sources` + `citations_verified`; **không backfill** vì ở đây nó bất
+khả (xác minh cần nguyên văn chunk tại thời điểm trả lời). `TD-50` đóng.
+💡 **Một cảnh báo viết trong docstring không phải là một hàng rào — nó không
+chạy.** Cái chặn được ở đây phải là **tên cột**, vì kiểu thì giống nhau.
+
+**⭐⭐ Lỗi thật do lượt chạy tìm ra, và nó chế ra đúng triệu chứng cần tìm.** File
+ứng viên đầu tiên in ra `retrieved: [] | cited: [3 chunk]` — một citation trỏ
+vào tài liệu chưa từng đưa cho model, tức chính xác thứ người review mở file
+này ra để săn. Nguyên nhân: cả ba lượt **trúng cache**; lượt trúng cache không
+truy hồi nên `contexts` rỗng và `sources()` trả `[]`, trong khi khung SSE vẫn
+phát `cached.sources`. Sai từ `W4-10`, vô hình bốn hạng mục vì test chỉ kiểm
+khung SSE — đúng chỗ dữ liệu vẫn đúng. Sửa bằng `ChatTurn.persisted_sources()`.
+⚠️ Điểm đáng ghi là **hướng**: một công cụ săn ảo giác tự chế ra một ca ảo giác
+giả, và nó sẽ dẫn một người thật đi tìm một lỗi bộ sinh không tồn tại. Cùng họ
+với `TD-55` và độ chệch của `W5-07` — sai theo hướng làm người đọc tin nhầm.
+
+**⭐⭐ Ứng viên không được mang hình dạng của một câu golden.** Cám dỗ là điền
+`relevant_chunk_ids` bằng chunk hệ thống đã truy hồi và `reference_answer` bằng
+câu nó đã trả lời. Hàng ấy tồn tại *bởi vì* hệ thống sai, nên lấy đầu ra của nó
+làm nhãn nghĩa là `ndcg@10` **tăng** khi truy hồi giữ nguyên hành vi sai. Một bộ
+eval như thế tệ hơn không có bộ eval nào, vì nó vẫn ra số. Khoá bằng một tính
+chất **âm** — `GoldenQuery.model_validate(candidate)` phải **đỏ** — và tính chất
+âm là thứ biến mất dễ nhất khi ai đó "làm cho tiện dùng hơn". Ba trường thiếu
+(`category`, `relevant_spans`, `reference_answer`) **chính là công việc**; CLI in
+ra câu ấy sau mỗi lần xuất.
+
+**⭐ Một luật idempotent cho hai kho.** Postgres `UNIQUE (tenant, message)` +
+upsert; Langfuse `score_id = sha256(trace:name)`. Thiếu một bên thì đổi 👎 thành
+👍 để lại một hàng đúng và **hai điểm mâu thuẫn**, và cái người ta nhìn là
+Langfuse. Đo được: 5 lần gửi → 4 điểm tồn tại, và điểm còn lại mang giá trị của
+lần chấm **sau**. `xmax = 0` trong `RETURNING` cho biết `INSERT` hay `UPDATE` →
+trường `replaced`.
+
+**⭐ `answer_message_id`.** Khung `meta` tới giờ chỉ mang id của **người dùng**;
+hàng trợ lý ra đời trong task nền sau khi stream kết thúc, nên client không có
+khoá nào chấm được câu trả lời. Sinh trước ở `prepare()`, phát ở khung đầu, ghi
+lại ở `_save()` — ba chỗ, hai luồng, một giá trị.
+
+**⭐ Trường `scored` làm đúng việc ngay lượt chạy đầu**: báo `false` cho cả ba
+câu vì tiến trình server hôm ấy chưa có `LANGFUSE_*`. Không có nó thì báo cáo
+này đã ghi "điểm đã tới Langfuse" rồi tôi đi đọc một bảng trống.
+
+**⚠️ Hàng đợi review vẫn bị RLS thu hẹp** — một key `admin` thuộc **một** tenant,
+nên chưa có góc nhìn vận hành toàn cục nào, và không được nhầm hai thứ đó.
+
+**Tiêm lỗi 20/20 đỏ**, nhưng lượt một có **2 sống sót và 2 không tiêm được**, và
+phần "không tiêm được" là lỗi trong chính công cụ: backup đặt tên theo
+`path.name`, mà `serving/api/feedback.py` và `serving/core/feedback.py` có cùng
+`.name` — hai file chung một backup, và phép khôi phục lẽ ra đã ghi file này đè
+lên file kia. ⚠️ **Một công cụ kiểm chất lượng hỏng theo hướng "báo an toàn"**
+(hai phép bị bỏ qua, tổng vẫn trông như không ai sống sót) là hỏng đúng hướng
+tệ nhất. Hai phép sống sót thật đều chỉ vào khoảng trống có thật: thứ tự của
+hàng đợi sau khi đổi ý (`F7`), và phép kiểm `reason` ở **lõi** — sống sót vì mọi
+bài đều đi qua HTTP nơi `Literal` đã chặn trước, trong khi CLI thì không
+(`F19`).
+
+**Nợ mới**: `TD-78` (không chấm được câu trả lời rỗng — đúng lượt đáng nhận 👎
+nhất) · `TD-79` (feedback khoá theo tenant, không theo người dùng; một tenant
+hai người thì ghi đè lẫn nhau) · `TD-80` (chưa có đường promote ứng viên →
+golden set).
+
+**Việc tiếp theo**: `W5-09` — CI GitHub Actions. Đó là chỗ gate của `W5-05` có
+răng, và nó nợ sẵn hai thứ: `TD-53` (bảng tiêm 11×k trên **mọi** nhánh router)
+và `TD-59` (ma trận tiêm chạy lên đường judge).

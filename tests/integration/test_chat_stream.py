@@ -440,7 +440,11 @@ def test_a_turn_is_written_as_two_rows_with_provenance(
     # trả lời cụt không phân biệt được với một câu trả lời ngắn.
     assert messages[1]["model"] == "scripted-model-served"
     assert messages[1]["finish_reason"] == "stop"
-    assert len(messages[1]["citations"]) == 2
+    # `W5-08` (migration `0004`) tách cột: `sources` = đã đưa gì cho model,
+    # `citations` = model tuyên bố gì và quote nào khớp. Trước `0004` một cột
+    # tên `citations` chứa cái đầu — xem `0004_feedback_loop`.
+    assert len(messages[1]["sources"]) == 2
+    assert messages[1]["trace_id"]
 
 
 def test_the_second_turn_sees_the_first_one(server: str) -> None:

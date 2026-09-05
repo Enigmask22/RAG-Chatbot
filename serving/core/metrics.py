@@ -52,6 +52,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, gene
 from prometheus_client.exposition import CONTENT_TYPE_LATEST
 
 from serving.core.tracing import Trace
+from serving.db.models import FEEDBACK_REASONS
 
 __all__ = [
     "CONTENT_TYPE_LATEST",
@@ -228,6 +229,18 @@ class RagMetrics:
             registry=reg,
         )
 
+        # ------------------------------------------------------ phản hồi người dùng
+        self.feedback = Counter(
+            "rag_feedback",
+            (
+                "Lượt 👍/👎 đã ghi. Nhãn `rating` là '1'/'-1', `reason` là tập ĐÓNG "
+                "FEEDBACK_REASONS cộng 'none'. ⚠️ Mẫu số KHÔNG phải rag_chat_turns: "
+                "gần như không ai bấm nút, nên đây là một mẫu tự chọn."
+            ),
+            ("rating", "reason"),
+            registry=reg,
+        )
+
         # ------------------------------------------------------ sức khoẻ quan sát
         self.traces = Counter(
             "rag_traces_finished",
@@ -287,6 +300,9 @@ class RagMetrics:
             self.cache_lookups.labels(result=result)
         for cited in ("yes", "no"):
             self.answers.labels(cited=cited)
+        for rating in ("1", "-1"):
+            for reason in (*FEEDBACK_REASONS, "none"):
+                self.feedback.labels(rating=rating, reason=reason)
         # Hai bước gọi model mà đường `/chat` thật sự có. Danh sách này đóng vì
         # nó là danh sách span `kind="generation"` trong `chat.py`, không phải
         # một danh sách mở của nhà cung cấp.

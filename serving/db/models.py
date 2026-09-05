@@ -55,6 +55,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 __all__ = [
+    "FEEDBACK_REASONS",
     "RLS_TABLES",
     "TENANT_SETTING",
     "Base",
@@ -75,6 +76,35 @@ Là một hằng số chứ không phải một danh sách trong migration, vì
 `test_every_tenant_table_has_forced_rls` duyệt nó: một bảng mới thêm vào model mà
 quên bật RLS sẽ đỏ, thay vì lặng lẽ thành bảng công khai.
 """
+
+
+FEEDBACK_REASONS: tuple[str, ...] = (
+    "wrong",
+    "incomplete",
+    "not_found",
+    "citation",
+    "language",
+    "slow",
+    "other",
+)
+"""Tập lý do **đóng** cho một lượt 👎 — `W5-08`.
+
+⭐ Tiêu chí để một mã đáng tồn tại: nó phải chỉ vào **một bộ phận** của
+pipeline. `wrong` → bộ sinh · `incomplete` → truy hồi/`top_k` · `not_found` →
+truy hồi (tài liệu có mà hệ thống nói không có) · `citation` → `W4-09` ·
+`language` → prompt · `slow` → serving. Một mã không chỉ được vào đâu thì nó chỉ
+là `other` viết dài hơn, và nó làm cho bảng thống kê lý do trông chi tiết mà
+không dùng được.
+
+Là hằng số Python chứ không phải một danh sách nằm riêng trong migration: nó
+đồng thời là `CheckConstraint`, là `Literal` của schema API, và là tập nhãn của
+metric Prometheus. Ba bản sao của cùng một danh sách sẽ lệch nhau, và cái lệch
+đầu tiên là một `INSERT` bị Postgres từ chối ở production.
+"""
+
+_REASON_CHECK = (
+    "reason IS NULL OR reason IN (" + ", ".join(f"'{r}'" for r in FEEDBACK_REASONS) + ")"
+)
 
 
 class Base(DeclarativeBase):
@@ -130,10 +160,31 @@ class Message(Base, _Tenanted):
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    citations: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB)
-    """Citation dạng JSONB, không phải bảng riêng — chúng luôn được đọc **cùng**
-    message và không bao giờ được truy vấn độc lập. `W4-09` xác minh chúng trước
-    khi ghi, nên cái nằm ở đây đã là dữ liệu đã kiểm."""
+    retrieved_sources: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB)
+    """Cái đã **đưa cho model** — đúng nội dung khung SSE `sources`.
+
+    ⚠️ Cột này tên là `citations` cho tới `0004`, và nó chưa bao giờ chứa
+    citations. Docstring của `serving/core/chat.py` cảnh báo đúng việc gộp hai
+    tên này lại, rồi `_save()` gộp chúng lại. Xem `0004_feedback_loop`.
+    """
+
+    citations_verified: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    """Khung `citations` của `W4-09`: model TUYÊN BỐ dùng gì, và quote nào khớp.
+
+    ⭐ Đây là cột phân biệt được "model bịa nguồn" với "truy hồi lấy nhầm tài
+    liệu" — câu hỏi đầu tiên khi review một câu 👎, và không trả lời được từ
+    `retrieved_sources` (nó chỉ nói đã đưa gì vào, không nói model làm gì với
+    chúng). `NULL` cho message người dùng, cho nhánh `clarify`/`no_retrieval`
+    không sinh block, và cho mọi hàng ghi trước `0004`.
+    """
+
+    trace_id: Mapped[str | None] = mapped_column(String(32))
+    """Trace `W5-06` đã quan sát lượt sinh ra hàng này.
+
+    ⭐ Điểm số Langfuse gắn theo `traceId`, và cột này là lý do endpoint feedback
+    **không** nhận `trace_id` từ client: khoá nối suy ra từ một hàng đã qua RLS,
+    tức từ một hàng người gọi chứng minh được là của mình. Xem `TD-73`.
+    """
 
     latency_ms: Mapped[int | None] = mapped_column(Integer)
 
@@ -231,6 +282,9 @@ class Feedback(Base, _Tenanted):
         ForeignKey("message.id", ondelete="CASCADE"), nullable=False
     )
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(32))
+    """Một mã trong `FEEDBACK_REASONS`, hoặc `NULL`. Xem hằng số ấy."""
+
     comment: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
@@ -238,5 +292,9 @@ class Feedback(Base, _Tenanted):
         # phân bố dồn ở hai đầu mà không ai gán nhãn được ngưỡng, còn thumbs
         # up/down ghép thẳng được vào bộ eval của `W5` như nhãn nhị phân.
         CheckConstraint("rating IN (-1, 1)", name="ck_feedback_rating"),
+        CheckConstraint(_REASON_CHECK, name="ck_feedback_reason"),
         Index("ix_feedback_message", "tenant_id", "message_id"),
+        # Một cú double-click là hai request, và hàng đợi review là một phép
+        # đếm — xem `0004_feedback_loop`.
+        Index("uq_feedback_tenant_message", "tenant_id", "message_id", unique=True),
     )

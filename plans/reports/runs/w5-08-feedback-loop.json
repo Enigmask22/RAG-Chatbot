@@ -1,0 +1,340 @@
+{
+  "turns": [
+    {
+      "question": "Tăng trưởng GDP của Việt Nam năm 2016 là bao nhiêu?",
+      "answer_message_id": "2554bb224b354f748f9d117a2977675f",
+      "trace_id": "e0c1ff0372ea452dbe362366e89e0c10",
+      "answer_chars": 332,
+      "finish_reason": "cache",
+      "cache_hit": true,
+      "model": "deepseek-v4-flash",
+      "total_ms": 0.48,
+      "n_sources": 5,
+      "citations_block": "ok",
+      "citations_verified": 2,
+      "row_trace_id": "e0c1ff0372ea452dbe362366e89e0c10",
+      "feedback_status": 201,
+      "feedback": {
+        "id": "ddbceb6dc5564b7392fad476a497353c",
+        "message_id": "2554bb224b354f748f9d117a2977675f",
+        "rating": -1,
+        "reason": "incomplete",
+        "scored": true,
+        "replaced": false,
+        "trace_id": "e0c1ff0372ea452dbe362366e89e0c10"
+      }
+    },
+    {
+      "question": "Nợ công của Việt Nam thay đổi thế nào?",
+      "answer_message_id": "0285fe34fba14840bfbe78f38861fd34",
+      "trace_id": "2c5eafd9a0ed4b13a391859a7da64642",
+      "answer_chars": 499,
+      "finish_reason": "cache",
+      "cache_hit": true,
+      "model": "deepseek-v4-flash",
+      "total_ms": 0.5,
+      "n_sources": 5,
+      "citations_block": "ok",
+      "citations_verified": 2,
+      "row_trace_id": "2c5eafd9a0ed4b13a391859a7da64642",
+      "feedback_status": 201,
+      "feedback": {
+        "id": "15bef73e640743d6bb803ffd44e9a08b",
+        "message_id": "0285fe34fba14840bfbe78f38861fd34",
+        "rating": 1,
+        "reason": null,
+        "scored": true,
+        "replaced": false,
+        "trace_id": "2c5eafd9a0ed4b13a391859a7da64642"
+      }
+    },
+    {
+      "question": "Giá vé tàu điện ngầm Hà Nội tuyến số 3 là bao nhiêu?",
+      "answer_message_id": "cc41ad3314954ad093baee72b0364380",
+      "trace_id": "24da24f9ba6b4e2683b62622051629b4",
+      "answer_chars": 246,
+      "finish_reason": "cache",
+      "cache_hit": true,
+      "model": "deepseek-v4-flash",
+      "total_ms": 0.52,
+      "n_sources": 5,
+      "citations_block": "ok",
+      "citations_verified": 0,
+      "row_trace_id": "24da24f9ba6b4e2683b62622051629b4",
+      "feedback_status": 201,
+      "feedback": {
+        "id": "53f1df7265e24f158f2f3fbff56e4809",
+        "message_id": "cc41ad3314954ad093baee72b0364380",
+        "rating": -1,
+        "reason": "not_found",
+        "scored": true,
+        "replaced": false,
+        "trace_id": "24da24f9ba6b4e2683b62622051629b4"
+      }
+    },
+    {
+      "question": "Tỷ lệ hộ nghèo ở vùng dân tộc thiểu số Việt Nam ra sao?",
+      "answer_message_id": "ff0102330fba459dac263afe497c43b1",
+      "trace_id": "846de832c02c43c0a9d7252a3109f710",
+      "answer_chars": 933,
+      "finish_reason": "stop",
+      "cache_hit": false,
+      "model": "deepseek-v4-flash",
+      "total_ms": 3583.46,
+      "n_sources": 5,
+      "citations_block": "ok",
+      "citations_verified": 0,
+      "row_trace_id": "846de832c02c43c0a9d7252a3109f710",
+      "feedback_status": 201,
+      "feedback": {
+        "id": "2ac66cef7ccd40e1973df33f8049487c",
+        "message_id": "ff0102330fba459dac263afe497c43b1",
+        "rating": -1,
+        "reason": "citation",
+        "scored": true,
+        "replaced": false,
+        "trace_id": "846de832c02c43c0a9d7252a3109f710"
+      }
+    }
+  ],
+  "scores": [
+    {
+      "id": "efc186d83374b68984a8cb1a5bacfcf5",
+      "traceId": "846de832c02c43c0a9d7252a3109f710",
+      "name": "user_feedback",
+      "value": -1,
+      "comment": "citation · trích dẫn không khớp đoạn được chỉ"
+    },
+    {
+      "id": "28260720d2b69cd5d87a03eeb51a2234",
+      "traceId": "24da24f9ba6b4e2683b62622051629b4",
+      "name": "user_feedback",
+      "value": -1,
+      "comment": "not_found · câu này corpus không có, nhưng câu trả lời nên nói rõ hơn"
+    },
+    {
+      "id": "9f89e5bb0e8e92045c0fc1659e5181dd",
+      "traceId": "2c5eafd9a0ed4b13a391859a7da64642",
+      "name": "user_feedback",
+      "value": 1,
+      "comment": null
+    },
+    {
+      "id": "2f015dd01a79049a8fbeb4bf6b205753",
+      "traceId": "e0c1ff0372ea452dbe362366e89e0c10",
+      "name": "user_feedback",
+      "value": -1,
+      "comment": "wrong"
+    }
+  ],
+  "candidates": {
+    "count": 3,
+    "rows": [
+      {
+        "candidate_id": "fb-ddbceb6dc556",
+        "query": "Tăng trưởng GDP của Việt Nam năm 2016 là bao nhiêu?",
+        "rewritten_query": null,
+        "system_answer": "Dựa trên các nguồn tài liệu, tăng trưởng GDP của Việt Nam năm 2016 được dự kiến ở mức khoảng 6% [2], [4], [5]. Cụ thể, nguồn [2] và [4] cho biết GDP năm 2016 dự kiến xoay quanh mức 6% [2], [4], trong khi nguồn [5] ước tính tăng khoảng 6% [5]. Ngoài ra, dữ liệu sơ bộ cho thấy tăng trưởng GDP trong ba quý đầu năm 2016 đạt 5,9% [1].\n",
+        "retrieved_chunk_ids": [
+          "wb-676661480599107823::00038",
+          "wb-676661480599107823::00019",
+          "wb-199951468843835123::00012",
+          "wb-676661480599107823::00118",
+          "wb-199951468843835123::00109"
+        ],
+        "cited_chunk_ids": [
+          "wb-676661480599107823::00019",
+          "wb-676661480599107823::00118",
+          "wb-199951468843835123::00109"
+        ],
+        "citations_verified": 2,
+        "citations_claimed": 3,
+        "rating": -1,
+        "reason": "wrong",
+        "comment": null,
+        "model": "cache:deepseek-v4-flash",
+        "finish_reason": "cache",
+        "route": "retrieve",
+        "bundle_version": "0.2.1",
+        "trace_id": "e0c1ff0372ea452dbe362366e89e0c10",
+        "conversation_id": "6dac3498616e451ba53fa7c3b14565c0",
+        "message_id": "2554bb224b354f748f9d117a2977675f",
+        "created_at": "2026-09-05T12:26:00.905433+00:00",
+        "reviewed_by_human": false
+      },
+      {
+        "candidate_id": "fb-2ac66cef7ccd",
+        "query": "Tỷ lệ hộ nghèo ở vùng dân tộc thiểu số Việt Nam ra sao?",
+        "rewritten_query": null,
+        "system_answer": "Dựa trên ngữ cảnh được cung cấp, tôi không có đủ thông tin để đưa ra con số cụ thể về tỷ lệ hộ nghèo hiện tại ở vùng dân tộc thiểu số Việt Nam. Các nguồn chỉ đề cập đến tỷ lệ nghèo của nhóm dân tộc thiểu số (DTTS) so với nhóm Kinh theo các chuẩn nghèo khác nhau, nhưng không nêu rõ tỷ lệ phần trăm cụ thể của hộ nghèo ở vùng DTTS.\n\nCụ thể, nguồn [1] cho biết với chuẩn nghèo LMIC (3,65 USD/ngày theo PPP 2017), tỷ lệ nghèo của nhóm DTTS vẫn ở mức cao trên 20% kể từ năm 2016, trong khi nhóm Kinh dưới 2%. Nguồn [2] và [4] chỉ nói rằng nhóm DTTS có mức tăng nghèo tuyệt đối và tương đối cao hơn nhóm Kinh, và khoảng cách tỷ lệ nghèo giữa hai nhóm đã tăng lên trong giai đoạn 2020–2022. Nguồn [5] đề cập đến ước tính có 2 triệu người DTTS ở Tây Nguyên bị ảnh hưởng bởi hạn hán, nhưng không phải là tỷ lệ hộ nghèo chung.\n\nDo đó, tôi không thể trả lời chính xác câu hỏi về tỷ lệ hộ nghèo ở vùng DTTS vì thiếu dữ liệu cụ thể và cập nhật.\n",
+        "retrieved_chunk_ids": [
+          "wb-099101624105019511::00193",
+          "wb-099101624105019511::00188",
+          "wb-099101624105019511::00100",
+          "wb-099101624105019511::00232",
+          "wb-199951468843835123::00049"
+        ],
+        "cited_chunk_ids": [
+          "wb-099101624105019511::00193"
+        ],
+        "citations_verified": 0,
+        "citations_claimed": 1,
+        "rating": -1,
+        "reason": "citation",
+        "comment": "trích dẫn không khớp đoạn được chỉ",
+        "model": "deepseek-v4-flash",
+        "finish_reason": "stop",
+        "route": "retrieve",
+        "bundle_version": "0.2.1",
+        "trace_id": "846de832c02c43c0a9d7252a3109f710",
+        "conversation_id": "2703942e6d0b4314a0eb321eaead80e2",
+        "message_id": "ff0102330fba459dac263afe497c43b1",
+        "created_at": "2026-09-05T12:26:00.887581+00:00",
+        "reviewed_by_human": false
+      },
+      {
+        "candidate_id": "fb-53f1df7265e2",
+        "query": "Giá vé tàu điện ngầm Hà Nội tuyến số 3 là bao nhiêu?",
+        "rewritten_query": null,
+        "system_answer": "Dựa trên các nguồn tài liệu được cung cấp, không có thông tin nào về giá vé tàu điện ngầm Hà Nội tuyến số 3. Các nguồn chỉ đề cập đến chi phí đầu tư, thời gian vận hành dự kiến và các giả định chi phí khác, nhưng không bao gồm dữ liệu về giá vé.\n",
+        "retrieved_chunk_ids": [
+          "wb-581131568121810607::00265",
+          "wb-581131568121810607::00264",
+          "wb-581131568121810607::00266",
+          "wb-581131568121810607::00378",
+          "wb-581131568121810607::00377"
+        ],
+        "cited_chunk_ids": [],
+        "citations_verified": 0,
+        "citations_claimed": 0,
+        "rating": -1,
+        "reason": "not_found",
+        "comment": "câu này corpus không có, nhưng câu trả lời nên nói rõ hơn",
+        "model": "cache:deepseek-v4-flash",
+        "finish_reason": "cache",
+        "route": "retrieve",
+        "bundle_version": "0.2.1",
+        "trace_id": "24da24f9ba6b4e2683b62622051629b4",
+        "conversation_id": "fa74c00bd34742ce85066c593f1feedf",
+        "message_id": "cc41ad3314954ad093baee72b0364380",
+        "created_at": "2026-09-05T12:25:47.952071+00:00",
+        "reviewed_by_human": false
+      }
+    ]
+  },
+  "second_rating": {
+    "id": "ddbceb6dc5564b7392fad476a497353c",
+    "message_id": "2554bb224b354f748f9d117a2977675f",
+    "rating": -1,
+    "reason": "wrong",
+    "scored": true,
+    "replaced": true,
+    "trace_id": "e0c1ff0372ea452dbe362366e89e0c10"
+  },
+  "queue": {
+    "count": 3,
+    "items": [
+      {
+        "feedback_id": "ddbceb6dc5564b7392fad476a497353c",
+        "created_at": "2026-09-05T12:26:00.905433+00:00",
+        "rating": -1,
+        "reason": "wrong",
+        "comment": null,
+        "conversation_id": "6dac3498616e451ba53fa7c3b14565c0",
+        "message_id": "2554bb224b354f748f9d117a2977675f",
+        "question": "Tăng trưởng GDP của Việt Nam năm 2016 là bao nhiêu?",
+        "rewritten_query": null,
+        "answer": "Dựa trên các nguồn tài liệu, tăng trưởng GDP của Việt Nam năm 2016 được dự kiến ở mức khoảng 6% [2], [4], [5]. Cụ thể, nguồn [2] và [4] cho biết GDP năm 2016 dự kiến xoay quanh mức 6% [2], [4], trong khi nguồn [5] ước tính tăng khoảng 6% [5]. Ngoài ra, dữ liệu sơ bộ cho thấy tăng trưởng GDP trong ba quý đầu năm 2016 đạt 5,9% [1].\n",
+        "model": "cache:deepseek-v4-flash",
+        "finish_reason": "cache",
+        "route": "retrieve",
+        "latency_ms": 6,
+        "trace_id": "e0c1ff0372ea452dbe362366e89e0c10",
+        "bundle_version": "0.2.1",
+        "retrieved_chunk_ids": [
+          "wb-676661480599107823::00038",
+          "wb-676661480599107823::00019",
+          "wb-199951468843835123::00012",
+          "wb-676661480599107823::00118",
+          "wb-199951468843835123::00109"
+        ],
+        "cited_chunk_ids": [
+          "wb-676661480599107823::00019",
+          "wb-676661480599107823::00118",
+          "wb-199951468843835123::00109"
+        ],
+        "citations_verified": 2,
+        "citations_claimed": 3
+      },
+      {
+        "feedback_id": "2ac66cef7ccd40e1973df33f8049487c",
+        "created_at": "2026-09-05T12:26:00.887581+00:00",
+        "rating": -1,
+        "reason": "citation",
+        "comment": "trích dẫn không khớp đoạn được chỉ",
+        "conversation_id": "2703942e6d0b4314a0eb321eaead80e2",
+        "message_id": "ff0102330fba459dac263afe497c43b1",
+        "question": "Tỷ lệ hộ nghèo ở vùng dân tộc thiểu số Việt Nam ra sao?",
+        "rewritten_query": null,
+        "answer": "Dựa trên ngữ cảnh được cung cấp, tôi không có đủ thông tin để đưa ra con số cụ thể về tỷ lệ hộ nghèo hiện tại ở vùng dân tộc thiểu số Việt Nam. Các nguồn chỉ đề cập đến tỷ lệ nghèo của nhóm dân tộc thiểu số (DTTS) so với nhóm Kinh theo các chuẩn nghèo khác nhau, nhưng không nêu rõ tỷ lệ phần trăm cụ thể của hộ nghèo ở vùng DTTS.\n\nCụ thể, nguồn [1] cho biết với chuẩn nghèo LMIC (3,65 USD/ngày theo PPP 2017), tỷ lệ nghèo của nhóm DTTS vẫn ở mức cao trên 20% kể từ năm 2016, trong khi nhóm Kinh dưới 2%. Nguồn [2] và [4] chỉ nói rằng nhóm DTTS có mức tăng nghèo tuyệt đối và tương đối cao hơn nhóm Kinh, và khoảng cách tỷ lệ nghèo giữa hai nhóm đã tăng lên trong giai đoạn 2020–2022. Nguồn [5] đề cập đến ước tính có 2 triệu người DTTS ở Tây Nguyên bị ảnh hưởng bởi hạn hán, nhưng không phải là tỷ lệ hộ nghèo chung.\n\nDo đó, tôi không thể trả lời chính xác câu hỏi về tỷ lệ hộ nghèo ở vùng DTTS vì thiếu dữ liệu cụ thể và cập nhật.\n",
+        "model": "deepseek-v4-flash",
+        "finish_reason": "stop",
+        "route": "retrieve",
+        "latency_ms": 3593,
+        "trace_id": "846de832c02c43c0a9d7252a3109f710",
+        "bundle_version": "0.2.1",
+        "retrieved_chunk_ids": [
+          "wb-099101624105019511::00193",
+          "wb-099101624105019511::00188",
+          "wb-099101624105019511::00100",
+          "wb-099101624105019511::00232",
+          "wb-199951468843835123::00049"
+        ],
+        "cited_chunk_ids": [
+          "wb-099101624105019511::00193"
+        ],
+        "citations_verified": 0,
+        "citations_claimed": 1
+      },
+      {
+        "feedback_id": "53f1df7265e24f158f2f3fbff56e4809",
+        "created_at": "2026-09-05T12:25:47.952071+00:00",
+        "rating": -1,
+        "reason": "not_found",
+        "comment": "câu này corpus không có, nhưng câu trả lời nên nói rõ hơn",
+        "conversation_id": "fa74c00bd34742ce85066c593f1feedf",
+        "message_id": "cc41ad3314954ad093baee72b0364380",
+        "question": "Giá vé tàu điện ngầm Hà Nội tuyến số 3 là bao nhiêu?",
+        "rewritten_query": null,
+        "answer": "Dựa trên các nguồn tài liệu được cung cấp, không có thông tin nào về giá vé tàu điện ngầm Hà Nội tuyến số 3. Các nguồn chỉ đề cập đến chi phí đầu tư, thời gian vận hành dự kiến và các giả định chi phí khác, nhưng không bao gồm dữ liệu về giá vé.\n",
+        "model": "cache:deepseek-v4-flash",
+        "finish_reason": "cache",
+        "route": "retrieve",
+        "latency_ms": 4,
+        "trace_id": "24da24f9ba6b4e2683b62622051629b4",
+        "bundle_version": "0.2.1",
+        "retrieved_chunk_ids": [
+          "wb-581131568121810607::00265",
+          "wb-581131568121810607::00264",
+          "wb-581131568121810607::00266",
+          "wb-581131568121810607::00378",
+          "wb-581131568121810607::00377"
+        ],
+        "cited_chunk_ids": [],
+        "citations_verified": 0,
+        "citations_claimed": 0
+      }
+    ]
+  },
+  "queue_all": 4,
+  "tracing": {
+    "enabled": true,
+    "host": "http://127.0.0.1:3000",
+    "queued": 0,
+    "sent": 4,
+    "scored": 5,
+    "failed": 0,
+    "dropped": 0
+  },
+  "langfuse_status": 200
+}

@@ -54,6 +54,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -209,6 +210,26 @@ class ChatTurn:
     history: list[ChatMessage]
     contexts: list[RetrievedChunk]
     bundle_version: str
+    answer_message_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    """Id của hàng `message` trợ lý — sinh **trước** khi có câu trả lời.
+
+    ## ⭐⭐ Không có trường này thì feedback không có gì để trỏ vào
+
+    `W5-08` cần một khoá cho "câu trả lời này sai". Khung `meta` tới giờ chỉ
+    mang `message_id` của **người dùng**, còn hàng trợ lý ra đời trong một task
+    nền sau khi stream kết thúc — tức client không bao giờ nhìn thấy id của
+    đúng cái nó muốn chấm. Cách hiển nhiên (gắn feedback vào message người
+    dùng) làm hỏng đúng chỗ nó cần đúng: một câu hỏi hỏi lại lần hai cho hai
+    câu trả lời khác nhau, và cả hai chấm vào cùng một hàng.
+
+    Sinh trước, phát ra trong `meta`, rồi `_save()` dùng lại — nên client cầm
+    khoá từ khung đầu tiên chứ không phải sau khung cuối.
+
+    ⚠️ Id này là một **lời hứa**, không phải một sự thật: `_save()` bỏ qua câu
+    trả lời rỗng, nên với một lượt model im lặng thì hàng ấy không bao giờ tồn
+    tại và feedback vào nó trả 404. Đó là đúng lượt đáng nhận 👎 nhất. `TD-78`.
+    """
+
     cached: CachedAnswer | None = None
     """`W4-10`: lượt này được trả từ cache — `stream_turn` phát lại thay vì gọi model."""
     cache_vector: Any | None = None
@@ -279,6 +300,28 @@ class ChatTurn:
                 }
             )
         return out
+
+    def persisted_sources(self) -> list[dict[str, Any]]:
+        """Nguồn để **ghi xuống Postgres** — khác `sources()` ở đúng một nhánh.
+
+        ## ⭐⭐ Lỗi thật, và nó chế ra đúng triệu chứng mà công cụ này đi tìm
+
+        Một lượt trúng cache không chạy truy hồi, nên `contexts` rỗng và
+        `sources()` trả về `[]`. Khung SSE thì vẫn đầy đủ — nó phát
+        `cached.sources`. Nên trước `W5-08`, cứ mỗi lần trúng cache là hàng
+        Postgres mất sạch nguồn trong khi client nhìn thấy chúng.
+
+        Vô hình cho tới hạng mục này. Rồi file ứng viên đọc hàng ấy và in ra:
+        **3 citation, 0 chunk được truy hồi** — tức một citation trỏ vào tài
+        liệu chưa từng được đưa cho model, thứ trông y hệt một citation bịa.
+        Người review sẽ mở đúng câu ấy ra tìm một lỗi bộ sinh không tồn tại.
+
+        ⚠️ Đo được bằng lượt chạy thật, không bằng test: bộ test đơn vị tắt
+        cache, và `W4-10` chỉ kiểm khung SSE — đúng chỗ dữ liệu vẫn đúng.
+        """
+        if self.cached is not None:
+            return list(self.cached.sources)
+        return self.sources()
 
     def prompt(self) -> list[ChatMessage]:
         directive = self.plan.directive()
@@ -612,6 +655,8 @@ class ChatService:
                 {
                     "conversation_id": turn.conversation_id,
                     "message_id": turn.user_message_id,
+                    "answer_message_id": turn.answer_message_id,
+                    "trace_id": turn.trace.id,
                     "bundle_version": turn.bundle_version,
                     "model": cached.model,
                     "prompt": turn.prompt_spec(),
@@ -640,7 +685,13 @@ class ChatService:
                     "language_mismatch": False,
                 },
             )
-            self._schedule_save(turn, cached.text, f"cache:{cached.model}", "cache")
+            self._schedule_save(
+                turn,
+                cached.text,
+                f"cache:{cached.model}",
+                "cache",
+                citations=cached.citations_frame,
+            )
             replay = turn.trace.span("cache.replay", input=cached.question)
             replay.end(
                 output=cached.text,
@@ -662,6 +713,13 @@ class ChatService:
             {
                 "conversation_id": turn.conversation_id,
                 "message_id": turn.user_message_id,
+                # ⭐ `W5-08`: khoá mà client dùng để chấm 👍/👎, có mặt từ khung
+                # ĐẦU tiên. `trace_id` đi kèm để một người dùng báo lỗi đọc
+                # được cùng một trace mà người vận hành mở trong Langfuse —
+                # nhưng nó KHÔNG phải tham số của endpoint feedback: xem
+                # `Message.trace_id`.
+                "answer_message_id": turn.answer_message_id,
+                "trace_id": turn.trace.id,
                 "bundle_version": turn.bundle_version,
                 "model": self.llm.model,
                 "prompt": turn.prompt_spec(),
@@ -704,12 +762,20 @@ class ChatService:
                     "language_mismatch": False,
                 },
             )
-            self._schedule_save(turn, text, "rule:clarify", "clarify")
+            self._schedule_save(turn, text, "rule:clarify", "clarify", citations=None)
             turn.trace.finish(output=text, status="clarify")
             return
 
         parts: list[str] = []
         emitted: list[str] = []
+        verified_frame: dict[str, Any] | None = None
+        """Khung `citations` của `W4-09`, để `finally` ghi được nó xuống DB.
+
+        ⚠️ Khai ở NGOÀI `try` chứ không dựa vào biến `report` bên trong: nhánh
+        xác minh có điều kiện, nên `report` không tồn tại trên mọi đường thoát
+        — và đường thoát nó không tồn tại (huỷ giữa chừng) đúng là đường mà
+        `finally` chạy."""
+
         holdback = CitationHoldback()
         served_model = self.llm.model
         # ⭐ `"unknown"` chứ không phải `"client_disconnect"`, và đó là một lựa
@@ -883,7 +949,8 @@ class ChatService:
                     # client mà **không** hiện ra với người vận hành.
                     level="WARNING" if report.verified_count < claimed else None,
                 )
-                yield ChatEvent("citations", report.as_frame())
+                verified_frame = report.as_frame()
+                yield ChatEvent("citations", verified_frame)
             if (
                 self.cache is not None
                 and turn.cache_vector is not None
@@ -950,7 +1017,9 @@ class ChatService:
             # Ghi `emitted` chứ không phải `parts`: block CITATIONS là giao thức
             # giữa model và mã, không phải nội dung — lịch sử đọc lại từ DB phải
             # là đúng những gì người dùng đã thấy trên màn hình.
-            self._schedule_save(turn, "".join(emitted), served_model, finish_reason)
+            self._schedule_save(
+                turn, "".join(emitted), served_model, finish_reason, citations=verified_frame
+            )
             # ⭐ `finish()` là idempotent và tự đóng mọi span còn mở, nên đây là
             # chỗ **duy nhất** cần đóng trace ở nửa dưới: nó chạy trên cả ba
             # đường thoát (xong, lỗi, huỷ) và không cần biết đường nào đã chạy.
@@ -1035,12 +1104,27 @@ class ChatService:
             await session.commit()
         return conversation_id, message_id
 
-    def _schedule_save(self, turn: ChatTurn, text: str, model: str, finish_reason: str) -> None:
-        task = asyncio.create_task(self._save(turn, text, model, finish_reason))
+    def _schedule_save(
+        self,
+        turn: ChatTurn,
+        text: str,
+        model: str,
+        finish_reason: str,
+        *,
+        citations: dict[str, Any] | None,
+    ) -> None:
+        task = asyncio.create_task(self._save(turn, text, model, finish_reason, citations))
         _PENDING.add(task)
         task.add_done_callback(_PENDING.discard)
 
-    async def _save(self, turn: ChatTurn, text: str, model: str, finish_reason: str) -> None:
+    async def _save(
+        self,
+        turn: ChatTurn,
+        text: str,
+        model: str,
+        finish_reason: str,
+        citations: dict[str, Any] | None,
+    ) -> None:
         if not text:
             # Không sinh được chữ nào: một hàng rỗng trong lịch sử tệ hơn là
             # không có hàng nào — nó hiện ra như một câu trả lời trống và không
@@ -1056,11 +1140,20 @@ class ChatService:
             async with atenant_session(self.sessions, turn.principal.tenant_id) as session:
                 session.add(
                     Message(
+                        # ⭐ Id đã phát ra trong khung `meta`, không phải một id
+                        # sinh ở đây — xem `ChatTurn.answer_message_id`.
+                        id=turn.answer_message_id,
                         tenant_id=turn.principal.tenant_id,
                         conversation_id=turn.conversation_id,
                         role="assistant",
                         content=text,
-                        citations=turn.sources(),
+                        # `W5-08`: hai cột, không một. `retrieved_sources` là cái
+                        # đã đưa vào; `citations_verified` là cái model nói nó
+                        # đã dùng, sau khi đối chiếu. Một câu 👎 chỉ phân loại
+                        # được khi có cả hai.
+                        retrieved_sources=turn.persisted_sources(),
+                        citations_verified=citations,
+                        trace_id=turn.trace.id,
                         latency_ms=int((time.perf_counter() - turn.started) * 1000.0),
                         model=model,
                         finish_reason=finish_reason,
@@ -1099,7 +1192,9 @@ async def load_history(
             "role": row.role,
             "content": row.content,
             "created_at": row.created_at.isoformat(),
-            "citations": row.citations,
+            "sources": row.retrieved_sources,
+            "citations": row.citations_verified,
+            "trace_id": row.trace_id,
             "model": row.model,
             "finish_reason": row.finish_reason,
             "latency_ms": row.latency_ms,

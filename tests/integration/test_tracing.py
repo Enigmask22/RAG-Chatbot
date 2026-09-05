@@ -556,6 +556,10 @@ class TestAgainstRealLangfuse:
             "host": LANGFUSE_URL,
             "queued": 0,
             "sent": 1,
+            # `W5-08` thêm `scored`: điểm feedback đi qua **cùng** hàng đợi, nên
+            # nó phải có bộ đếm riêng — `sent` gộp cả hai thì "trace có tới nơi
+            # không" và "điểm có tới nơi không" trở thành một câu hỏi.
+            "scored": 0,
             "failed": 0,
             "dropped": 0,
         }

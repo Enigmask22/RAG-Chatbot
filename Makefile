@@ -102,6 +102,10 @@ up-metrics:  ## `W5-07`: bật Prometheus + Grafana (bảng "RAG Health" ở :30
 down-metrics:  ## Tắt Prometheus + Grafana (giữ nguyên volume dữ liệu)
 	$(METRICS) down
 
+.PHONY: feedback-export
+feedback-export:  ## `W5-08`: xuất câu 👎 thành file ứng viên golden set (TENANT=public)
+	$(PY) python -m serving.core.feedback export --tenant $(or $(TENANT),public) --out $(or $(OUT),data/golden/candidates.jsonl)
+
 .PHONY: down
 down:  ## Tắt hạ tầng (giữ nguyên volume dữ liệu)
 	$(COMPOSE) --profile api down

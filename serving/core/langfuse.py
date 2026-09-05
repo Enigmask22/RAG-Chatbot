@@ -31,19 +31,21 @@ bằng chứng cần đọc.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import queue
 import threading
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from serving.core.tracing import Span, Trace
 
-__all__ = ["LangfuseSink", "build_sink"]
+__all__ = ["LangfuseSink", "Score", "build_sink", "encode_score", "score_id"]
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +138,56 @@ def encode_trace(trace: Trace) -> list[dict[str, Any]]:
     return events
 
 
+# ------------------------------------------------------------------- điểm số
+
+
+@dataclass(frozen=True)
+class Score:
+    """Một điểm số gắn vào trace — `W5-08`.
+
+    Đi qua **cùng** hàng đợi với trace, không qua một đường riêng: một endpoint
+    feedback chặn 300 ms vì Langfuse chậm là một nút 👎 mà người dùng bấm hai
+    lần.
+    """
+
+    trace_id: str
+    name: str
+    value: float
+    comment: str | None = None
+    data_type: str = "NUMERIC"
+
+
+def score_id(trace_id: str, name: str) -> str:
+    """Id tất định cho một cặp (trace, tên điểm).
+
+    ⭐⭐ **Một luật idempotent cho hai kho.** Postgres upsert theo
+    `(tenant_id, message_id)`; Langfuse upsert theo `id` của điểm. Nếu id ở đây
+    ngẫu nhiên thì đổi 👎 thành 👍 để lại **hai** điểm trái ngược trên cùng một
+    trace, và cái trung bình hiện trên bảng Langfuse không tương ứng với bất kỳ
+    hàng nào trong Postgres. Hai kho phải cùng một khái niệm "lần chấm này".
+    """
+    return hashlib.sha256(f"{trace_id}:{name}".encode()).hexdigest()[:32]
+
+
+def encode_score(score: Score) -> list[dict[str, Any]]:
+    """Điểm số → sự kiện ingestion. Thuần, không I/O."""
+    return [
+        {
+            "id": uuid.uuid4().hex,
+            "timestamp": _iso(datetime.now(UTC)),
+            "type": "score-create",
+            "body": {
+                "id": score_id(score.trace_id, score.name),
+                "traceId": score.trace_id,
+                "name": score.name,
+                "value": score.value,
+                "dataType": score.data_type,
+                "comment": score.comment,
+            },
+        }
+    ]
+
+
 @dataclass
 class LangfuseSink:
     """Thread nền + hàng đợi có trần. `submit()` không chặn và không ném."""
@@ -147,11 +199,12 @@ class LangfuseSink:
     timeout_s: float = 10.0
     client: httpx.Client | None = None
 
-    _queue: queue.Queue[Trace | None] = field(init=False, repr=False)
+    _queue: queue.Queue[Trace | Score | None] = field(init=False, repr=False)
     _worker: threading.Thread | None = field(default=None, init=False, repr=False)
     _sent: int = field(default=0, init=False)
     _failed: int = field(default=0, init=False)
     _dropped: int = field(default=0, init=False)
+    _scored: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         self._queue = queue.Queue(maxsize=self.max_queue)
@@ -168,8 +221,21 @@ class LangfuseSink:
     # ---------------------------------------------------------------- công khai
 
     def submit(self, trace: Trace) -> None:
+        self._enqueue(trace)
+
+    def submit_score(self, score: Score) -> None:
+        """Xếp một điểm số vào cùng hàng đợi. Không chặn, không ném.
+
+        ⚠️ Xếp **sau** trace của cùng lượt, và Langfuse nhận điểm trỏ vào một
+        trace chưa tồn tại (`traceId` là một chuỗi, không phải khoá ngoại) — nó
+        ghép lại khi trace tới. Nhưng nếu trace bị vứt vì hàng đợi đầy thì điểm
+        ấy treo vĩnh viễn, nên `dropped` phải đọc kèm `scored`.
+        """
+        self._enqueue(score)
+
+    def _enqueue(self, item: Trace | Score) -> None:
         try:
-            self._queue.put_nowait(trace)
+            self._queue.put_nowait(item)
         except queue.Full:
             self._dropped += 1
             if self._dropped % 50 == 1:
@@ -189,6 +255,7 @@ class LangfuseSink:
             "host": self.host,
             "queued": self._queue.qsize(),
             "sent": self._sent,
+            "scored": self._scored,
             "failed": self._failed,
             "dropped": self._dropped,
         }
@@ -218,13 +285,14 @@ class LangfuseSink:
                 self._send(item)
             except Exception:
                 self._failed += 1
-                logger.warning("tracing: đẩy trace %s thất bại", item.id, exc_info=True)
+                logger.warning("tracing: đẩy %s thất bại", _label(item), exc_info=True)
             finally:
                 self._queue.task_done()
 
-    def _send(self, trace: Trace) -> None:
+    def _send(self, item: Trace | Score) -> None:
         assert self.client is not None
-        payload = {"batch": encode_trace(trace)}
+        batch = encode_score(item) if isinstance(item, Score) else encode_trace(item)
+        payload = {"batch": batch}
         response = self.client.post(_INGESTION_PATH, content=json.dumps(payload, default=str))
         if response.status_code >= 400:
             self._failed += 1
@@ -232,13 +300,16 @@ class LangfuseSink:
             # mang `secret_key`. Một dòng log gỡ rối là cách phổ biến nhất để
             # một khoá đi vào một hệ thống log có quyền đọc rộng hơn nó.
             logger.warning(
-                "tracing: Langfuse trả %d cho trace %s: %s",
+                "tracing: Langfuse trả %d cho %s: %s",
                 response.status_code,
-                trace.id,
+                _label(item),
                 response.text[:300],
             )
             return
-        self._sent += 1
+        if isinstance(item, Score):
+            self._scored += 1
+        else:
+            self._sent += 1
 
 
 def build_sink(settings: Any) -> LangfuseSink | None:
@@ -272,6 +343,12 @@ def build_sink(settings: Any) -> LangfuseSink | None:
         secret_key=secret_key,
         max_queue=int(getattr(settings, "langfuse_queue_size", 256)),
     )
+
+
+def _label(item: Trace | Score) -> str:
+    if isinstance(item, Score):
+        return f"score {item.name} của trace {item.trace_id}"
+    return f"trace {item.id}"
 
 
 def _plain(value: Any) -> str:
